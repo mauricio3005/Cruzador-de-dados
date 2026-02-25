@@ -1,0 +1,17 @@
+# Ambientes virtuais específicos de OS
+venv/
+env/
+.env
+
+# Arquivos compilados do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Arquivos de log e bancos temporários
+*.log
+*.sqlite3
+
+# Arquivos do OS
+.DS_Store
+Thumbs.db
