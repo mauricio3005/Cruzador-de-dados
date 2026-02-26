@@ -40,21 +40,11 @@ async def gerar_relatorio(file: UploadFile = File(...)):
         expenses_agg = df_despesas.groupby(['OBRA', 'ETAPA'])['VALOR TOTAL'].sum().reset_index()
         expenses_agg.rename(columns={'VALOR TOTAL': 'GASTO_REALIZADO'}, inplace=True)
 
-        df_recebimentos = pd.read_excel(arquivo_virtual, sheet_name="C Recebimentos")
-        df_recebimentos['VALOR'] = pd.to_numeric(df_recebimentos['VALOR'], errors='coerce').fillna(0)
-        receipts_agg = df_recebimentos.groupby('OBRA')['VALOR'].sum().reset_index()
-        receipts_agg.rename(columns={'VALOR': 'RECEBIMENTOS_TOTAIS'}, inplace=True)
-
         full_report = pd.merge(df_budget, expenses_agg, on=['OBRA', 'ETAPA'], how='outer')
         full_report[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']] = full_report[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']].fillna(0)
         full_report['SALDO_ETAPA'] = full_report['ORÇAMENTO_ESTIMADO'] - full_report['GASTO_REALIZADO']
 
-        full_report = pd.merge(full_report, receipts_agg, on='OBRA', how='left')
-        full_report['RECEBIMENTOS_TOTAIS'] = full_report['RECEBIMENTOS_TOTAIS'].fillna(0)
-        full_report['GASTO_TOTAL_OBRA'] = full_report.groupby('OBRA')['GASTO_REALIZADO'].transform('sum')
-        full_report['SALDO_GLOBAL_OBRA'] = full_report['RECEBIMENTOS_TOTAIS'] - full_report['GASTO_TOTAL_OBRA']
-
-        cols = ['OBRA', 'ETAPA', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA', 'RECEBIMENTOS_TOTAIS', 'SALDO_GLOBAL_OBRA']
+        cols = ['OBRA', 'ETAPA', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']
         full_report = full_report[cols].sort_values(by=['OBRA', 'ETAPA'])
 
         output_buffer = io.BytesIO()
