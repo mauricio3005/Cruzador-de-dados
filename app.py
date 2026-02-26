@@ -2,6 +2,23 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 import pandas as pd
 import io
+import os
+from supabase import create_client, Client
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Variáveis de ambiente do Supabase não configuradas no .env")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Nome da tabela no Supabase que será sobreescrita. 
+# Importante: Como não sei o nome da tabela que você criou, coloquei 'relatorios'. 
+# Lembre-se de mudar aqui caso o nome seja diferente lá no Supabase.
+TABELA_SUPABASE = "relatorios"
 
 app = FastAPI()
 
@@ -46,6 +63,20 @@ async def gerar_relatorio(file: UploadFile = File(...)):
 
         cols = ['OBRA', 'ETAPA', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']
         full_report = full_report[cols].sort_values(by=['OBRA', 'ETAPA'])
+        
+        # ------------------- INTEGRAÇÃO SUPABASE -------------------
+        # Convertemos o DataFrame para uma lista de dicionários para inserir no Supabase
+        dados_para_inserir = full_report.to_dict(orient="records")
+
+        # 1. Apagar todos os dados antigos da tabela.
+        # A API do Supabase requer um filtro para deletar.
+        # 'neq' (not equal) com um valor que nunca existirá garante que todas as linhas sejam deletadas.
+        supabase.table(TABELA_SUPABASE).delete().neq("OBRA", "VALOR_INEXISTENTE_PARA_DELETAR_TUDO").execute()
+
+        # 2. Inserir os novos dados
+        if dados_para_inserir:
+             supabase.table(TABELA_SUPABASE).insert(dados_para_inserir).execute()
+        # -----------------------------------------------------------
 
         output_buffer = io.BytesIO()
         with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
