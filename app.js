@@ -223,7 +223,7 @@ async function carregarDados() {
         // Consulta real no Supabase
         const { data, error } = await dbClient
             .from('relatorios')
-            .select('OBRA, ETAPA, "TIPO_CUSTO", "ORÇAMENTO_ESTIMADO", "GASTO_REALIZADO", "SALDO_ETAPA"');
+            .select('*');
 
         if (error) {
             console.error("Erro reportado pelo Supabase:", error);
