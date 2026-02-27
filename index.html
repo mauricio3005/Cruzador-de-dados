@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Financeiro Gerencial</title>
+    <!-- Fonte Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Folha de estilos padronizada -->
+    <link rel="stylesheet" href="style.css">
+    <!-- Variáveis de Ambiente -->
+    <script src="env.js"></script>
+    <!-- Chart.js para os gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Plugin DataLabels para números nos gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar lateral -->
+        <aside class="sidebar glass-panel">
+            <div class="brand">
+                <div class="logo"></div>
+                <h2>Financeiro Obras</h2>
+            </div>
+
+            <div class="filters-section">
+                <h3>Filtros</h3>
+                <div class="filter-group dropdown-container">
+                    <label>Selecionar Obra(s)</label>
+                    <div class="dropdown-header" id="obraDropdownHeader">
+                        <span class="dropdown-header-text" id="obraDropdownText">Todas as Obras</span>
+                        <svg class="dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                    <div class="checkbox-list dropdown-list" id="obraCheckboxes">
+                        <!-- Checkboxes injetados via JS -->
+                    </div>
+                </div>
+
+                <div class="filter-group mt-3 dropdown-container">
+                    <label>Selecionar Etapa(s)</label>
+                    <div class="dropdown-header" id="etapaDropdownHeader">
+                        <span class="dropdown-header-text" id="etapaDropdownText">Todas as Etapas</span>
+                        <svg class="dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                    <div class="checkbox-list dropdown-list" id="etapaCheckboxes">
+                        <!-- Checkboxes injetados via JS -->
+                    </div>
+                </div>
+
+                <div class="filter-group mt-3 dropdown-container">
+                    <label>Selecionar Tipo(s) de Custo</label>
+                    <div class="dropdown-header" id="tipoDropdownHeader">
+                        <span class="dropdown-header-text" id="tipoDropdownText">Todos os Tipos</span>
+                        <svg class="dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                    <div class="checkbox-list dropdown-list" id="tipoCheckboxes">
+                        <!-- Checkboxes injetados via JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="last-update">
+                <p>Status: <span id="connectionStatus" class="status-indicator online">Online</span></p>
+                <p>Modo: <span id="dataMode">Mock Data</span></p>
+            </div>
+        </aside>
+
+        <!-- Área de conteúdo principal -->
+        <main class="main-content">
+            <header class="top-header">
+                <div>
+                    <h1 id="dashboardTitle">Visão Geral do Portfólio</h1>
+                    <p class="subtitle">Acompanhamento consolidado de custos vs orçamentos</p>
+                </div>
+                <div class="actions" style="display: flex; gap: 12px; align-items: center;">
+                    <button id="themeToggleBtn" class="btn btn-secondary" title="Alternar Tema">
+                        <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                        </svg>
+                    </button>
+                    <button id="refreshBtn" class="btn btn-primary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <polyline points="1 20 1 14 7 14"></polyline>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                        </svg>
+                        Atualizar Dados
+                    </button>
+                </div>
+            </header>
+
+            <!-- KPIs -->
+            <section class="kpi-grid">
+                <div class="kpi-card glass-panel">
+                    <div class="kpi-title">Orçamento Total (Estimado)</div>
+                    <div class="kpi-value" id="kpiOrcamento">R$ 0,00</div>
+                    <div class="kpi-icon blue-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+                            <path d="M7 15h0M2 9h20"></path>
+                        </svg>
+                    </div>
+                </div>
+
+                <div class="kpi-card glass-panel">
+                    <div class="kpi-title">Custo Realizado</div>
+                    <div class="kpi-value" id="kpiRealizado">R$ 0,00</div>
+                    <div class="kpi-icon purple-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="12" y1="2" x2="12" y2="22"></line>
+                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                        </svg>
+                    </div>
+                </div>
+
+                <div class="kpi-card glass-panel" id="cardSaldo">
+                    <div class="kpi-title">Saldo Financeiro da Etapa</div>
+                    <div class="kpi-value" id="kpiSaldo">R$ 0,00</div>
+                    <div class="kpi-subtitle" id="kpiSaldoSubtitle">Dentro do orçamento</div>
+                </div>
+
+                <div class="kpi-card glass-panel">
+                    <div class="kpi-title">% de Consumo</div>
+                    <div class="kpi-value" id="kpiConsumo">0%</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="kpiConsumoBar"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Gráficos -->
+            <section class="charts-grid">
+                <div class="chart-card glass-panel chart-span-2">
+                    <div class="chart-header">
+                        <h3>Previsto vs. Realizado (Por Etapa estrutural)</h3>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="barrasAgrupadasChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card glass-panel">
+                    <div class="chart-header">
+                        <h3>Distribuição de Custos (Realizado)</h3>
+                    </div>
+                    <div class="chart-body">
+                        <canvas id="roscaChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="chart-card glass-panel chart-span-full">
+                    <div class="chart-header">
+                        <h3 id="rankingTitle">Comparativo (Orçamento vs Gasto vs Saldo)</h3>
+                    </div>
+                    <div class="chart-body" style="height: 450px;">
+                        <canvas id="rankingChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Matriz Financeira (Tabela) -->
+            <section class="table-section glass-panel">
+                <div class="table-header">
+                    <h3>Detalhamento Financeiro (Matriz)</h3>
+                </div>
+                <div class="table-wrapper">
+                    <table class="styled-table" id="financeTable">
+                        <thead>
+                            <tr>
+                                <th>Projeto / Etapa</th>
+                                <th class="text-right">Orçamento Estimado</th>
+                                <th class="text-right">Gasto Realizado</th>
+                                <th class="text-right">Saldo</th>
+                                <th class="text-center">% Consumido</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <!-- Linhas injetadas via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Scripts da aplicação -->
+    <script src="app.js"></script>
+</body>
+
+</html>

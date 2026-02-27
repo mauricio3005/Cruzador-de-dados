@@ -2,7 +2,7 @@
 venv/
 env/
 .env
-
+.env.js
 # Arquivos compilados do Python
 __pycache__/
 *.py[cod]
