@@ -230,9 +230,22 @@ async function carregarDados() {
             throw error;
         }
 
-        rawData = data || [];
-        rawData.forEach(item => {
-            if (!item.TIPO_CUSTO) item.TIPO_CUSTO = 'Geral';
+        // Vamos normalizar os dados vindos do Supabase para garantir que as chaves correspondam ao que o restante do código espera
+        rawData = (data || []).map(item => {
+            // Se o Supabase retornou o nome exato (incluindo o Ç), ou se o banco encodou.
+            // Para maior robustez, pegamos as chaves como elas vieram e padronizamos nas chaves principais
+            let orcamento = item['ORÇAMENTO_ESTIMADO'];
+            if (orcamento === undefined) orcamento = item['ORAMENTO_ESTIMADO'];
+            if (orcamento === undefined) orcamento = item['ORAMENTO_ESTIMADO'];
+
+            return {
+                OBRA: item.OBRA,
+                ETAPA: item.ETAPA,
+                TIPO_CUSTO: item.TIPO_CUSTO || 'Geral',
+                ORÇAMENTO_ESTIMADO: orcamento,
+                GASTO_REALIZADO: item.GASTO_REALIZADO,
+                SALDO_ETAPA: item.SALDO_ETAPA
+            };
         });
 
         if (rawData.length === 0) {
