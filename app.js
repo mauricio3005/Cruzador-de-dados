@@ -713,7 +713,7 @@ function renderizarTabela() {
             let consPercEt = Number(etapa.ORÇAMENTO_ESTIMADO) > 0 ? (Number(etapa.GASTO_REALIZADO) / Number(etapa.ORÇAMENTO_ESTIMADO)) * 100 : 0;
 
             trEtapa.innerHTML = `
-                <td>${etapa.ETAPA}</td>
+                <td>${etapa.ETAPA} <span style="opacity: 0.7; font-size: 0.85em;">(${etapa.TIPO_CUSTO || 'Geral'})</span></td>
                 <td class="text-right">${formatCurrency(etapa.ORÇAMENTO_ESTIMADO)}</td>
                 <td class="text-right">${formatCurrency(etapa.GASTO_REALIZADO)}</td>
                 <td class="text-right ${corSaldoEt}"><strong>${formatCurrency(saldoEt)}</strong></td>

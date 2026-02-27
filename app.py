@@ -54,15 +54,32 @@ async def gerar_relatorio(file: UploadFile = File(...)):
 
         df_despesas = pd.read_excel(arquivo_virtual, sheet_name="C Despesas")
         df_despesas['VALOR TOTAL'] = pd.to_numeric(df_despesas['VALOR TOTAL'], errors='coerce').fillna(0)
-        expenses_agg = df_despesas.groupby(['OBRA', 'ETAPA'])['VALOR TOTAL'].sum().reset_index()
-        expenses_agg.rename(columns={'VALOR TOTAL': 'GASTO_REALIZADO'}, inplace=True)
+        
+        # Obter o nome da coluna que contém 'tipo' para mapear como TIPO
+        colunas_tipo = [c for c in df_despesas.columns if 'tipo' in str(c).lower()]
+        nome_coluna_tipo = colunas_tipo[0] if colunas_tipo else None
+        
+        if nome_coluna_tipo:
+            df_despesas.rename(columns={nome_coluna_tipo: 'TIPO'}, inplace=True)
+        else:
+            df_despesas['TIPO'] = 'Geral'
+
+        expenses_agg = df_despesas.groupby(['OBRA', 'ETAPA', 'TIPO'])['VALOR TOTAL'].sum().reset_index()
+        expenses_agg.rename(columns={'VALOR TOTAL': 'GASTO_REALIZADO', 'TIPO': 'TIPO_CUSTO'}, inplace=True)
 
         full_report = pd.merge(df_budget, expenses_agg, on=['OBRA', 'ETAPA'], how='outer')
         full_report[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']] = full_report[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']].fillna(0)
+        full_report['TIPO_CUSTO'] = full_report['TIPO_CUSTO'].fillna('Geral')
+        
+        # Evitar duplicar orçamento se houver vários TIPOS_CUSTO para a mesma ETAPA
+        full_report = full_report.sort_values(by=['OBRA', 'ETAPA', 'TIPO_CUSTO'])
+        mask_duplicados = full_report.duplicated(subset=['OBRA', 'ETAPA'], keep='first')
+        full_report.loc[mask_duplicados, 'ORÇAMENTO_ESTIMADO'] = 0
+        
         full_report['SALDO_ETAPA'] = full_report['ORÇAMENTO_ESTIMADO'] - full_report['GASTO_REALIZADO']
 
-        cols = ['OBRA', 'ETAPA', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']
-        full_report = full_report[cols].sort_values(by=['OBRA', 'ETAPA'])
+        cols = ['OBRA', 'ETAPA', 'TIPO_CUSTO', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']
+        full_report = full_report[cols]
         
         # ------------------- INTEGRAÇÃO SUPABASE -------------------
         # Convertemos o DataFrame para uma lista de dicionários para inserir no Supabase
