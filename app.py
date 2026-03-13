@@ -7,7 +7,7 @@ def processar_planilha():
     load_dotenv()
 
     SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+    SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
 
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise RuntimeError("Variáveis de ambiente do Supabase não configuradas no .env")
@@ -15,7 +15,7 @@ def processar_planilha():
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     TABELA_SUPABASE = "relatorios"
 
-    caminho_planilha = r"C:\Users\mauri\OneDrive\Controle de obra\CONTROLE MATERIAIS.xlsx"
+    caminho_planilha = r"C:\Users\mauri\OneDrive\Controle de obra\Controle de obras.xlsx"
     
     if not os.path.exists(caminho_planilha):
         print(f"Erro: Arquivo não encontrado em {caminho_planilha}")

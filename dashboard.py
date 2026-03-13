@@ -39,7 +39,7 @@ st.markdown("""
 def init_supabase():
     load_dotenv()
     url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
+    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
     if not url or not key:
         return None
     return create_client(url, key)
