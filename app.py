@@ -107,6 +107,8 @@ async def gerar_relatorio(file: UploadFile = File(...)):
         )
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
 
 if __name__ == "__main__":
