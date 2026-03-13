@@ -37,7 +37,7 @@ def processar_planilha():
 
     # Custos planejados: Teoflandia (idênticos aos de apuarema)
     teoflandia_budget = creche_budget.copy()
-    teoflandia_budget['OBRA'] = 'Teoflandia'
+    teoflandia_budget['OBRA'] = 'Creche Teoflandia'
 
     # Custos planejados: Casa Busca Vida
     if 'ESTIMATIVA' in df_etapas.columns:
