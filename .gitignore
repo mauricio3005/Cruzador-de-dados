@@ -12,6 +12,7 @@ __pycache__/
 # Arquivos de log e bancos temporários
 *.log
 *.sqlite3
+.claude
 
 # Arquivos do OS
 .DS_Store

@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+from datetime import datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -491,6 +492,59 @@ with st.sidebar:
         sel_tipos = st.multiselect("Tipo(s) de Custo", tipos_todos, default=tipos_todos)
     else:
         sel_obras, sel_etapas, sel_tipos = [], [], []
+
+    st.markdown("---")
+
+    # ── Geração de Relatório ──────────────────────────────────────────────────
+    st.markdown("**RELATÓRIOS**")
+
+    if not df_raw.empty:
+        obra_rel = st.selectbox(
+            "Obra para o relatório",
+            sorted(df_raw['OBRA'].dropna().unique().tolist()),
+            key="selectbox_relatorio",
+        )
+
+        tipo_rel = st.radio(
+            "Tipo de relatório",
+            ["Detalhado", "Simples"],
+            horizontal=True,
+            key="radio_tipo_relatorio",
+        )
+
+        # Preview de etapas que entrarão no relatório
+        df_preview = df_raw[df_raw['OBRA'] == obra_rel]
+        if tipo_rel == "Simples":
+            col_filtro = df_preview.groupby('ETAPA')['ORÇAMENTO_ESTIMADO'].sum()
+            etapas_preview = col_filtro[col_filtro > 0].index.tolist()
+            label_vazio = "⚠️ Nenhuma etapa com orçamento encontrada para esta obra."
+        else:
+            col_filtro = df_preview.groupby('ETAPA')['GASTO_REALIZADO'].sum()
+            etapas_preview = col_filtro[col_filtro > 0].index.tolist()
+            label_vazio = "⚠️ Nenhuma etapa com gasto realizado encontrada para esta obra."
+        if etapas_preview:
+            st.caption(f"✅ {len(etapas_preview)} etapa(s): {', '.join(etapas_preview)}")
+        else:
+            st.caption(label_vazio)
+
+        if st.button("📄 Gerar Relatório PDF", disabled=not etapas_preview):
+            with st.spinner("Gerando PDF…"):
+                from relatorio import gerar_relatorio_detalhado, gerar_relatorio_simples
+                if tipo_rel == "Detalhado":
+                    pdf_bytes = gerar_relatorio_detalhado(df_raw, obra_rel)
+                else:
+                    pdf_bytes = gerar_relatorio_simples(df_raw, obra_rel)
+                nome_arquivo = (
+                    f"relatorio_{tipo_rel.lower()}_{obra_rel.replace(' ', '_')}_"
+                    f"{datetime.now().strftime('%Y%m%d')}.pdf"
+                )
+            st.download_button(
+                label="⬇️ Baixar PDF",
+                data=pdf_bytes,
+                file_name=nome_arquivo,
+                mime="application/pdf",
+                use_container_width=True,
+            )
 
     st.markdown("---")
     st.markdown("""

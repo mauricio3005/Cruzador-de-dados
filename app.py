@@ -29,54 +29,62 @@ def processar_planilha():
         return
         
     df_etapas.columns = df_etapas.columns.str.strip()
+    df_etapas.dropna(subset=['Nome da Etapa'], inplace=True)
 
-    # Custos planejados: Creche apuarema
-    creche_budget = df_etapas[['Nome da Etapa', 'TOTAL ESTIMADO']].copy()
-    creche_budget['OBRA'] = 'Creche apuarema'
-    creche_budget.rename(columns={'TOTAL ESTIMADO': 'ORÇAMENTO_ESTIMADO', 'Nome da Etapa': 'ETAPA'}, inplace=True)
+    # ── Orçamento por tipo, direto da planilha ────────────────────────────────
+    # Cada etapa gera 2 linhas de orçamento (Mão de Obra e Materiais) por obra.
+    # O merge com despesas é feito em OBRA + ETAPA + TIPO_CUSTO — sem deduplicação.
+    budget_rows = []
+    for _, row in df_etapas.iterrows():
+        etapa = str(row['Nome da Etapa']).strip()
+        for obra, col_mo, col_mat in [
+            ('Creche apuarema',   'ESTIM MÃO DE OBRA APUA', 'ESTIM MATERIAL APUA'),
+            ('Creche Teoflandia', 'ESTIM MÃO DE OBRA TEOF', 'ESTIM MATERIAL TEOF'),
+        ]:
+            budget_rows.append({'OBRA': obra, 'ETAPA': etapa,
+                                 'TIPO_CUSTO': 'Mão de Obra',
+                                 'ORÇAMENTO_ESTIMADO': pd.to_numeric(row.get(col_mo, 0), errors='coerce') or 0})
+            budget_rows.append({'OBRA': obra, 'ETAPA': etapa,
+                                 'TIPO_CUSTO': 'Materiais',
+                                 'ORÇAMENTO_ESTIMADO': pd.to_numeric(row.get(col_mat, 0), errors='coerce') or 0})
 
-    # Custos planejados: Teoflandia (idênticos aos de apuarema)
-    teoflandia_budget = creche_budget.copy()
-    teoflandia_budget['OBRA'] = 'Creche Teoflandia'
-
-    # Custos planejados: Casa Busca Vida
-    if 'ESTIMATIVA' in df_etapas.columns:
-        casa_budget = df_etapas[['Nome da Etapa', 'ESTIMATIVA']].copy()
-        casa_budget.rename(columns={'ESTIMATIVA': 'ORÇAMENTO_ESTIMADO', 'Nome da Etapa': 'ETAPA'}, inplace=True)
-    else:
-        casa_budget = pd.DataFrame(columns=['ETAPA', 'ORÇAMENTO_ESTIMADO'])
-    
-    casa_budget['OBRA'] = 'Casa Busca Vida'
-
-    df_budget = pd.concat([creche_budget, teoflandia_budget, casa_budget], ignore_index=True)
-    df_budget['ORÇAMENTO_ESTIMADO'] = pd.to_numeric(df_budget['ORÇAMENTO_ESTIMADO'], errors='coerce').fillna(0)
-    df_budget.dropna(subset=['ETAPA'], inplace=True)
+    df_budget = pd.DataFrame(budget_rows)
 
     print("Processando despesas...")
     df_despesas = pd.read_excel(caminho_planilha, sheet_name="C Despesas")
     df_despesas['VALOR TOTAL'] = pd.to_numeric(df_despesas['VALOR TOTAL'], errors='coerce').fillna(0)
-    
-    # Obter o nome da coluna que contém 'tipo' para mapear como TIPO
+
     colunas_tipo = [c for c in df_despesas.columns if 'tipo' in str(c).lower()]
     nome_coluna_tipo = colunas_tipo[0] if colunas_tipo else None
-    
     if nome_coluna_tipo:
         df_despesas.rename(columns={nome_coluna_tipo: 'TIPO'}, inplace=True)
     else:
         df_despesas['TIPO'] = 'Geral'
 
+    # Normaliza valores de TIPO e OBRA
+    NORMALIZAR_TIPOS = {
+        'MATERIAL':     'Materiais',
+        'MÃO DE OBRA':  'Mão de Obra',
+        'MAO DE OBRA':  'Mão de Obra',
+        'Mao de Obra':  'Mão de Obra',
+    }
+    df_despesas['TIPO'] = df_despesas['TIPO'].fillna('Geral').str.strip().replace(NORMALIZAR_TIPOS)
+    NORMALIZAR_OBRAS = {
+        'Creche de Teoflandia': 'Creche Teoflandia',
+        'Creche De Teoflandia': 'Creche Teoflandia',
+    }
+    df_despesas['OBRA'] = df_despesas['OBRA'].replace(NORMALIZAR_OBRAS)
+
     expenses_agg = df_despesas.groupby(['OBRA', 'ETAPA', 'TIPO'])['VALOR TOTAL'].sum().reset_index()
     expenses_agg.rename(columns={'VALOR TOTAL': 'GASTO_REALIZADO', 'TIPO': 'TIPO_CUSTO'}, inplace=True)
 
-    full_report = pd.merge(df_budget, expenses_agg, on=['OBRA', 'ETAPA'], how='outer')
-    full_report[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']] = full_report[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']].fillna(0)
-    full_report['TIPO_CUSTO'] = full_report['TIPO_CUSTO'].fillna('Geral')
-    
-    # Evitar duplicar orçamento se houver vários TIPOS_CUSTO para a mesma ETAPA
-    full_report = full_report.sort_values(by=['OBRA', 'ETAPA', 'TIPO_CUSTO'])
-    mask_duplicados = full_report.duplicated(subset=['OBRA', 'ETAPA'], keep='first')
-    full_report.loc[mask_duplicados, 'ORÇAMENTO_ESTIMADO'] = 0
-    
+    # Merge em OBRA + ETAPA + TIPO_CUSTO — orçamento já está por tipo, sem deduplicação
+    full_report = pd.merge(df_budget, expenses_agg, on=['OBRA', 'ETAPA', 'TIPO_CUSTO'], how='outer')
+    full_report[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']] = (
+        full_report[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']].fillna(0)
+    )
+    full_report['TIPO_CUSTO'] = full_report['TIPO_CUSTO'].fillna('Geral').str.strip()
+
     full_report['SALDO_ETAPA'] = full_report['ORÇAMENTO_ESTIMADO'] - full_report['GASTO_REALIZADO']
 
     cols = ['OBRA', 'ETAPA', 'TIPO_CUSTO', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']
