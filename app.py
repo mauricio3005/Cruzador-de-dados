@@ -44,9 +44,14 @@ async def gerar_relatorio(file: UploadFile = File(...)):
         creche_budget['OBRA'] = 'Creche apuarema'
         creche_budget.rename(columns={'TOTAL ESTIMADO': 'ORÇAMENTO_ESTIMADO', 'Nome da Etapa': 'ETAPA'}, inplace=True)
 
-        casa_budget = df_etapas[['Nome da Etapa', 'ESTIMATIVA']].copy()
+        if 'ESTIMATIVA' in df_etapas.columns:
+            casa_budget = df_etapas[['Nome da Etapa', 'ESTIMATIVA']].copy()
+            casa_budget.rename(columns={'ESTIMATIVA': 'ORÇAMENTO_ESTIMADO', 'Nome da Etapa': 'ETAPA'}, inplace=True)
+        else:
+            # Fallback caso a coluna não exista
+            casa_budget = pd.DataFrame(columns=['ETAPA', 'ORÇAMENTO_ESTIMADO'])
+        
         casa_budget['OBRA'] = 'Casa Busca Vida'
-        casa_budget.rename(columns={'ESTIMATIVA': 'ORÇAMENTO_ESTIMADO', 'Nome da Etapa': 'ETAPA'}, inplace=True)
 
         df_budget = pd.concat([creche_budget, casa_budget], ignore_index=True)
         df_budget['ORÇAMENTO_ESTIMADO'] = pd.to_numeric(df_budget['ORÇAMENTO_ESTIMADO'], errors='coerce').fillna(0)
