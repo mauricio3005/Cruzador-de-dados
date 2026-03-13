@@ -6,3 +6,5 @@ xlsxwriter==3.2.1
 python-multipart==0.0.20
 supabase
 python-dotenv
+streamlit
+plotly
