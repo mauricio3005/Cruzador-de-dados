@@ -35,7 +35,7 @@ def processar_planilha():
     # Cada etapa gera 2 linhas de orçamento (Mão de Obra e Materiais) por obra.
     # O merge com despesas é feito em OBRA + ETAPA + TIPO_CUSTO — sem deduplicação.
     budget_rows = []
-    for _, row in df_etapas.iterrows():
+    for idx, (_, row) in enumerate(df_etapas.iterrows()):
         etapa = str(row['Nome da Etapa']).strip()
         for obra, col_mo, col_mat in [
             ('Creche apuarema',   'ESTIM MÃO DE OBRA APUA', 'ESTIM MATERIAL APUA'),
@@ -43,10 +43,12 @@ def processar_planilha():
         ]:
             budget_rows.append({'OBRA': obra, 'ETAPA': etapa,
                                  'TIPO_CUSTO': 'Mão de Obra',
-                                 'ORÇAMENTO_ESTIMADO': pd.to_numeric(row.get(col_mo, 0), errors='coerce') or 0})
+                                 'ORÇAMENTO_ESTIMADO': pd.to_numeric(row.get(col_mo, 0), errors='coerce') or 0,
+                                 'ORDEM_ETAPA': idx})
             budget_rows.append({'OBRA': obra, 'ETAPA': etapa,
                                  'TIPO_CUSTO': 'Materiais',
-                                 'ORÇAMENTO_ESTIMADO': pd.to_numeric(row.get(col_mat, 0), errors='coerce') or 0})
+                                 'ORÇAMENTO_ESTIMADO': pd.to_numeric(row.get(col_mat, 0), errors='coerce') or 0,
+                                 'ORDEM_ETAPA': idx})
 
     df_budget = pd.DataFrame(budget_rows)
 
@@ -85,9 +87,36 @@ def processar_planilha():
     )
     full_report['TIPO_CUSTO'] = full_report['TIPO_CUSTO'].fillna('Geral').str.strip()
 
+    # Preenche ORDEM_ETAPA para linhas de despesa sem orçamento correspondente
+    etapa_ordem = df_budget[['ETAPA', 'ORDEM_ETAPA']].drop_duplicates().set_index('ETAPA')['ORDEM_ETAPA']
+    full_report['ORDEM_ETAPA'] = full_report['ORDEM_ETAPA'].fillna(
+        full_report['ETAPA'].map(etapa_ordem)
+    ).fillna(999).astype(int)
+
     full_report['SALDO_ETAPA'] = full_report['ORÇAMENTO_ESTIMADO'] - full_report['GASTO_REALIZADO']
 
-    cols = ['OBRA', 'ETAPA', 'TIPO_CUSTO', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']
+    # ── Taxa de conclusão por OBRA + ETAPA, da planilha Taxa_Conc ────────────
+    df_taxa = pd.read_excel(caminho_planilha, sheet_name="Taxa_Conc", header=0)
+    df_taxa.columns = df_taxa.columns.str.strip()
+    df_taxa['Nome da Etapa'] = df_taxa['Nome da Etapa'].str.strip()
+    df_taxa_melted = pd.melt(
+        df_taxa,
+        id_vars=['Nome da Etapa'],
+        value_vars=['Conc_Apua', 'Conc_Teof'],
+        var_name='COL',
+        value_name='TAXA_CONCLUSAO',
+    )
+    df_taxa_melted['OBRA'] = df_taxa_melted['COL'].map({
+        'Conc_Apua': 'Creche apuarema',
+        'Conc_Teof': 'Creche Teoflandia',
+    })
+    df_taxa_melted = df_taxa_melted.rename(columns={'Nome da Etapa': 'ETAPA'})[['OBRA', 'ETAPA', 'TAXA_CONCLUSAO']]
+    df_taxa_melted['TAXA_CONCLUSAO'] = pd.to_numeric(df_taxa_melted['TAXA_CONCLUSAO'], errors='coerce').fillna(0)
+
+    full_report = pd.merge(full_report, df_taxa_melted, on=['OBRA', 'ETAPA'], how='left')
+    full_report['TAXA_CONCLUSAO'] = full_report['TAXA_CONCLUSAO'].fillna(0)
+
+    cols = ['OBRA', 'ETAPA', 'TIPO_CUSTO', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA', 'ORDEM_ETAPA', 'TAXA_CONCLUSAO']
     full_report = full_report[cols]
     
     # ------------------- INTEGRAÇÃO SUPABASE -------------------
@@ -102,6 +131,29 @@ def processar_planilha():
          print("Sincronização concluída com sucesso!")
     else:
          print("Nenhum dado para inserir.")
+
+    # ── Upload de despesas individuais ───────────────────────────────────────
+    print("Sincronizando despesas individuais...")
+    supabase.table("despesas").delete().neq("OBRA", "VALOR_INEXISTENTE_PARA_DELETAR_TUDO").execute()
+
+    col_desc = next((c for c in df_despesas.columns if 'descri' in str(c).lower()), None)
+    desp_col_map = {'OBRA': 'OBRA', 'ETAPA': 'ETAPA', 'TIPO': 'TIPO',
+                    'FORNECEDOR': 'FORNECEDOR', 'VALOR TOTAL': 'VALOR_TOTAL', 'DATA': 'DATA'}
+    if col_desc:
+        desp_col_map[col_desc] = 'DESCRICAO'
+
+    df_desp_upload = df_despesas[list(desp_col_map.keys())].rename(columns=desp_col_map).copy()
+    df_desp_upload['DATA'] = pd.to_datetime(df_desp_upload['DATA'], errors='coerce')
+    df_desp_upload = df_desp_upload.dropna(subset=['DATA'])
+    df_desp_upload['DATA'] = df_desp_upload['DATA'].dt.strftime('%Y-%m-%d')
+    df_desp_upload['VALOR_TOTAL'] = pd.to_numeric(df_desp_upload['VALOR_TOTAL'], errors='coerce').fillna(0)
+
+    desp_records = df_desp_upload.where(df_desp_upload.notna(), other=None).to_dict(orient='records')
+    if desp_records:
+        BATCH = 200
+        for i in range(0, len(desp_records), BATCH):
+            supabase.table("despesas").insert(desp_records[i:i + BATCH]).execute()
+        print(f"Despesas sincronizadas: {len(desp_records)} registros.")
 
 if __name__ == "__main__":
     processar_planilha()

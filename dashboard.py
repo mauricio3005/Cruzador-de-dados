@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import os
 from datetime import datetime
@@ -446,6 +445,23 @@ def load_data():
 def format_currency(value):
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+@st.cache_data(ttl=300)
+def load_despesas():
+    load_dotenv()
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return pd.DataFrame()
+    try:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        res = supabase.table("despesas").select("*").execute()
+        df = pd.DataFrame(res.data)
+        if not df.empty:
+            df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce')
+        return df
+    except Exception:
+        return pd.DataFrame()
+
 # Template base para todos os gráficos Plotly
 CHART_LAYOUT = dict(
     paper_bgcolor='rgba(0,0,0,0)',
@@ -483,11 +499,16 @@ with st.sidebar:
         obras = sorted(df_raw['OBRA'].dropna().unique().tolist())
         tipos_todos = sorted(df_raw['TIPO_CUSTO'].dropna().unique().tolist())
 
-        sel_obras = st.multiselect("Obra(s)", obras, default=obras)
+        sel_obras = st.multiselect("Obra(s)", obras, default=[])
 
         df_temp_etapas = df_raw[df_raw['OBRA'].isin(sel_obras)]
-        etapas_disp = sorted(df_temp_etapas['ETAPA'].dropna().unique().tolist())
-        sel_etapas = st.multiselect("Etapa(s)", etapas_disp, default=etapas_disp)
+        etapas_ord = (
+            df_temp_etapas.dropna(subset=['ETAPA'])
+            .groupby('ETAPA')['ORDEM_ETAPA'].min()
+            .sort_values()
+            .index.tolist()
+        ) if 'ORDEM_ETAPA' in df_temp_etapas.columns else sorted(df_temp_etapas['ETAPA'].dropna().unique().tolist())
+        sel_etapas = st.multiselect("Etapa(s)", etapas_ord, default=etapas_ord)
 
         sel_tipos = st.multiselect("Tipo(s) de Custo", tipos_todos, default=tipos_todos)
     else:
@@ -505,46 +526,80 @@ with st.sidebar:
             key="selectbox_relatorio",
         )
 
-        tipo_rel = st.radio(
-            "Tipo de relatório",
-            ["Detalhado", "Simples"],
-            horizontal=True,
-            key="radio_tipo_relatorio",
-        )
+        if obra_rel == "Administrativo":
+            col_di, col_df = st.columns(2)
+            with col_di:
+                data_ini_adm = st.date_input("De", value=datetime.today().replace(day=1), key="adm_data_ini")
+            with col_df:
+                data_fim_adm = st.date_input("Até", value=datetime.today(), key="adm_data_fim")
 
-        # Preview de etapas que entrarão no relatório
-        df_preview = df_raw[df_raw['OBRA'] == obra_rel]
-        if tipo_rel == "Simples":
-            col_filtro = df_preview.groupby('ETAPA')['ORÇAMENTO_ESTIMADO'].sum()
-            etapas_preview = col_filtro[col_filtro > 0].index.tolist()
-            label_vazio = "⚠️ Nenhuma etapa com orçamento encontrada para esta obra."
-        else:
-            col_filtro = df_preview.groupby('ETAPA')['GASTO_REALIZADO'].sum()
-            etapas_preview = col_filtro[col_filtro > 0].index.tolist()
-            label_vazio = "⚠️ Nenhuma etapa com gasto realizado encontrada para esta obra."
-        if etapas_preview:
-            st.caption(f"✅ {len(etapas_preview)} etapa(s): {', '.join(etapas_preview)}")
-        else:
-            st.caption(label_vazio)
-
-        if st.button("📄 Gerar Relatório PDF", disabled=not etapas_preview):
-            with st.spinner("Gerando PDF…"):
-                from relatorio import gerar_relatorio_detalhado, gerar_relatorio_simples
-                if tipo_rel == "Detalhado":
-                    pdf_bytes = gerar_relatorio_detalhado(df_raw, obra_rel)
-                else:
-                    pdf_bytes = gerar_relatorio_simples(df_raw, obra_rel)
-                nome_arquivo = (
-                    f"relatorio_{tipo_rel.lower()}_{obra_rel.replace(' ', '_')}_"
-                    f"{datetime.now().strftime('%Y%m%d')}.pdf"
+            if st.button("📄 Gerar Relatório PDF"):
+                with st.spinner("Gerando PDF…"):
+                    from relatorio import gerar_relatorio_administrativo
+                    df_desp = load_despesas()
+                    df_desp_adm = df_desp[df_desp['OBRA'] == obra_rel].copy() if not df_desp.empty else pd.DataFrame()
+                    pdf_bytes = gerar_relatorio_administrativo(df_desp_adm, obra_rel, data_ini_adm, data_fim_adm)
+                    nome_arquivo = (
+                        f"relatorio_administrativo_{data_ini_adm.strftime('%Y%m%d')}"
+                        f"_{data_fim_adm.strftime('%Y%m%d')}.pdf"
+                    )
+                st.download_button(
+                    label="⬇️ Baixar PDF",
+                    data=pdf_bytes,
+                    file_name=nome_arquivo,
+                    mime="application/pdf",
+                    use_container_width=True,
                 )
-            st.download_button(
-                label="⬇️ Baixar PDF",
-                data=pdf_bytes,
-                file_name=nome_arquivo,
-                mime="application/pdf",
-                use_container_width=True,
+        else:
+            tipo_rel = st.radio(
+                "Tipo de relatório",
+                ["Detalhado", "Simples"],
+                horizontal=True,
+                key="radio_tipo_relatorio",
             )
+
+            # Preview de etapas que entrarão no relatório
+            df_preview = df_raw[df_raw['OBRA'] == obra_rel]
+            if tipo_rel == "Simples":
+                col_filtro = df_preview.groupby('ETAPA')['ORÇAMENTO_ESTIMADO'].sum()
+                etapas_preview = col_filtro[col_filtro > 0].index.tolist()
+                label_vazio = "⚠️ Nenhuma etapa com orçamento encontrada para esta obra."
+            else:
+                col_filtro = df_preview.groupby('ETAPA')['GASTO_REALIZADO'].sum()
+                etapas_preview = col_filtro[col_filtro > 0].index.tolist()
+                label_vazio = "⚠️ Nenhuma etapa com gasto realizado encontrada para esta obra."
+            if etapas_preview:
+                st.caption(f"✅ {len(etapas_preview)} etapa(s): {', '.join(etapas_preview)}")
+            else:
+                st.caption(label_vazio)
+
+            if st.button("📄 Gerar Relatório PDF", disabled=not etapas_preview):
+                with st.spinner("Gerando PDF…"):
+                    from relatorio import gerar_relatorio_detalhado, gerar_relatorio_simples
+                    df_desp = load_despesas()
+                    df_desp_semana = pd.DataFrame()
+                    if not df_desp.empty:
+                        hoje = pd.Timestamp.today().normalize()
+                        sete_dias = hoje - pd.Timedelta(days=7)
+                        df_desp_semana = df_desp[
+                            (df_desp['OBRA'] == obra_rel) &
+                            (df_desp['DATA'] >= sete_dias)
+                        ].copy()
+                    if tipo_rel == "Detalhado":
+                        pdf_bytes = gerar_relatorio_detalhado(df_raw, obra_rel, df_desp_semana)
+                    else:
+                        pdf_bytes = gerar_relatorio_simples(df_raw, obra_rel, df_desp_semana)
+                    nome_arquivo = (
+                        f"relatorio_{tipo_rel.lower()}_{obra_rel.replace(' ', '_')}_"
+                        f"{datetime.now().strftime('%Y%m%d')}.pdf"
+                    )
+                st.download_button(
+                    label="⬇️ Baixar PDF",
+                    data=pdf_bytes,
+                    file_name=nome_arquivo,
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
 
     st.markdown("---")
     st.markdown("""
@@ -556,6 +611,20 @@ with st.sidebar:
 # --- CONTEÚDO PRINCIPAL ---
 if df_raw.empty:
     st.warning("Nenhum dado encontrado no Supabase ou as credenciais estão incorretas.")
+elif not sel_obras:
+    col_title, col_btn = st.columns([5, 1])
+    with col_title:
+        st.markdown("""
+        <div class="main-header">
+            <h1>Financeiro Obras</h1>
+            <p>Selecione uma ou mais obras na barra lateral para visualizar os dados.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_btn:
+        st.markdown("<div style='padding-top:14px'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Atualizar"):
+            load_data.clear()
+            st.rerun()
 else:
     # Filtro global
     df_filtered = df_raw[
@@ -563,6 +632,7 @@ else:
         (df_raw['ETAPA'].isin(sel_etapas)) &
         (df_raw['TIPO_CUSTO'].isin(sel_tipos))
     ]
+    is_adm_only = len(sel_obras) == 1 and sel_obras[0] == "Administrativo"
 
     # ---- Header ----
     col_title, col_btn = st.columns([5, 1])
@@ -584,164 +654,109 @@ else:
 
     # ---- KPIs ----
     orcamento_total = df_filtered['ORÇAMENTO_ESTIMADO'].sum()
-    gasto_total = df_filtered['GASTO_REALIZADO'].sum()
-    saldo_total = orcamento_total - gasto_total
-    percentual_consumo = (gasto_total / orcamento_total * 100) if orcamento_total > 0 else 0
+    gasto_total     = df_filtered['GASTO_REALIZADO'].sum()
+    saldo_total     = orcamento_total - gasto_total
+    pct_consumo     = (gasto_total / orcamento_total * 100) if orcamento_total > 0 else 0
+    if 'TAXA_CONCLUSAO' in df_filtered.columns:
+        df_pct = df_filtered.groupby(['OBRA', 'ETAPA'])['TAXA_CONCLUSAO'].first().reset_index()
+        pct_realizacao = df_pct['TAXA_CONCLUSAO'].mean()
+    else:
+        pct_realizacao = 0.0
 
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    uma_obra_sel = len(sel_obras) == 1
 
-    with kpi1:
-        st.metric(label="💼 Orçamento Total Estimado", value=format_currency(orcamento_total))
-    with kpi2:
-        st.metric(label="💸 Custo Realizado", value=format_currency(gasto_total))
-    with kpi3:
-        delta_saldo = format_currency(abs(saldo_total))
-        delta_color = "normal" if saldo_total >= 0 else "inverse"
-        st.metric(
-            label="🏦 Saldo Financeiro",
-            value=format_currency(saldo_total),
-            delta=f"{'+ ' if saldo_total >= 0 else '- '}{delta_saldo}",
-            delta_color=delta_color
-        )
-    with kpi4:
-        st.metric(
-            label="📊 % de Consumo",
-            value=f"{percentual_consumo:.1f}%",
-            delta=f"{percentual_consumo - 100:.1f}% do orçamento" if percentual_consumo > 100 else None,
-            delta_color="inverse"
-        )
-        st.progress(min(percentual_consumo / 100, 1.0))
+    if is_adm_only:
+        kpi_l, kpi_adm, kpi_r = st.columns(3)
+        with kpi_adm:
+            st.metric(label="💸 Custo Realizado", value=format_currency(gasto_total))
+    else:
+        if uma_obra_sel:
+            kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+        else:
+            kpi1, kpi2, kpi3 = st.columns(3)
 
-    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-
-    # ---- Gráficos ----
-    col_chart1, col_chart2 = st.columns([2, 1], gap="medium")
-
-    with col_chart1:
-        st.markdown('<p class="section-header">Previsto vs. Realizado — Por Etapa</p>', unsafe_allow_html=True)
-        df_etapa = df_filtered.groupby('ETAPA')[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO']].sum().reset_index()
-
-        colors_realizado = [
-            '#EF4444' if row['GASTO_REALIZADO'] > row['ORÇAMENTO_ESTIMADO'] else '#10B981'
-            for _, row in df_etapa.iterrows()
-        ]
-
-        fig_bar = go.Figure()
-        fig_bar.add_trace(go.Bar(
-            x=df_etapa['ETAPA'], y=df_etapa['ORÇAMENTO_ESTIMADO'],
-            name='Orçamento Estimado',
-            marker=dict(color='#D1D5DB', line=dict(width=0)),
-            hovertemplate='<b>%{x}</b><br>Orçamento: R$ %{y:,.2f}<extra></extra>'
-        ))
-        fig_bar.add_trace(go.Bar(
-            x=df_etapa['ETAPA'], y=df_etapa['GASTO_REALIZADO'],
-            name='Gasto Realizado',
-            marker=dict(color=colors_realizado, line=dict(width=0)),
-            hovertemplate='<b>%{x}</b><br>Realizado: R$ %{y:,.2f}<extra></extra>'
-        ))
-        fig_bar.update_layout(
-            barmode='group',
-            bargap=0.25,
-            bargroupgap=0.05,
-            **CHART_LAYOUT
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-    with col_chart2:
-        st.markdown('<p class="section-header">Distribuição de Custos</p>', unsafe_allow_html=True)
-        df_rosca = df_filtered[df_filtered['GASTO_REALIZADO'] > 0].groupby('ETAPA')['GASTO_REALIZADO'].sum().reset_index()
-        fig_pie = px.pie(
-            df_rosca, values='GASTO_REALIZADO', names='ETAPA',
-            hole=0.65,
-            color_discrete_sequence=['#2563EB','#10B981','#8B5CF6','#F59E0B','#EF4444','#06B6D4','#EC4899']
-        )
-        fig_pie.update_traces(
-            textposition='outside',
-            textinfo='percent+label',
-            hovertemplate='<b>%{label}</b><br>R$ %{value:,.2f}<br>%{percent}<extra></extra>',
-            pull=[0.04] * len(df_rosca)
-        )
-        fig_pie.update_layout(
-            showlegend=False,
-            **{k: v for k, v in CHART_LAYOUT.items() if k not in ['xaxis', 'yaxis', 'legend']}
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
+        with kpi1:
+            st.metric(label="💼 Orçamento Total Estimado", value=format_currency(orcamento_total))
+        with kpi2:
+            st.metric(label="💸 Custo Realizado", value=format_currency(gasto_total))
+        with kpi3:
+            delta_color = "normal" if saldo_total >= 0 else "inverse"
+            st.metric(
+                label="🏦 Saldo Financeiro",
+                value=format_currency(saldo_total),
+                delta=f"{'+ ' if saldo_total >= 0 else '- '}{format_currency(abs(saldo_total))}",
+                delta_color=delta_color
+            )
+        if uma_obra_sel:
+            with kpi4:
+                st.metric(
+                    label="📊 % de Consumo",
+                    value=f"{pct_consumo:.1f}%",
+                    delta=f"{pct_consumo - 100:.1f}% do orçamento" if pct_consumo > 100 else None,
+                    delta_color="inverse"
+                )
+                st.progress(min(pct_consumo / 100, 1.0))
+            with kpi5:
+                st.metric(label="🏗️ % de Realização", value=f"{pct_realizacao:.1f}%")
+                st.progress(min(pct_realizacao / 100, 1.0))
 
     st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
 
-    # ---- Gráfico de Ranking Full Width ----
-    st.markdown('<p class="section-header">Comparativo — Orçamento · Gasto · Saldo</p>', unsafe_allow_html=True)
-
-    label_key = 'ETAPA' if len(sel_obras) == 1 else 'OBRA'
-    df_ranking = df_filtered.groupby(label_key)[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']].sum().reset_index()
-    df_ranking = df_ranking.sort_values(by='ORÇAMENTO_ESTIMADO', ascending=True)
-
-    colors_saldo = ['#EF4444' if val < 0 else '#10B981' for val in df_ranking['SALDO_ETAPA']]
-
-    fig_rank = go.Figure()
-    fig_rank.add_trace(go.Bar(
-        y=df_ranking[label_key], x=df_ranking['ORÇAMENTO_ESTIMADO'],
-        name='Orçamento Estimado', orientation='h',
-        marker=dict(color='#D1D5DB', line=dict(width=0)),
-        hovertemplate='<b>%{y}</b><br>Orçamento: R$ %{x:,.2f}<extra></extra>'
-    ))
-    fig_rank.add_trace(go.Bar(
-        y=df_ranking[label_key], x=df_ranking['GASTO_REALIZADO'],
-        name='Gasto Realizado', orientation='h',
-        marker=dict(color='#8B5CF6', line=dict(width=0)),
-        hovertemplate='<b>%{y}</b><br>Realizado: R$ %{x:,.2f}<extra></extra>'
-    ))
-    fig_rank.add_trace(go.Bar(
-        y=df_ranking[label_key], x=df_ranking['SALDO_ETAPA'],
-        name='Saldo', orientation='h',
-        marker=dict(color=colors_saldo, line=dict(width=0)),
-        hovertemplate='<b>%{y}</b><br>Saldo: R$ %{x:,.2f}<extra></extra>'
-    ))
-    fig_rank.update_layout(
-        barmode='group',
-        height=max(350, len(df_ranking) * 70),
-        bargap=0.2,
-        bargroupgap=0.05,
-        **CHART_LAYOUT
-    )
-    st.plotly_chart(fig_rank, use_container_width=True)
-
-    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-
-    # ---- Detalhamento por Obra (Acordeão) ----
+    # ---- Detalhamento Financeiro por Obra ----
     st.markdown('<p class="section-header">Detalhamento Financeiro por Obra</p>', unsafe_allow_html=True)
 
-    # Agrupamento por obra + etapa
-    df_detail = df_filtered.groupby(['OBRA', 'ETAPA']).agg({
-        'ORÇAMENTO_ESTIMADO': 'sum',
-        'GASTO_REALIZADO': 'sum',
-        'SALDO_ETAPA': 'sum'
-    }).reset_index()
+    obras_visiveis = sorted(df_filtered['OBRA'].dropna().unique().tolist())
+    uma_obra       = len(obras_visiveis) == 1
 
-    # Resumo por obra (para o cabeçalho do expander)
-    df_obra_summary = df_detail.groupby('OBRA').agg({
-        'ORÇAMENTO_ESTIMADO': 'sum',
-        'GASTO_REALIZADO': 'sum',
-        'SALDO_ETAPA': 'sum'
-    }).reset_index()
+    def _render_detalhe_obra(nome_obra):
+        tipos_obra = sorted(df_raw[df_raw['OBRA'] == nome_obra]['TIPO_CUSTO'].dropna().unique().tolist())
+        sel_tipos_det = st.multiselect(
+            "Tipo(s) de Custo",
+            tipos_obra,
+            default=tipos_obra,
+            key=f"tipo_det_{nome_obra}"
+        )
 
-    for _, obra_row in df_obra_summary.iterrows():
-        nome_obra = obra_row['OBRA']
-        orc_obra  = obra_row['ORÇAMENTO_ESTIMADO']
-        gasto_obra = obra_row['GASTO_REALIZADO']
-        saldo_obra = obra_row['SALDO_ETAPA']
-        pct_obra = (gasto_obra / orc_obra * 100) if orc_obra > 0 else 0
-        pct_capped = min(pct_obra / 100, 1.0)
+        df_obra_det = df_filtered[
+            (df_filtered['OBRA'] == nome_obra) &
+            (df_filtered['TIPO_CUSTO'].isin(sel_tipos_det))
+        ]
 
-        saldo_class = 'green' if saldo_obra >= 0 else 'red'
-        pct_class = 'over' if pct_obra > 100 else ''
-        pct_bar_color = '#EF4444' if pct_obra > 100 else '#2563EB'
-        pct_width = int(pct_capped * 100)
+        gasto_obra = df_obra_det['GASTO_REALIZADO'].sum()
 
-        expander_label = f"🏗️  {nome_obra}"
+        if is_adm_only or nome_obra == "Administrativo":
+            # Centro de custos: exibe apenas total realizado
+            st.markdown(f"""
+            <div class="obra-summary" style="margin-bottom:16px; padding:12px 4px; border-bottom:1px solid rgba(0,0,0,0.06);">
+                <div class="obra-badge">
+                    <span class="obra-badge-label">Custo Realizado</span>
+                    <span class="obra-badge-value">{format_currency(gasto_obra)}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        with st.expander(expander_label, expanded=False):
-            # Linha de resumo da obra
+            agg_cols = {'GASTO_REALIZADO': 'sum'}
+            if 'ORDEM_ETAPA' in df_obra_det.columns:
+                agg_cols['ORDEM_ETAPA'] = 'min'
+            df_tab = df_obra_det.groupby('ETAPA').agg(agg_cols).reset_index().copy()
+            if 'ORDEM_ETAPA' in df_tab.columns:
+                df_tab = df_tab.sort_values('ORDEM_ETAPA').drop(columns=['ORDEM_ETAPA'])
+            df_tab['GASTO_REALIZADO'] = df_tab['GASTO_REALIZADO'].apply(format_currency)
+            df_tab.rename(columns={'ETAPA': 'Etapa', 'GASTO_REALIZADO': 'Custo Realizado'}, inplace=True)
+            col_config = {
+                "Etapa":          st.column_config.TextColumn("Etapa",          width="large"),
+                "Custo Realizado":st.column_config.TextColumn("Custo Realizado",width="medium"),
+            }
+            st.dataframe(df_tab, use_container_width=True, hide_index=True, column_config=col_config)
+        else:
+            # Obras normais
+            orc_obra   = df_obra_det['ORÇAMENTO_ESTIMADO'].sum()
+            saldo_obra = orc_obra - gasto_obra
+            pct_obra   = (gasto_obra / orc_obra * 100) if orc_obra > 0 else 0
+            pct_width  = int(min(pct_obra / 100, 1.0) * 100)
+            saldo_class = 'green' if saldo_obra >= 0 else 'red'
+            pct_class   = 'over' if pct_obra > 100 else ''
+
             st.markdown(f"""
             <div class="obra-summary" style="margin-bottom:16px; padding:12px 4px; border-bottom:1px solid rgba(0,0,0,0.06);">
                 <div class="obra-badge">
@@ -771,32 +786,86 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-            # Tabela de etapas da obra
-            df_etapas_obra = df_detail[df_detail['OBRA'] == nome_obra].copy()
-            df_etapas_obra['% Consumido'] = df_etapas_obra.apply(
-                lambda r: f"{(r['GASTO_REALIZADO'] / r['ORÇAMENTO_ESTIMADO'] * 100):.1f}%" if r['ORÇAMENTO_ESTIMADO'] > 0 else "0.0%",
-                axis=1
-            )
-            df_etapas_obra = df_etapas_obra.drop(columns=['OBRA'])
-            for col in ['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']:
-                df_etapas_obra[col] = df_etapas_obra[col].apply(format_currency)
+            agg_cols = {'ORÇAMENTO_ESTIMADO': 'sum', 'GASTO_REALIZADO': 'sum', 'SALDO_ETAPA': 'sum'}
+            if 'ORDEM_ETAPA' in df_obra_det.columns:
+                agg_cols['ORDEM_ETAPA'] = 'min'
+            if 'TAXA_CONCLUSAO' in df_obra_det.columns:
+                agg_cols['TAXA_CONCLUSAO'] = 'first'
+            df_tab = df_obra_det.groupby('ETAPA').agg(agg_cols).reset_index().copy()
+            if 'ORDEM_ETAPA' in df_tab.columns:
+                df_tab = df_tab.sort_values('ORDEM_ETAPA').drop(columns=['ORDEM_ETAPA'])
 
-            df_etapas_obra.rename(columns={
+            df_tab['% Consumido'] = df_tab.apply(
+                lambda r: f"{(r['GASTO_REALIZADO'] / r['ORÇAMENTO_ESTIMADO'] * 100):.1f}%"
+                if r['ORÇAMENTO_ESTIMADO'] > 0 else "0.0%", axis=1
+            )
+            if 'TAXA_CONCLUSAO' in df_tab.columns:
+                df_tab['% Realização'] = df_tab['TAXA_CONCLUSAO'].apply(lambda v: f"{v:.1f}%")
+                df_tab.drop(columns=['TAXA_CONCLUSAO'], inplace=True)
+            for col in ['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']:
+                df_tab[col] = df_tab[col].apply(format_currency)
+            df_tab.rename(columns={
                 'ETAPA': 'Etapa',
                 'ORÇAMENTO_ESTIMADO': 'Orçamento Estimado',
                 'GASTO_REALIZADO': 'Gasto Realizado',
                 'SALDO_ETAPA': 'Saldo'
             }, inplace=True)
 
-            st.dataframe(
-                df_etapas_obra,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Etapa": st.column_config.TextColumn("Etapa", width="large"),
-                    "Orçamento Estimado": st.column_config.TextColumn("Orçamento", width="medium"),
-                    "Gasto Realizado": st.column_config.TextColumn("Realizado", width="medium"),
-                    "Saldo": st.column_config.TextColumn("Saldo", width="medium"),
-                    "% Consumido": st.column_config.TextColumn("% Consumido", width="small"),
-                }
-            )
+            col_config = {
+                "Etapa":             st.column_config.TextColumn("Etapa",       width="large"),
+                "Orçamento Estimado":st.column_config.TextColumn("Orçamento",   width="medium"),
+                "Gasto Realizado":   st.column_config.TextColumn("Realizado",   width="medium"),
+                "Saldo":             st.column_config.TextColumn("Saldo",       width="medium"),
+                "% Consumido":       st.column_config.TextColumn("% Consumido", width="small"),
+                "% Realização":      st.column_config.TextColumn("% Realização",width="small"),
+            }
+            st.dataframe(df_tab, use_container_width=True, hide_index=True, column_config=col_config)
+
+    if uma_obra:
+        _render_detalhe_obra(obras_visiveis[0])
+    else:
+        for nome_obra in obras_visiveis:
+            with st.expander(f"🏗️  {nome_obra}", expanded=False):
+                _render_detalhe_obra(nome_obra)
+
+    if not is_adm_only:
+        st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+
+    # ---- Gráfico Comparativo Full Width ----
+    if not is_adm_only:
+        st.markdown('<p class="section-header">Comparativo — Orçamento · Gasto · Saldo</p>', unsafe_allow_html=True)
+
+    if not is_adm_only:
+        label_key = 'ETAPA' if len(sel_obras) == 1 else 'OBRA'
+        df_ranking = df_filtered.groupby(label_key)[['ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']].sum().reset_index()
+        df_ranking = df_ranking.sort_values(by='ORÇAMENTO_ESTIMADO', ascending=True)
+
+        colors_saldo = ['#EF4444' if val < 0 else '#10B981' for val in df_ranking['SALDO_ETAPA']]
+
+        fig_rank = go.Figure()
+        fig_rank.add_trace(go.Bar(
+            y=df_ranking[label_key], x=df_ranking['ORÇAMENTO_ESTIMADO'],
+            name='Orçamento Estimado', orientation='h',
+            marker=dict(color='#D1D5DB', line=dict(width=0)),
+            hovertemplate='<b>%{y}</b><br>Orçamento: R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_rank.add_trace(go.Bar(
+            y=df_ranking[label_key], x=df_ranking['GASTO_REALIZADO'],
+            name='Gasto Realizado', orientation='h',
+            marker=dict(color='#8B5CF6', line=dict(width=0)),
+            hovertemplate='<b>%{y}</b><br>Realizado: R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_rank.add_trace(go.Bar(
+            y=df_ranking[label_key], x=df_ranking['SALDO_ETAPA'],
+            name='Saldo', orientation='h',
+            marker=dict(color=colors_saldo, line=dict(width=0)),
+            hovertemplate='<b>%{y}</b><br>Saldo: R$ %{x:,.2f}<extra></extra>'
+        ))
+        fig_rank.update_layout(
+            barmode='group',
+            height=max(350, len(df_ranking) * 70),
+            bargap=0.2,
+            bargroupgap=0.05,
+            **CHART_LAYOUT
+        )
+        st.plotly_chart(fig_rank, use_container_width=True)

@@ -41,6 +41,11 @@ OBRAS_METADATA = {
         'contrato':  '0252/2025',
         'art':       'BA20240905989',
     },
+    'Administrativo': {
+        'descricao': 'Centro de custos administrativos',
+        'contrato':  '—',
+        'art':       '—',
+    },
     # Adicione outras obras aqui conforme necessário
 }
 
@@ -368,11 +373,78 @@ def _tabela_dados_complementares(df_etapa, estilos, largura):
     return t
 
 
+def _tabela_despesas_semana(df_desp: pd.DataFrame, estilos, largura, mostrar_etapa: bool = False) -> Table:
+    """Tabela de despesas dos últimos 7 dias."""
+    col_widths = (
+        [largura * 0.09, largura * 0.18, largura * 0.12, largura * 0.18, largura * 0.31, largura * 0.12]
+        if mostrar_etapa else
+        [largura * 0.09, largura * 0.14, largura * 0.20, largura * 0.43, largura * 0.14]
+    )
+
+    if mostrar_etapa:
+        header = ['Data', 'Etapa', 'Tipo', 'Fornecedor', 'Descrição', 'Valor']
+    else:
+        header = ['Data', 'Tipo', 'Fornecedor', 'Descrição', 'Valor']
+
+    rows = [[Paragraph(h, estilos['tab_header']) for h in header]]
+    total = 0.0
+
+    for _, r in df_desp.sort_values('DATA').iterrows():
+        data_str = pd.to_datetime(r['DATA']).strftime('%d/%m/%Y') if pd.notna(r.get('DATA')) else ''
+        forn     = str(r.get('FORNECEDOR', '') or '')
+        desc     = str(r.get('DESCRICAO',  '') or '')
+        tipo     = str(r.get('TIPO',       '') or '')
+        etapa    = str(r.get('ETAPA',      '') or '')
+        valor    = float(r.get('VALOR_TOTAL', 0) or 0)
+        total   += valor
+
+        if mostrar_etapa:
+            row = [
+                Paragraph(data_str, estilos['tab_valor']),
+                Paragraph(etapa,    estilos['tab_label']),
+                Paragraph(tipo,     estilos['tab_label']),
+                Paragraph(forn,     estilos['tab_label']),
+                Paragraph(desc,     estilos['tab_label']),
+                Paragraph(_fmt(valor), estilos['tab_valor']),
+            ]
+        else:
+            row = [
+                Paragraph(data_str, estilos['tab_valor']),
+                Paragraph(tipo,     estilos['tab_label']),
+                Paragraph(forn,     estilos['tab_label']),
+                Paragraph(desc,     estilos['tab_label']),
+                Paragraph(_fmt(valor), estilos['tab_valor']),
+            ]
+        rows.append(row)
+
+    # Linha de total
+    empty = [Paragraph('', estilos['tab_valor'])] * (len(header) - 2)
+    rows.append(empty + [Paragraph('Total', estilos['tab_header']),
+                          Paragraph(_fmt(total), estilos['tab_header'])])
+
+    style_cmds = [
+        ('BACKGROUND',    (0, 0),  (-1, 0),  C_AZUL),
+        ('TEXTCOLOR',     (0, 0),  (-1, 0),  C_BRANCO),
+        ('BACKGROUND',    (0, -1), (-1, -1), C_CINZA_CLA),
+        ('LINEBELOW',     (0, 0),  (-1, 0),  0.5, C_CINZA_CLA),
+        ('GRID',          (0, 0),  (-1, -1), 0.3, C_CINZA_CLA),
+        ('VALIGN',        (0, 0),  (-1, -1), 'MIDDLE'),
+        ('TOPPADDING',    (0, 0),  (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0),  (-1, -1), 6),
+        ('LEFTPADDING',   (0, 0),  (-1, -1), 8),
+        ('RIGHTPADDING',  (0, 0),  (-1, -1), 8),
+        ('ROWBACKGROUNDS',(0, 1),  (-1, -2), [C_BRANCO, C_FUNDO]),
+    ]
+    t = Table(rows, colWidths=col_widths)
+    t.setStyle(TableStyle(style_cmds))
+    return t
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # RELATÓRIO DETALHADO — uma página por etapa
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str) -> bytes:
+def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str, df_despesas_semana: pd.DataFrame = None) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=landscape(A4),
@@ -383,18 +455,26 @@ def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str) -> bytes:
     estilos = _estilos()
     story   = []
 
-    df_obra          = df_raw[df_raw['OBRA'] == obra_nome].copy()
+    df_obra = df_raw[df_raw['OBRA'] == obra_nome].copy()
     gastos_por_etapa = df_obra.groupby('ETAPA')['GASTO_REALIZADO'].sum()
-    etapas_ativas    = gastos_por_etapa[gastos_por_etapa > 0].index.tolist()
+    etapas_com_gasto = gastos_por_etapa[gastos_por_etapa > 0].index
+
+    # Ordena pela planilha se ORDEM_ETAPA disponível
+    if 'ORDEM_ETAPA' in df_obra.columns:
+        ordem = df_obra.groupby('ETAPA')['ORDEM_ETAPA'].min().sort_values()
+        etapas_ativas = [e for e in ordem.index if e in etapas_com_gasto]
+    else:
+        etapas_ativas = etapas_com_gasto.tolist()
 
     for idx, etapa_nome in enumerate(etapas_ativas):
         df_etapa = df_obra[df_obra['ETAPA'] == etapa_nome]
+        is_adm_local = etapa_nome.strip().upper() == 'ADM LOCAL'
 
         orc   = float(df_etapa['ORÇAMENTO_ESTIMADO'].sum())
         gasto = float(df_etapa['GASTO_REALIZADO'].sum())
         saldo = orc - gasto
         pct_consumo    = (gasto / orc * 100) if orc > 0 else 0.0
-        pct_realizacao = 0.0  # campo futuro no Supabase
+        pct_realizacao = float(df_etapa['TAXA_CONCLUSAO'].iloc[0]) if 'TAXA_CONCLUSAO' in df_etapa.columns and not df_etapa.empty else 0.0
 
         story.append(_timbrado(obra_nome, etapa_nome, "Relatório Detalhado", estilos, LARGURA_UTIL))
         story.append(_linha_separadora(LARGURA_UTIL))
@@ -403,12 +483,21 @@ def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str) -> bytes:
         story.append(_tabela_kpis_principais(orc, gasto, saldo, estilos, LARGURA_UTIL))
         story.append(Spacer(1, 0.3 * cm))
 
-        story.append(_tabela_percentuais(pct_consumo, pct_realizacao, estilos, LARGURA_UTIL))
-        story.append(Spacer(1, 0.3 * cm))
+        if not is_adm_local:
+            story.append(_tabela_percentuais(pct_consumo, pct_realizacao, estilos, LARGURA_UTIL))
+            story.append(Spacer(1, 0.3 * cm))
 
-        story.append(Paragraph("Dados complementares", estilos['secao_titulo']))
-        story.append(Spacer(1, 0.15 * cm))
-        story.append(_tabela_dados_complementares(df_etapa, estilos, LARGURA_UTIL))
+            story.append(Paragraph("Dados complementares", estilos['secao_titulo']))
+            story.append(Spacer(1, 0.15 * cm))
+            story.append(_tabela_dados_complementares(df_etapa, estilos, LARGURA_UTIL))
+
+        if df_despesas_semana is not None and not df_despesas_semana.empty:
+            df_etapa_desp = df_despesas_semana[df_despesas_semana['ETAPA'] == etapa_nome]
+            if not df_etapa_desp.empty:
+                story.append(Spacer(1, 0.3 * cm))
+                story.append(Paragraph("Despesas da última semana", estilos['secao_titulo']))
+                story.append(Spacer(1, 0.15 * cm))
+                story.append(_tabela_despesas_semana(df_etapa_desp, estilos, LARGURA_UTIL, mostrar_etapa=False))
 
         if idx < len(etapas_ativas) - 1:
             story.append(PageBreak())
@@ -422,7 +511,7 @@ def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str) -> bytes:
 # RELATÓRIO SIMPLES — todas as etapas em uma única página
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str) -> bytes:
+def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str, df_despesas_semana: pd.DataFrame = None) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=landscape(A4),
@@ -433,9 +522,15 @@ def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str) -> bytes:
     estilos = _estilos()
     story   = []
 
-    df_obra           = df_raw[df_raw['OBRA'] == obra_nome].copy()
-    orcamentos_etapa  = df_obra.groupby('ETAPA')['ORÇAMENTO_ESTIMADO'].sum()
-    etapas_ativas     = orcamentos_etapa[orcamentos_etapa > 0].index.tolist()
+    df_obra = df_raw[df_raw['OBRA'] == obra_nome].copy()
+    orcamentos_etapa = df_obra.groupby('ETAPA')['ORÇAMENTO_ESTIMADO'].sum()
+    etapas_com_orc   = orcamentos_etapa[orcamentos_etapa > 0].index
+
+    if 'ORDEM_ETAPA' in df_obra.columns:
+        ordem = df_obra.groupby('ETAPA')['ORDEM_ETAPA'].min().sort_values()
+        etapas_ativas = [e for e in ordem.index if e in etapas_com_orc]
+    else:
+        etapas_ativas = etapas_com_orc.tolist()
 
     # ── Timbrado ─────────────────────────────────────────────────────────────
     story.append(_timbrado_simples(obra_nome, LARGURA_UTIL))
@@ -466,6 +561,7 @@ def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str) -> bytes:
 
     for i, etapa_nome in enumerate(etapas_ativas):
         df_etapa = df_obra[df_obra['ETAPA'] == etapa_nome]
+        is_adm_local = etapa_nome.strip().upper() == 'ADM LOCAL'
 
         orc   = float(df_etapa['ORÇAMENTO_ESTIMADO'].sum())
         gasto = float(df_etapa['GASTO_REALIZADO'].sum())
@@ -483,18 +579,97 @@ def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str) -> bytes:
         else:
             style_cmds.append(('TEXTCOLOR', (3, row_idx), (3, row_idx), C_VERDE))
 
+        pct_real_str = "—" if is_adm_local else f"{pct_realizacao:.1f}%"
         rows.append([
             Paragraph(etapa_nome,                    estilos['simples_etapa']),
             Paragraph(_fmt(orc),                     estilos['simples_valor']),
             Paragraph(_fmt(gasto),                   estilos['simples_valor']),
             Paragraph(_fmt(saldo),                   est_saldo),
             Paragraph(f"{pct_consumo:.1f}%",         est_consumo),
-            Paragraph(f"{pct_realizacao:.1f}%",      estilos['simples_valor']),
+            Paragraph(pct_real_str,                  estilos['simples_valor']),
         ])
 
     tabela = Table(rows, colWidths=col_widths)
     tabela.setStyle(TableStyle(style_cmds))
     story.append(tabela)
+
+    if df_despesas_semana is not None and not df_despesas_semana.empty:
+        story.append(Spacer(1, 0.5 * cm))
+        story.append(Paragraph("Despesas da última semana", estilos['secao_titulo']))
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(_tabela_despesas_semana(df_despesas_semana, estilos, LARGURA_UTIL, mostrar_etapa=True))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RELATÓRIO ADMINISTRATIVO — centro de custos com filtro de período
+# ─────────────────────────────────────────────────────────────────────────────
+
+def gerar_relatorio_administrativo(df_despesas: pd.DataFrame, obra_nome: str, data_inicio, data_fim) -> bytes:
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4),
+        rightMargin=MARGEM, leftMargin=MARGEM,
+        topMargin=MARGEM, bottomMargin=MARGEM,
+    )
+
+    estilos = _estilos()
+    story   = []
+
+    # Filtra pelo período
+    df = df_despesas.copy()
+    if not df.empty:
+        df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce')
+        ini = pd.Timestamp(data_inicio)
+        fim = pd.Timestamp(data_fim)
+        df  = df[(df['DATA'] >= ini) & (df['DATA'] <= fim)]
+
+    # Timbrado
+    story.append(_timbrado_simples(obra_nome, LARGURA_UTIL))
+    story.append(_linha_separadora(LARGURA_UTIL))
+    story.append(Spacer(1, 0.4 * cm))
+
+    # Subtítulo de período
+    st_periodo = ParagraphStyle(
+        'Periodo', fontSize=9, textColor=C_CINZA_MED,
+        fontName='Helvetica', alignment=TA_CENTER,
+    )
+    story.append(Paragraph(
+        f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}",
+        st_periodo,
+    ))
+    story.append(Spacer(1, 0.35 * cm))
+
+    # KPI: custo total do período
+    total = float(df['VALOR_TOTAL'].sum()) if not df.empty else 0.0
+    col_w = LARGURA_UTIL / 3
+    kpi_data = [
+        [Paragraph("CUSTO TOTAL DO PERÍODO", estilos['kpi_label_c'])],
+        [Paragraph(_fmt(total), estilos['kpi_valor_c'])],
+    ]
+    kpi_table = Table(kpi_data, colWidths=[col_w])
+    kpi_table.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), C_FUNDO),
+        ('BOX',           (0, 0), (-1, -1), 0.5, C_CINZA_CLA),
+        ('TOPPADDING',    (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 8),
+        ('ROWBACKGROUNDS',(0, 0), (-1, -1), [C_FUNDO, C_BRANCO]),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 0.4 * cm))
+
+    # Tabela de despesas do período
+    if not df.empty:
+        story.append(Paragraph("Despesas do período", estilos['secao_titulo']))
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(_tabela_despesas_semana(df, estilos, LARGURA_UTIL, mostrar_etapa=True))
+    else:
+        story.append(Paragraph("Nenhuma despesa encontrada para o período selecionado.", estilos['secao_titulo']))
 
     doc.build(story)
     buffer.seek(0)
