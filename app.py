@@ -54,6 +54,12 @@ def processar_planilha():
 
     print("Processando despesas...")
     df_despesas = pd.read_excel(caminho_planilha, sheet_name="C Despesas")
+    df_despesas.columns = df_despesas.columns.str.strip()
+    col_valor = next((c for c in df_despesas.columns if 'valor' in c.lower() and 'total' in c.lower()), None)
+    if col_valor is None:
+        raise KeyError(f"Coluna 'VALOR TOTAL' nao encontrada. Colunas disponiveis: {list(df_despesas.columns)}")
+    if col_valor != 'VALOR TOTAL':
+        df_despesas.rename(columns={col_valor: 'VALOR TOTAL'}, inplace=True)
     df_despesas['VALOR TOTAL'] = pd.to_numeric(df_despesas['VALOR TOTAL'], errors='coerce').fillna(0)
 
     colunas_tipo = [c for c in df_despesas.columns if 'tipo' in str(c).lower()]
@@ -141,6 +147,11 @@ def processar_planilha():
                     'FORNECEDOR': 'FORNECEDOR', 'VALOR TOTAL': 'VALOR_TOTAL', 'DATA': 'DATA'}
     if col_desc:
         desp_col_map[col_desc] = 'DESCRICAO'
+    # Colunas adicionadas no sistema novo (podem não existir em planilhas antigas)
+    for col_excel, col_supabase in [('DESPESA', 'DESPESA'), ('BANCO', 'BANCO'),
+                                     ('FORMA', 'FORMA'), ('TEM_NOTA_FISCAL', 'TEM_NOTA_FISCAL')]:
+        if col_excel in df_despesas.columns:
+            desp_col_map[col_excel] = col_supabase
 
     df_desp_upload = df_despesas[list(desp_col_map.keys())].rename(columns=desp_col_map).copy()
     df_desp_upload['DATA'] = pd.to_datetime(df_desp_upload['DATA'], errors='coerce')

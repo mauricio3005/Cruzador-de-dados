@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 import os
 import base64
 import json
+import subprocess
+import sys
 from datetime import datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -416,18 +418,38 @@ def _extrair_com_ia(file_bytes: bytes, media_type: str) -> dict:
 
     client = OpenAI(api_key=api_key)
 
+    _opcoes_despesa = (
+        "AREIA COLCHÃO, BLOCO INTERTRAVADO, CALCETEIRO, ESTACAS, MEIO-FIO, PARALELEPÍPEDO, "
+        "PEDRA CORTADA, PÓ DE PEDRA, SOLO-BRITA, AÇO / VERGALHÃO, ADITIVOS, AREIA LAVADA, "
+        "ARGAMASSA, BLOCO CERÂMICO, BLOCO DE CIMENTO, BRITA GRAVILHÃO, CIMENTO, COMBOGÓ, "
+        "FERRO, MADERITE, PREGO, TÁBUA, BLOCO CALHA, MADEIRA P/ TELHADO, TELHA CERÂMICA, "
+        "TELHA FIBROCIMENTO, BOMBA, CABOS, CAIXA D'ÁGUA, DISJUNTORES, ELETRODUTO E CONEXÕES, "
+        "EMPREITEIRO ELETRICISTA, EMPREITEIRO ENCANADOR, TUBO ÁGUA E CONEXÕES, "
+        "TUBO ESGOTO E CONEXÕES, ESQUADRIA DE FERRO, ESQUADRIA DE MADEIRA, GESSO ACARTONADO, "
+        "LOUÇAS, LUMINÁRIAS, SOLDA, COMPRA EQUIPAMENTOS, DIVERSOS, EMPREITEIRO, ENTULHO, "
+        "EQUIPAMENTOS URBANOS, FARDAS E EPIS, LOCAÇÃO EQUIPAMENTOS, MADEIRA LOCAÇÃO OBRA, "
+        "MADEIRA TRATADA, PAISAGISMO, PROJETOS, ÁGUA, ALUGUEL, CONDOMÍNIO, CONTABILIDADE, "
+        "ENERGIA, IMPRESSÃO / GRÁFICA, INTERNET / TI, MANUTENÇÃO, MATERIAL PARA ESCRITÓRIO, "
+        "TELEFONIA FIXA, TELEFONIA MÓVEL, ALIMENTAÇÃO, COMBUSTÍVEL, DIÁRIA, "
+        "FERRYBOAT / BALSA, HOSPEDAGEM, PEDÁGIO, SALÁRIO PESSOAL, TRANSPORTE, "
+        "IMPOSTOS, JUROS, RECEITA, REPOSIÇÃO DE CAIXA"
+    )
     prompt_instrucao = (
-        "Analise esta nota fiscal ou comprovante de pagamento e extraia as "
-        "informações abaixo. Retorne SOMENTE um JSON válido, sem texto adicional.\n\n"
+        "Analise o documento anexado — pode ser uma nota fiscal ou um comprovante de pagamento.\n\n"
+        "REGRA IMPORTANTE: Se o documento for um comprovante de pagamento (ex: comprovante PIX, "
+        "recibo, transferência bancária), preencha APENAS os campos VALOR_TOTAL, DATA e FORMA. "
+        "Deixe os demais campos como null, pois comprovantes não contêm essas informações.\n\n"
+        "Se for uma nota fiscal completa, extraia todos os campos possíveis.\n\n"
+        "Retorne SOMENTE um JSON válido, sem texto adicional:\n\n"
         "{\n"
-        '  "FORNECEDOR": "nome do fornecedor ou empresa emissora",\n'
-        '  "VALOR_TOTAL": <número float, ex: 310.50>,\n'
+        '  "FORNECEDOR": "nome do fornecedor ou empresa emissora (null se comprovante)",\n'
+        '  "VALOR_TOTAL": <número float obrigatório, ex: 310.50>,\n'
         '  "DATA": "YYYY-MM-DD",\n'
-        '  "DESCRICAO": "descrição resumida do serviço ou material adquirido",\n'
-        '  "TIPO": "Mão de Obra" ou "Materiais" ou "Geral",\n'
-        '  "FORMA": "PIX" ou "Boleto" ou "Cartão" ou "Dinheiro" ou "Transferência" ou ""\n'
-        "}\n\n"
-        "Use null para campos que não consiga identificar com clareza."
+        '  "DESCRICAO": "descrição do serviço ou material (null se comprovante)",\n'
+        '  "TIPO": "Mão de Obra" ou "Materiais" ou "Geral" (null se comprovante),\n'
+        '  "FORMA": "PIX" ou "Boleto" ou "Cartão" ou "Dinheiro" ou "Transferência" ou "",\n'
+        f'  "DESPESA": escolha da lista [{_opcoes_despesa}] ou null\n'
+        "}"
     )
 
     if media_type == "application/pdf":
@@ -654,6 +676,44 @@ with st.sidebar:
                     mime="application/pdf",
                     use_container_width=True,
                 )
+
+    st.markdown("---")
+    st.markdown("**SINCRONIZAÇÃO**")
+
+    _dir = os.path.dirname(os.path.abspath(__file__))
+
+    def _rodar_script(nome_arquivo: str) -> tuple[bool, str]:
+        """Executa um script Python e retorna (sucesso, saída)."""
+        resultado = subprocess.run(
+            [sys.executable, os.path.join(_dir, nome_arquivo)],
+            capture_output=True,
+            text=True,
+            cwd=_dir,
+        )
+        saida = (resultado.stdout + resultado.stderr).strip()
+        return resultado.returncode == 0, saida
+
+    with st.expander("ℹ️ Ordem recomendada", expanded=False):
+        st.caption("1. Supabase → Excel  \n2. Excel → Supabase")
+
+    if st.button("🔄 Supabase → Excel", use_container_width=True, help="Traz despesas do Supabase para a planilha (sync_to_excel.py)"):
+        with st.spinner("Sincronizando Supabase → Excel..."):
+            ok, saida = _rodar_script("sync_to_excel.py")
+        if ok:
+            st.success("Concluído!")
+        else:
+            st.error("Erro na sincronização.")
+        st.code(saida, language=None)
+
+    if st.button("📤 Excel → Supabase", use_container_width=True, help="Envia a planilha para o Supabase (app.py)"):
+        with st.spinner("Sincronizando Excel → Supabase..."):
+            ok, saida = _rodar_script("app.py")
+        if ok:
+            load_data.clear()
+            st.success("Concluído! Cache atualizado.")
+        else:
+            st.error("Erro na sincronização.")
+        st.code(saida, language=None)
 
     st.markdown("---")
     st.markdown("""
@@ -927,7 +987,9 @@ with tab_dash:
             )
             st.plotly_chart(fig_rank, use_container_width=True)
 
-with tab_desp:
+
+@st.fragment
+def _render_despesas(df_raw):
     st.markdown("""
     <div class="main-header">
         <h1>Cadastro de Despesas</h1>
@@ -953,27 +1015,27 @@ with tab_desp:
         etapas_obra_form = sorted(df_raw[df_raw['OBRA'] == obra_form]['ETAPA'].dropna().unique().tolist())
 
         # ── Nota fiscal + extração IA (fora do form para permitir botão) ──────
-        comprovante_form = None
-        if tem_nota:
-            upload_key = f"cad_comprovante_{st.session_state.get('cad_upload_key', 0)}"
-            col_file, col_ia = st.columns([3, 1])
-            with col_file:
-                comprovante_form = st.file_uploader(
-                    "Nota Fiscal *",
-                    type=["pdf", "jpg", "jpeg", "png"],
-                    help="Anexe a nota fiscal da despesa",
-                    key=upload_key,
-                )
-            with col_ia:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("🤖 Extrair com IA", disabled=comprovante_form is None, use_container_width=True):
-                    with st.spinner("Analisando nota fiscal com IA..."):
-                        try:
-                            resultado = _extrair_com_ia(comprovante_form.getvalue(), comprovante_form.type)
-                            st.session_state['ia_resultado'] = resultado
-                            st.success("✅ Dados extraídos! Revise os campos abaixo.")
-                        except Exception as e_ia:
-                            st.error(f"Erro na extração: {e_ia}")
+        # Uploader sempre renderizado para evitar rerun com scroll ao topo
+        upload_key = f"cad_comprovante_{st.session_state.get('cad_upload_key', 0)}"
+        col_file, col_ia = st.columns([3, 1])
+        with col_file:
+            comprovante_form = st.file_uploader(
+                "Nota Fiscal" + (" *" if tem_nota else ""),
+                type=["pdf", "jpg", "jpeg", "png"],
+                help="Anexe a nota fiscal da despesa",
+                key=upload_key,
+                disabled=not tem_nota,
+            )
+        with col_ia:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🤖 Extrair com IA", disabled=(not tem_nota or comprovante_form is None), use_container_width=True):
+                with st.spinner("Analisando nota fiscal com IA..."):
+                    try:
+                        resultado = _extrair_com_ia(comprovante_form.getvalue(), comprovante_form.type)
+                        st.session_state['ia_resultado'] = resultado
+                        st.success("✅ Dados extraídos! Revise os campos abaixo.")
+                    except Exception as e_ia:
+                        st.error(f"Erro na extração: {e_ia}")
 
         # ── Pré-preenchimento via IA ───────────────────────────────────────────
         ia = st.session_state.get('ia_resultado') or {}
@@ -982,8 +1044,42 @@ with tab_desp:
 
         _tipos = ["Mão de Obra", "Materiais", "Geral"]
         _formas = ["", "PIX", "Boleto", "Cartão", "Dinheiro", "Transferência", "Outro"]
+        _despesas = [
+            "",
+            # Infraestrutura e Pavimentação
+            "AREIA COLCHÃO", "BLOCO INTERTRAVADO", "CALCETEIRO", "ESTACAS",
+            "MEIO-FIO", "PARALELEPÍPEDO", "PEDRA CORTADA", "PÓ DE PEDRA", "SOLO-BRITA",
+            # Estrutura e Alvenaria
+            "AÇO / VERGALHÃO", "ADITIVOS", "AREIA LAVADA", "ARGAMASSA",
+            "BLOCO CERÂMICO", "BLOCO DE CIMENTO", "BRITA GRAVILHÃO", "CIMENTO",
+            "COMBOGÓ", "FERRO", "MADERITE", "PREGO", "TÁBUA",
+            # Cobertura e Carpintaria
+            "BLOCO CALHA", "MADEIRA P/ TELHADO", "TELHA CERÂMICA", "TELHA FIBROCIMENTO",
+            # Instalações (Elétrica/Hidráulica)
+            "BOMBA", "CABOS", "CAIXA D'ÁGUA", "DISJUNTORES",
+            "ELETRODUTO E CONEXÕES", "EMPREITEIRO ELETRICISTA", "EMPREITEIRO ENCANADOR",
+            "TUBO ÁGUA E CONEXÕES", "TUBO ESGOTO E CONEXÕES",
+            # Acabamento e Fechamentos
+            "ESQUADRIA DE FERRO", "ESQUADRIA DE MADEIRA", "GESSO ACARTONADO",
+            "LOUÇAS", "LUMINÁRIAS", "SOLDA",
+            # Serviços Gerais e Administração
+            "COMPRA EQUIPAMENTOS", "DIVERSOS", "EMPREITEIRO", "ENTULHO",
+            "EQUIPAMENTOS URBANOS", "FARDAS E EPIS", "LOCAÇÃO EQUIPAMENTOS",
+            "MADEIRA LOCAÇÃO OBRA", "MADEIRA TRATADA", "PAISAGISMO", "PROJETOS",
+            # Despesas Fixas e Escritório
+            "ÁGUA", "ALUGUEL", "CONDOMÍNIO", "CONTABILIDADE", "ENERGIA",
+            "IMPRESSÃO / GRÁFICA", "INTERNET / TI", "MANUTENÇÃO",
+            "MATERIAL PARA ESCRITÓRIO", "TELEFONIA FIXA", "TELEFONIA MÓVEL",
+            # Logística
+            "ALIMENTAÇÃO", "COMBUSTÍVEL", "DIÁRIA", "FERRYBOAT / BALSA",
+            "HOSPEDAGEM", "PEDÁGIO", "SALÁRIO PESSOAL", "TRANSPORTE",
+            # Financeiro e Tributário
+            "IMPOSTOS", "JUROS", "RECEITA", "REPOSIÇÃO DE CAIXA",
+        ]
+
         ia_tipo_idx = _tipos.index(ia['TIPO']) if ia.get('TIPO') in _tipos else 0
         ia_forma_idx = _formas.index(ia['FORMA']) if ia.get('FORMA') in _formas else 0
+        ia_despesa_idx = _despesas.index(ia['DESPESA']) if ia.get('DESPESA') in _despesas else 0
         ia_data = None
         if ia.get('DATA'):
             try:
@@ -1011,20 +1107,16 @@ with tab_desp:
             with col5:
                 valor_form = st.number_input("Valor Total (R$) *", min_value=0.0, value=ia_valor, step=0.01, format="%.2f")
             with col6:
-                despesa_form = st.text_input("Despesa")
+                despesa_form = st.selectbox("Despesa", _despesas, index=ia_despesa_idx)
 
             descricao_form = st.text_area("Descrição *", value=ia_descricao, max_chars=500, placeholder="Descrição detalhada da despesa...")
 
             # ── Campos opcionais ──────────────────────────────────────────────
             st.caption("Campos opcionais")
-            col7, col8, col9, col10 = st.columns(4)
+            col7, col8 = st.columns(2)
             with col7:
-                valor_unit_form = st.number_input("Valor Unitário (R$)", min_value=0.0, step=0.01, format="%.2f")
-            with col8:
-                qtd_form = st.number_input("Quantidade", min_value=1, step=1, value=1)
-            with col9:
                 banco_form = st.text_input("Banco")
-            with col10:
+            with col8:
                 forma_form = st.selectbox("Forma Pagamento", _formas, index=ia_forma_idx)
 
             submitted = st.form_submit_button("✅ Cadastrar Despesa", use_container_width=True, type="primary")
@@ -1076,9 +1168,7 @@ with tab_desp:
                     "VALOR_TOTAL":     float(valor_form),
                     "DATA":            data_form.strftime('%Y-%m-%d'),
                     "DESCRICAO":       descricao_form.strip() or None,
-                    "DESPESA":         despesa_form.strip() or None,
-                    "VALOR_UNITARIO":  float(valor_unit_form) if valor_unit_form > 0 else None,
-                    "QUANTIDADE":      int(qtd_form),
+                    "DESPESA":         despesa_form or None,
                     "BANCO":           banco_form.strip() or None,
                     "FORMA":           forma_form or None,
                     "TEM_NOTA_FISCAL": tem_nota,
@@ -1127,7 +1217,7 @@ with tab_desp:
             if df_view.empty:
                 st.info("Nenhuma despesa no período selecionado.")
             else:
-                cols_show = [c for c in ['DATA', 'OBRA', 'ETAPA', 'TIPO', 'FORNECEDOR', 'DESCRICAO', 'VALOR_TOTAL'] if c in df_view.columns]
+                cols_show = [c for c in ['DATA', 'OBRA', 'ETAPA', 'TIPO', 'DESPESA', 'FORNECEDOR', 'DESCRICAO', 'VALOR_TOTAL'] if c in df_view.columns]
                 df_disp = df_view[cols_show].copy()
                 if 'DATA' in df_disp.columns:
                     df_disp['DATA'] = df_disp['DATA'].dt.strftime('%d/%m/%Y')
@@ -1135,7 +1225,8 @@ with tab_desp:
                     df_disp['VALOR_TOTAL'] = df_disp['VALOR_TOTAL'].apply(format_currency)
                 df_disp.rename(columns={
                     'DATA': 'Data', 'OBRA': 'Obra', 'ETAPA': 'Etapa', 'TIPO': 'Tipo',
-                    'FORNECEDOR': 'Fornecedor', 'DESCRICAO': 'Descrição', 'VALOR_TOTAL': 'Valor'
+                    'DESPESA': 'Despesa', 'FORNECEDOR': 'Fornecedor',
+                    'DESCRICAO': 'Descrição', 'VALOR_TOTAL': 'Valor'
                 }, inplace=True)
                 st.dataframe(df_disp, use_container_width=True, hide_index=True)
 
@@ -1147,3 +1238,6 @@ with tab_desp:
                     "text/csv",
                     use_container_width=True,
                 )
+
+with tab_desp:
+    _render_despesas(df_raw)

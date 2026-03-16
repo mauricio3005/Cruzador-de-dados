@@ -49,7 +49,7 @@ def main():
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY")
     if not url or not key:
-        print("❌ Credenciais do Supabase não encontradas no .env")
+        print("ERRO: Credenciais do Supabase nao encontradas no .env")
         return
 
     supabase = create_client(url, key)
@@ -63,14 +63,14 @@ def main():
         print("Nenhuma despesa encontrada no Supabase.")
         return
 
-    print(f"  → {len(df_supa)} registro(s) encontrado(s) no Supabase.")
+    print(f"  -> {len(df_supa)} registro(s) encontrado(s) no Supabase.")
 
     # ── 3. Lê aba "C Despesas" do Excel ──────────────────────────────────────
     print("Lendo Excel...")
     try:
         df_excel = pd.read_excel(CAMINHO_EXCEL, sheet_name=ABA_DESPESAS, header=0)
     except Exception as e:
-        print(f"❌ Erro ao ler o Excel: {e}")
+        print(f"ERRO ao ler o Excel: {e}")
         print("   Verifique se o arquivo está fechado e o caminho está correto.")
         return
 
@@ -85,7 +85,7 @@ def main():
     col_data_excel  = next((c for c in df_excel.columns if c.strip().upper() == "DATA"), "DATA")
 
     if col_valor_excel is None:
-        print("❌ Coluna 'VALOR TOTAL' não encontrada na aba C Despesas.")
+        print("ERRO: Coluna 'VALOR TOTAL' nao encontrada na aba C Despesas.")
         return
 
     # ── 4. Monta chaves existentes no Excel ───────────────────────────────────
@@ -96,7 +96,7 @@ def main():
             row.get(col_valor_excel), row.get(col_data_excel)
         ))
 
-    print(f"  → {len(chaves_excel)} chave(s) únicas já existem no Excel.")
+    print(f"  -> {len(chaves_excel)} chave(s) unicas ja existem no Excel.")
 
     # ── 5. Filtra registros novos do Supabase ─────────────────────────────────
     df_supa["_chave"] = df_supa.apply(
@@ -106,16 +106,16 @@ def main():
     df_novos = df_supa[~df_supa["_chave"].isin(chaves_excel)].copy()
 
     if df_novos.empty:
-        print("✅ Nenhuma despesa nova para adicionar. Excel já está atualizado.")
+        print("OK: Nenhuma despesa nova para adicionar. Excel ja esta atualizado.")
         return
 
-    print(f"  → {len(df_novos)} despesa(s) nova(s) para adicionar ao Excel.")
+    print(f"  -> {len(df_novos)} despesa(s) nova(s) para adicionar ao Excel.")
 
     # ── 6. Abre workbook ──────────────────────────────────────────────────────
     try:
         wb = load_workbook(CAMINHO_EXCEL)
     except Exception as e:
-        print(f"❌ Erro ao abrir o Excel para escrita: {e}")
+        print(f"ERRO ao abrir o Excel para escrita: {e}")
         print("   Verifique se o arquivo está fechado.")
         return
 
@@ -187,7 +187,7 @@ def main():
         adicionados += 1
 
     wb.save(CAMINHO_EXCEL)
-    print(f"✅ {adicionados} despesa(s) adicionada(s) ao Excel com sucesso!")
+    print(f"OK: {adicionados} despesa(s) adicionada(s) ao Excel com sucesso!")
     print(f"   Arquivo salvo: {CAMINHO_EXCEL}")
 
 

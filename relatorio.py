@@ -184,7 +184,7 @@ def _linha_separadora(largura: float) -> Table:
         ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]))
     return t
-
+j
 
 def _timbrado(obra_nome: str, etapa_nome: str, subtitulo: str, estilos: dict, largura: float) -> Table:
     data = [[
