@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import os
+import base64
+import json
 from datetime import datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -399,6 +401,58 @@ html, body, [class*="css"] {
 }
 </style>
 """, unsafe_allow_html=True)
+
+# --- EXTRAÇÃO DE NOTA FISCAL VIA IA ---
+def _extrair_com_ia(file_bytes: bytes, media_type: str) -> dict:
+    """Envia nota fiscal à OpenAI e retorna dados extraídos como dicionário."""
+    import io
+    import pypdf
+    from openai import OpenAI
+
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY não encontrada no .env")
+
+    client = OpenAI(api_key=api_key)
+
+    prompt_instrucao = (
+        "Analise esta nota fiscal ou comprovante de pagamento e extraia as "
+        "informações abaixo. Retorne SOMENTE um JSON válido, sem texto adicional.\n\n"
+        "{\n"
+        '  "FORNECEDOR": "nome do fornecedor ou empresa emissora",\n'
+        '  "VALOR_TOTAL": <número float, ex: 310.50>,\n'
+        '  "DATA": "YYYY-MM-DD",\n'
+        '  "DESCRICAO": "descrição resumida do serviço ou material adquirido",\n'
+        '  "TIPO": "Mão de Obra" ou "Materiais" ou "Geral",\n'
+        '  "FORMA": "PIX" ou "Boleto" ou "Cartão" ou "Dinheiro" ou "Transferência" ou ""\n'
+        "}\n\n"
+        "Use null para campos que não consiga identificar com clareza."
+    )
+
+    if media_type == "application/pdf":
+        # OpenAI Chat Completions não aceita PDF direto — extrai o texto primeiro
+        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+        texto_pdf = "\n".join(page.extract_text() or "" for page in reader.pages)
+        messages = [{"role": "user", "content": f"{prompt_instrucao}\n\nConteúdo do documento:\n{texto_pdf}"}]
+    else:
+        b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
+                {"type": "text", "text": prompt_instrucao},
+            ],
+        }]
+
+    resp = client.chat.completions.create(model="gpt-4.1-mini", max_tokens=1024, messages=messages)
+
+    texto = resp.choices[0].message.content.strip()
+    if texto.startswith("```"):
+        linhas = texto.splitlines()
+        texto = "\n".join(linhas[1:-1] if linhas[-1].strip() == "```" else linhas[1:])
+    return json.loads(texto)
+
 
 # --- INICIALIZAÇÃO E DADOS ---
 @st.cache_resource
@@ -898,6 +952,48 @@ with tab_desp:
 
         etapas_obra_form = sorted(df_raw[df_raw['OBRA'] == obra_form]['ETAPA'].dropna().unique().tolist())
 
+        # ── Nota fiscal + extração IA (fora do form para permitir botão) ──────
+        comprovante_form = None
+        if tem_nota:
+            upload_key = f"cad_comprovante_{st.session_state.get('cad_upload_key', 0)}"
+            col_file, col_ia = st.columns([3, 1])
+            with col_file:
+                comprovante_form = st.file_uploader(
+                    "Nota Fiscal *",
+                    type=["pdf", "jpg", "jpeg", "png"],
+                    help="Anexe a nota fiscal da despesa",
+                    key=upload_key,
+                )
+            with col_ia:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🤖 Extrair com IA", disabled=comprovante_form is None, use_container_width=True):
+                    with st.spinner("Analisando nota fiscal com IA..."):
+                        try:
+                            resultado = _extrair_com_ia(comprovante_form.getvalue(), comprovante_form.type)
+                            st.session_state['ia_resultado'] = resultado
+                            st.success("✅ Dados extraídos! Revise os campos abaixo.")
+                        except Exception as e_ia:
+                            st.error(f"Erro na extração: {e_ia}")
+
+        # ── Pré-preenchimento via IA ───────────────────────────────────────────
+        ia = st.session_state.get('ia_resultado') or {}
+        if ia:
+            st.info("🤖 Campos pré-preenchidos pela IA — revise antes de cadastrar.")
+
+        _tipos = ["Mão de Obra", "Materiais", "Geral"]
+        _formas = ["", "PIX", "Boleto", "Cartão", "Dinheiro", "Transferência", "Outro"]
+        ia_tipo_idx = _tipos.index(ia['TIPO']) if ia.get('TIPO') in _tipos else 0
+        ia_forma_idx = _formas.index(ia['FORMA']) if ia.get('FORMA') in _formas else 0
+        ia_data = None
+        if ia.get('DATA'):
+            try:
+                ia_data = datetime.strptime(ia['DATA'], '%Y-%m-%d').date()
+            except Exception:
+                pass
+        ia_valor = float(ia['VALOR_TOTAL']) if ia.get('VALOR_TOTAL') else 0.0
+        ia_fornecedor = str(ia.get('FORNECEDOR') or '')
+        ia_descricao = str(ia.get('DESCRICAO') or '')
+
         with st.form("form_despesa", clear_on_submit=True):
             # ── Campos obrigatórios ───────────────────────────────────────────
             st.caption("Campos obrigatórios *")
@@ -905,19 +1001,19 @@ with tab_desp:
             with col1:
                 etapa_form = st.selectbox("Etapa *", etapas_obra_form)
             with col2:
-                tipo_form = st.selectbox("Tipo *", ["Mão de Obra", "Materiais", "Geral"])
+                tipo_form = st.selectbox("Tipo *", _tipos, index=ia_tipo_idx)
             with col3:
-                data_form = st.date_input("Data *", value=datetime.today())
+                data_form = st.date_input("Data *", value=ia_data or datetime.today())
 
             col4, col5, col6 = st.columns([2, 1, 1])
             with col4:
-                fornecedor_form = st.text_input("Fornecedor *")
+                fornecedor_form = st.text_input("Fornecedor *", value=ia_fornecedor)
             with col5:
-                valor_form = st.number_input("Valor Total (R$) *", min_value=0.0, step=0.01, format="%.2f")
+                valor_form = st.number_input("Valor Total (R$) *", min_value=0.0, value=ia_valor, step=0.01, format="%.2f")
             with col6:
                 despesa_form = st.text_input("Despesa")
 
-            descricao_form = st.text_area("Descrição *", max_chars=500, placeholder="Descrição detalhada da despesa...")
+            descricao_form = st.text_area("Descrição *", value=ia_descricao, max_chars=500, placeholder="Descrição detalhada da despesa...")
 
             # ── Campos opcionais ──────────────────────────────────────────────
             st.caption("Campos opcionais")
@@ -929,16 +1025,7 @@ with tab_desp:
             with col9:
                 banco_form = st.text_input("Banco")
             with col10:
-                forma_form = st.selectbox("Forma Pagamento", ["", "PIX", "Boleto", "Cartão", "Dinheiro", "Transferência", "Outro"])
-
-            # ── Nota fiscal (condicional) ─────────────────────────────────────
-            comprovante_form = None
-            if tem_nota:
-                comprovante_form = st.file_uploader(
-                    "Nota Fiscal *",
-                    type=["pdf", "jpg", "jpeg", "png"],
-                    help="Anexe a nota fiscal da despesa"
-                )
+                forma_form = st.selectbox("Forma Pagamento", _formas, index=ia_forma_idx)
 
             submitted = st.form_submit_button("✅ Cadastrar Despesa", use_container_width=True, type="primary")
 
@@ -1000,6 +1087,8 @@ with tab_desp:
                 try:
                     supabase.table("despesas").insert(record).execute()
                     load_despesas.clear()
+                    st.session_state.pop('ia_resultado', None)
+                    st.session_state['cad_upload_key'] = st.session_state.get('cad_upload_key', 0) + 1
                     st.success("✅ Despesa cadastrada com sucesso!")
                 except Exception as e_ins:
                     st.error(f"Erro ao cadastrar: {e_ins}")
