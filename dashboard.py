@@ -4,8 +4,6 @@ import plotly.graph_objects as go
 import os
 import base64
 import json
-import subprocess
-import sys
 from datetime import datetime
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -493,28 +491,61 @@ def load_data():
         st.error("Chaves do Supabase não encontradas no .env")
         return pd.DataFrame()
 
-    response = supabase.table("relatorios").select("*").execute()
-    data = response.data
-
-    if not data:
+    # ── 1. Orçamentos por obra + etapa + tipo ────────────────────────────────
+    res_orc = supabase.table("orcamentos").select("obra,etapa,tipo_custo,valor_estimado").execute()
+    if not res_orc.data:
         return pd.DataFrame()
+    df_orc = pd.DataFrame(res_orc.data)
+    df_orc.rename(columns={"obra": "OBRA", "etapa": "ETAPA",
+                            "tipo_custo": "TIPO_CUSTO",
+                            "valor_estimado": "ORÇAMENTO_ESTIMADO"}, inplace=True)
+    df_orc["ORÇAMENTO_ESTIMADO"] = pd.to_numeric(df_orc["ORÇAMENTO_ESTIMADO"], errors="coerce").fillna(0)
 
-    df = pd.DataFrame(data)
+    # ── 2. Gastos realizados (c_despesas agrupadas) ──────────────────────────
+    res_desp = supabase.table("c_despesas").select("obra,etapa,tipo,valor_total").execute()
+    df_desp_raw = pd.DataFrame(res_desp.data) if res_desp.data else pd.DataFrame()
 
-    if 'ORçamento_ESTIMADO' in df.columns:
-        df.rename(columns={'ORçamento_ESTIMADO': 'ORÇAMENTO_ESTIMADO'}, inplace=True)
-    elif 'ORAMENTO_ESTIMADO' in df.columns:
-        df.rename(columns={'ORAMENTO_ESTIMADO': 'ORÇAMENTO_ESTIMADO'}, inplace=True)
+    if not df_desp_raw.empty:
+        df_desp_raw["tipo"] = df_desp_raw["tipo"].fillna("Geral").str.strip()
+        df_desp_raw["valor_total"] = pd.to_numeric(df_desp_raw["valor_total"], errors="coerce").fillna(0)
+        df_gastos = (
+            df_desp_raw.groupby(["obra", "etapa", "tipo"])["valor_total"]
+            .sum()
+            .reset_index()
+            .rename(columns={"obra": "OBRA", "etapa": "ETAPA",
+                             "tipo": "TIPO_CUSTO", "valor_total": "GASTO_REALIZADO"})
+        )
+    else:
+        df_gastos = pd.DataFrame(columns=["OBRA", "ETAPA", "TIPO_CUSTO", "GASTO_REALIZADO"])
 
-    cols_default = ['OBRA', 'ETAPA', 'TIPO_CUSTO', 'ORÇAMENTO_ESTIMADO', 'GASTO_REALIZADO', 'SALDO_ETAPA']
-    for c in cols_default:
-        if c not in df.columns:
-            if c == 'TIPO_CUSTO': df['TIPO_CUSTO'] = 'Geral'
-            else: df[c] = 0.0
+    # ── 3. Merge orçamento x gastos ─────────────────────────────────────────
+    df = pd.merge(df_orc, df_gastos, on=["OBRA", "ETAPA", "TIPO_CUSTO"], how="outer")
+    df[["ORÇAMENTO_ESTIMADO", "GASTO_REALIZADO"]] = (
+        df[["ORÇAMENTO_ESTIMADO", "GASTO_REALIZADO"]].fillna(0)
+    )
+    df["TIPO_CUSTO"] = df["TIPO_CUSTO"].fillna("Geral").str.strip()
+    df["SALDO_ETAPA"] = df["ORÇAMENTO_ESTIMADO"] - df["GASTO_REALIZADO"]
 
-    df['ORÇAMENTO_ESTIMADO'] = pd.to_numeric(df['ORÇAMENTO_ESTIMADO'], errors='coerce').fillna(0)
-    df['GASTO_REALIZADO'] = pd.to_numeric(df['GASTO_REALIZADO'], errors='coerce').fillna(0)
-    df['SALDO_ETAPA'] = pd.to_numeric(df['SALDO_ETAPA'], errors='coerce').fillna(0)
+    # ── 4. Ordem das etapas ──────────────────────────────────────────────────
+    res_etapas = supabase.table("etapas").select("nome,ordem").execute()
+    if res_etapas.data:
+        df_etapas = pd.DataFrame(res_etapas.data).rename(columns={"nome": "ETAPA", "ordem": "ORDEM_ETAPA"})
+        df = pd.merge(df, df_etapas, on="ETAPA", how="left")
+        df["ORDEM_ETAPA"] = df["ORDEM_ETAPA"].fillna(999).astype(int)
+    else:
+        df["ORDEM_ETAPA"] = 999
+
+    # ── 5. Taxa de conclusão ─────────────────────────────────────────────────
+    res_taxa = supabase.table("taxa_conclusao").select("obra,etapa,taxa").execute()
+    if res_taxa.data:
+        df_taxa = pd.DataFrame(res_taxa.data).rename(
+            columns={"obra": "OBRA", "etapa": "ETAPA", "taxa": "TAXA_CONCLUSAO"}
+        )
+        df_taxa["TAXA_CONCLUSAO"] = pd.to_numeric(df_taxa["TAXA_CONCLUSAO"], errors="coerce").fillna(0)
+        df = pd.merge(df, df_taxa, on=["OBRA", "ETAPA"], how="left")
+        df["TAXA_CONCLUSAO"] = df["TAXA_CONCLUSAO"].fillna(0)
+    else:
+        df["TAXA_CONCLUSAO"] = 0
 
     return df
 
@@ -523,16 +554,21 @@ def format_currency(value):
 
 @st.cache_data(ttl=300)
 def load_despesas():
-    load_dotenv()
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
-    if not SUPABASE_URL or not SUPABASE_KEY:
+    supabase = init_supabase()
+    if not supabase:
         return pd.DataFrame()
     try:
-        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        res = supabase.table("despesas").select("*").execute()
+        res = supabase.table("c_despesas").select("*").execute()
         df = pd.DataFrame(res.data)
         if not df.empty:
+            # Renomeia para maiúsculas para compatibilidade com relatorio.py
+            df.rename(columns={
+                "obra": "OBRA", "etapa": "ETAPA", "tipo": "TIPO",
+                "fornecedor": "FORNECEDOR", "despesa": "DESPESA",
+                "valor_total": "VALOR_TOTAL", "data": "DATA",
+                "descricao": "DESCRICAO", "banco": "BANCO",
+                "forma": "FORMA", "tem_nota_fiscal": "TEM_NOTA_FISCAL",
+            }, inplace=True)
             df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce')
         return df
     except Exception:
@@ -676,44 +712,6 @@ with st.sidebar:
                     mime="application/pdf",
                     use_container_width=True,
                 )
-
-    st.markdown("---")
-    st.markdown("**SINCRONIZAÇÃO**")
-
-    _dir = os.path.dirname(os.path.abspath(__file__))
-
-    def _rodar_script(nome_arquivo: str) -> tuple[bool, str]:
-        """Executa um script Python e retorna (sucesso, saída)."""
-        resultado = subprocess.run(
-            [sys.executable, os.path.join(_dir, nome_arquivo)],
-            capture_output=True,
-            text=True,
-            cwd=_dir,
-        )
-        saida = (resultado.stdout + resultado.stderr).strip()
-        return resultado.returncode == 0, saida
-
-    with st.expander("ℹ️ Ordem recomendada", expanded=False):
-        st.caption("1. Supabase → Excel  \n2. Excel → Supabase")
-
-    if st.button("🔄 Supabase → Excel", use_container_width=True, help="Traz despesas do Supabase para a planilha (sync_to_excel.py)"):
-        with st.spinner("Sincronizando Supabase → Excel..."):
-            ok, saida = _rodar_script("sync_to_excel.py")
-        if ok:
-            st.success("Concluído!")
-        else:
-            st.error("Erro na sincronização.")
-        st.code(saida, language=None)
-
-    if st.button("📤 Excel → Supabase", use_container_width=True, help="Envia a planilha para o Supabase (app.py)"):
-        with st.spinner("Sincronizando Excel → Supabase..."):
-            ok, saida = _rodar_script("app.py")
-        if ok:
-            load_data.clear()
-            st.success("Concluído! Cache atualizado.")
-        else:
-            st.error("Erro na sincronização.")
-        st.code(saida, language=None)
 
     st.markdown("---")
     st.markdown("""
@@ -987,6 +985,64 @@ with tab_dash:
             )
             st.plotly_chart(fig_rank, use_container_width=True)
 
+        # ---- Despesas Registradas ----
+        st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+        st.markdown('<p class="section-header">Despesas Registradas</p>', unsafe_allow_html=True)
+
+        df_hist = load_despesas()
+        if df_hist.empty:
+            st.info("Nenhuma despesa registrada ainda.")
+        else:
+            # Aplica filtros da sidebar (obra + etapa)
+            df_view = df_hist.copy()
+            if sel_obras:
+                df_view = df_view[df_view['OBRA'].isin(sel_obras)]
+            if sel_etapas:
+                df_view = df_view[df_view['ETAPA'].isin(sel_etapas)]
+
+            col_d1, col_d2, col_d3 = st.columns(3)
+            with col_d1:
+                data_ini_hist = st.date_input("De", value=datetime.today().replace(day=1), key="hist_ini")
+            with col_d2:
+                data_fim_hist = st.date_input("Até", value=datetime.today(), key="hist_fim")
+            with col_d3:
+                tipo_hist = st.selectbox("Tipo", ["Todos", "Mão de Obra", "Materiais", "Geral"], key="hist_tipo")
+
+            if tipo_hist != "Todos":
+                df_view = df_view[df_view['TIPO'] == tipo_hist]
+            df_view = df_view[
+                (df_view['DATA'] >= pd.Timestamp(data_ini_hist)) &
+                (df_view['DATA'] <= pd.Timestamp(data_fim_hist))
+            ].sort_values('DATA', ascending=False)
+
+            total_hist = df_view['VALOR_TOTAL'].sum() if 'VALOR_TOTAL' in df_view.columns else 0
+            st.metric("Total no período", format_currency(total_hist))
+
+            if df_view.empty:
+                st.info("Nenhuma despesa no período selecionado.")
+            else:
+                cols_show = [c for c in ['DATA', 'OBRA', 'ETAPA', 'TIPO', 'DESPESA', 'FORNECEDOR', 'DESCRICAO', 'VALOR_TOTAL'] if c in df_view.columns]
+                df_disp = df_view[cols_show].copy()
+                if 'DATA' in df_disp.columns:
+                    df_disp['DATA'] = df_disp['DATA'].dt.strftime('%d/%m/%Y')
+                if 'VALOR_TOTAL' in df_disp.columns:
+                    df_disp['VALOR_TOTAL'] = df_disp['VALOR_TOTAL'].apply(format_currency)
+                df_disp.rename(columns={
+                    'DATA': 'Data', 'OBRA': 'Obra', 'ETAPA': 'Etapa', 'TIPO': 'Tipo',
+                    'DESPESA': 'Despesa', 'FORNECEDOR': 'Fornecedor',
+                    'DESCRICAO': 'Descrição', 'VALOR_TOTAL': 'Valor'
+                }, inplace=True)
+                st.dataframe(df_disp, use_container_width=True, hide_index=True)
+
+                csv_data = df_view.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "⬇️ Exportar CSV",
+                    csv_data,
+                    f"despesas_{data_ini_hist.strftime('%Y%m%d')}_{data_fim_hist.strftime('%Y%m%d')}.csv",
+                    "text/csv",
+                    use_container_width=True,
+                )
+
 
 @st.fragment
 def _render_despesas(df_raw):
@@ -1160,84 +1216,33 @@ def _render_despesas(df_raw):
                         comprovante_url = supabase.storage.from_("comprovantes").get_public_url(nome_arq)
                     except Exception as e_storage:
                         st.warning(f"Nota fiscal não pôde ser salva: {e_storage}")
+                # Garante que fornecedor existe na tabela de referência
+                if fornecedor_form.strip():
+                    supabase.table("fornecedores").upsert(
+                        {"nome": fornecedor_form.strip()}, on_conflict="nome"
+                    ).execute()
                 record = {
-                    "OBRA":            obra_form,
-                    "ETAPA":           etapa_form,
-                    "TIPO":            tipo_form,
-                    "FORNECEDOR":      fornecedor_form.strip() or None,
-                    "VALOR_TOTAL":     float(valor_form),
-                    "DATA":            data_form.strftime('%Y-%m-%d'),
-                    "DESCRICAO":       descricao_form.strip() or None,
-                    "DESPESA":         despesa_form or None,
-                    "BANCO":           banco_form.strip() or None,
-                    "FORMA":           forma_form or None,
-                    "TEM_NOTA_FISCAL": tem_nota,
-                    "COMPROVANTE_URL": comprovante_url,
+                    "obra":             obra_form,
+                    "etapa":            etapa_form,
+                    "tipo":             tipo_form,
+                    "fornecedor":       fornecedor_form.strip() or None,
+                    "valor_total":      float(valor_form),
+                    "data":             data_form.strftime('%Y-%m-%d'),
+                    "descricao":        descricao_form.strip() or None,
+                    "despesa":          despesa_form or None,
+                    "banco":            banco_form.strip() or None,
+                    "forma":            forma_form or None,
+                    "tem_nota_fiscal":  tem_nota,
+                    "comprovante_url":  comprovante_url,
                 }
                 try:
-                    supabase.table("despesas").insert(record).execute()
+                    supabase.table("c_despesas").insert(record).execute()
                     load_despesas.clear()
                     st.session_state.pop('ia_resultado', None)
                     st.session_state['cad_upload_key'] = st.session_state.get('cad_upload_key', 0) + 1
                     st.success("✅ Despesa cadastrada com sucesso!")
                 except Exception as e_ins:
                     st.error(f"Erro ao cadastrar: {e_ins}")
-
-        st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-        st.markdown('<p class="section-header">Despesas Registradas</p>', unsafe_allow_html=True)
-
-        df_hist = load_despesas()
-        if df_hist.empty:
-            st.info("Nenhuma despesa registrada ainda.")
-        else:
-            col_h1, col_h2, col_h3, col_h4 = st.columns(4)
-            with col_h1:
-                obras_hist = ["Todas"] + sorted(df_hist['OBRA'].dropna().unique().tolist())
-                obra_hist = st.selectbox("Obra", obras_hist, key="hist_obra")
-            with col_h2:
-                data_ini_hist = st.date_input("De", value=datetime.today().replace(day=1), key="hist_ini")
-            with col_h3:
-                data_fim_hist = st.date_input("Até", value=datetime.today(), key="hist_fim")
-            with col_h4:
-                tipo_hist = st.selectbox("Tipo", ["Todos", "Mão de Obra", "Materiais", "Geral"], key="hist_tipo")
-
-            df_view = df_hist.copy()
-            if obra_hist != "Todas":
-                df_view = df_view[df_view['OBRA'] == obra_hist]
-            if tipo_hist != "Todos":
-                df_view = df_view[df_view['TIPO'] == tipo_hist]
-            df_view = df_view[
-                (df_view['DATA'] >= pd.Timestamp(data_ini_hist)) &
-                (df_view['DATA'] <= pd.Timestamp(data_fim_hist))
-            ]
-
-            total_hist = df_view['VALOR_TOTAL'].sum() if 'VALOR_TOTAL' in df_view.columns else 0
-            st.metric("Total no período", format_currency(total_hist))
-
-            if df_view.empty:
-                st.info("Nenhuma despesa no período selecionado.")
-            else:
-                cols_show = [c for c in ['DATA', 'OBRA', 'ETAPA', 'TIPO', 'DESPESA', 'FORNECEDOR', 'DESCRICAO', 'VALOR_TOTAL'] if c in df_view.columns]
-                df_disp = df_view[cols_show].copy()
-                if 'DATA' in df_disp.columns:
-                    df_disp['DATA'] = df_disp['DATA'].dt.strftime('%d/%m/%Y')
-                if 'VALOR_TOTAL' in df_disp.columns:
-                    df_disp['VALOR_TOTAL'] = df_disp['VALOR_TOTAL'].apply(format_currency)
-                df_disp.rename(columns={
-                    'DATA': 'Data', 'OBRA': 'Obra', 'ETAPA': 'Etapa', 'TIPO': 'Tipo',
-                    'DESPESA': 'Despesa', 'FORNECEDOR': 'Fornecedor',
-                    'DESCRICAO': 'Descrição', 'VALOR_TOTAL': 'Valor'
-                }, inplace=True)
-                st.dataframe(df_disp, use_container_width=True, hide_index=True)
-
-                csv_data = df_view.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "⬇️ Exportar CSV",
-                    csv_data,
-                    f"despesas_{data_ini_hist.strftime('%Y%m%d')}_{data_fim_hist.strftime('%Y%m%d')}.csv",
-                    "text/csv",
-                    use_container_width=True,
-                )
 
 with tab_desp:
     _render_despesas(df_raw)
