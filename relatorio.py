@@ -476,7 +476,7 @@ def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str, df_despesas_
         pct_consumo    = (gasto / orc * 100) if orc > 0 else 0.0
         pct_realizacao = float(df_etapa['TAXA_CONCLUSAO'].iloc[0]) if 'TAXA_CONCLUSAO' in df_etapa.columns and not df_etapa.empty else 0.0
 
-        story.append(_timbrado(obra_nome, etapa_nome, "Relatório Detalhado", estilos, LARGURA_UTIL))
+        story.append(_timbrado_simples(obra_nome, LARGURA_UTIL))
         story.append(_linha_separadora(LARGURA_UTIL))
         story.append(Spacer(1, 0.35 * cm))
 
