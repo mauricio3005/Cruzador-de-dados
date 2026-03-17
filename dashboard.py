@@ -399,6 +399,20 @@ html, body, [class*="css"] {
     opacity: 0.12;
     color: #2563EB;
 }
+
+/* ---- Histórico: fonte maior na tabela de despesas ---- */
+[data-testid="stDataEditor"] .ag-cell,
+[data-testid="stDataEditor"] .ag-cell-value {
+    font-size: 0.92rem !important;
+    line-height: 1.5 !important;
+}
+[data-testid="stDataEditor"] .ag-header-cell-text {
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+}
+[data-testid="stDataEditor"] .ag-row {
+    min-height: 36px !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -549,6 +563,14 @@ def load_data():
 
     return df
 
+@st.cache_data(ttl=300)
+def load_obras():
+    supabase = init_supabase()
+    if not supabase:
+        return pd.DataFrame()
+    res = supabase.table("obras").select("*").execute()
+    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+
 def format_currency(value):
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -573,6 +595,110 @@ def load_despesas():
         return df
     except Exception:
         return pd.DataFrame()
+
+
+
+
+@st.cache_data(ttl=300)
+def load_categorias():
+    supabase = init_supabase()
+    if not supabase:
+        return [""]
+    try:
+        res = supabase.table("categorias_despesa").select("nome").order("nome").execute()
+        return [""] + [r["nome"] for r in res.data] if res.data else [""]
+    except Exception:
+        return [""]
+
+
+@st.cache_data(ttl=300)
+def load_etapas():
+    supabase = init_supabase()
+    if not supabase:
+        return []
+    try:
+        res = supabase.table("etapas").select("nome,ordem").order("ordem").execute()
+        return [r["nome"] for r in res.data] if res.data else []
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=300)
+def load_tipos_custo():
+    supabase = init_supabase()
+    if not supabase:
+        return []
+    try:
+        res = supabase.table("tipos_custo").select("nome").order("nome").execute()
+        return [r["nome"] for r in res.data] if res.data else []
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=300)
+def load_folha_regras():
+    sb = init_supabase()
+    if not sb:
+        return pd.DataFrame()
+    try:
+        res = sb.table("folha_regras").select("*").execute()
+        return pd.DataFrame(res.data) if res.data else pd.DataFrame(
+            columns=["id", "obra", "servico", "tipo", "valor"])
+    except Exception:
+        return pd.DataFrame()
+
+def load_folha(obra, quinzena):
+    """Retorna (folha_row_dict, df_funcionarios) ou (None, DataFrame vazio)."""
+    sb = init_supabase()
+    if not sb:
+        return None, pd.DataFrame()
+    try:
+        res = sb.table("folhas").select("*").eq("obra", obra).eq("quinzena", str(quinzena)).execute()
+        if not res.data:
+            return None, pd.DataFrame()
+        folha = res.data[0]
+        res2 = sb.table("folha_funcionarios").select("*").eq("folha_id", folha["id"]).execute()
+        df = pd.DataFrame(res2.data) if res2.data else pd.DataFrame(
+            columns=["id", "folha_id", "nome", "pix", "nome_conta", "servico", "etapa", "diarias", "valor"])
+        return folha, df
+    except Exception:
+        return None, pd.DataFrame()
+
+def load_folhas_by_obra(obra):
+    """Retorna lista de dicts de folhas da obra, ordenadas por quinzena desc."""
+    sb = init_supabase()
+    if not sb:
+        return []
+    try:
+        res = sb.table("folhas").select("*").eq("obra", obra).order("quinzena", desc=True).execute()
+        return res.data if res.data else []
+    except Exception:
+        return []
+
+def load_folha_funcionarios(folha_id):
+    """Retorna DataFrame de funcionários de uma folha pelo id."""
+    sb = init_supabase()
+    if not sb:
+        return pd.DataFrame()
+    try:
+        res = sb.table("folha_funcionarios").select("*").eq("folha_id", folha_id).execute()
+        return pd.DataFrame(res.data) if res.data else pd.DataFrame(
+            columns=["id", "folha_id", "nome", "pix", "nome_conta", "servico", "etapa", "diarias", "valor"])
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def load_formas_pagamento():
+    supabase = init_supabase()
+    if not supabase:
+        return [""]
+    try:
+        res = supabase.table("formas_pagamento").select("nome").order("nome").execute()
+        return [""] + [r["nome"] for r in res.data] if res.data else [""]
+    except Exception:
+        return [""]
+
 
 # Template base para todos os gráficos Plotly
 CHART_LAYOUT = dict(
@@ -632,11 +758,25 @@ with st.sidebar:
     st.markdown("**RELATÓRIOS**")
 
     if not df_raw.empty:
+        # Usa load_obras() para incluir obras sem gastos ainda
+        _df_obras_rel = load_obras()
+        _obras_rel_list = (
+            sorted(_df_obras_rel['nome'].dropna().tolist())
+            if not _df_obras_rel.empty
+            else sorted(df_raw['OBRA'].dropna().unique().tolist())
+        )
         obra_rel = st.selectbox(
             "Obra para o relatório",
-            sorted(df_raw['OBRA'].dropna().unique().tolist()),
+            _obras_rel_list,
             key="selectbox_relatorio",
         )
+
+        # Lookup obra_info para o timbrado do PDF
+        _obra_info = {}
+        if not _df_obras_rel.empty:
+            _row = _df_obras_rel[_df_obras_rel['nome'] == obra_rel]
+            if not _row.empty:
+                _obra_info = _row.iloc[0].to_dict()
 
         if obra_rel == "Administrativo":
             col_di, col_df = st.columns(2)
@@ -650,7 +790,7 @@ with st.sidebar:
                     from relatorio import gerar_relatorio_administrativo
                     df_desp = load_despesas()
                     df_desp_adm = df_desp[df_desp['OBRA'] == obra_rel].copy() if not df_desp.empty else pd.DataFrame()
-                    pdf_bytes = gerar_relatorio_administrativo(df_desp_adm, obra_rel, data_ini_adm, data_fim_adm)
+                    pdf_bytes = gerar_relatorio_administrativo(df_desp_adm, obra_rel, data_ini_adm, data_fim_adm, obra_info=_obra_info)
                     nome_arquivo = (
                         f"relatorio_administrativo_{data_ini_adm.strftime('%Y%m%d')}"
                         f"_{data_fim_adm.strftime('%Y%m%d')}.pdf"
@@ -698,9 +838,9 @@ with st.sidebar:
                             (df_desp['DATA'] >= sete_dias)
                         ].copy()
                     if tipo_rel == "Detalhado":
-                        pdf_bytes = gerar_relatorio_detalhado(df_raw, obra_rel, df_desp_semana)
+                        pdf_bytes = gerar_relatorio_detalhado(df_raw, obra_rel, df_desp_semana, obra_info=_obra_info)
                     else:
-                        pdf_bytes = gerar_relatorio_simples(df_raw, obra_rel, df_desp_semana)
+                        pdf_bytes = gerar_relatorio_simples(df_raw, obra_rel, df_desp_semana, obra_info=_obra_info)
                     nome_arquivo = (
                         f"relatorio_{tipo_rel.lower()}_{obra_rel.replace(' ', '_')}_"
                         f"{datetime.now().strftime('%Y%m%d')}.pdf"
@@ -721,7 +861,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 # --- CONTEÚDO PRINCIPAL ---
-tab_dash, tab_desp = st.tabs(["📊 Dashboard", "📋 Despesas"])
+tab_dash, tab_desp, tab_hist, tab_folha, tab_conf = st.tabs(["📊 Dashboard", "📋 Despesas", "🗂️ Histórico", "👥 Folha", "⚙️ Configurações"])
 
 with tab_dash:
     if df_raw.empty:
@@ -985,63 +1125,123 @@ with tab_dash:
             )
             st.plotly_chart(fig_rank, use_container_width=True)
 
-        # ---- Despesas Registradas ----
-        st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
-        st.markdown('<p class="section-header">Despesas Registradas</p>', unsafe_allow_html=True)
 
-        df_hist = load_despesas()
-        if df_hist.empty:
-            st.info("Nenhuma despesa registrada ainda.")
-        else:
-            # Aplica filtros da sidebar (obra + etapa)
-            df_view = df_hist.copy()
-            if sel_obras:
-                df_view = df_view[df_view['OBRA'].isin(sel_obras)]
-            if sel_etapas:
-                df_view = df_view[df_view['ETAPA'].isin(sel_etapas)]
+@st.fragment
+def _render_historico(sel_obras, sel_etapas):
+    st.markdown("""
+    <div class="main-header">
+        <h1>Histórico de Despesas</h1>
+        <p>Consulte e corrija despesas registradas.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
 
-            col_d1, col_d2, col_d3 = st.columns(3)
-            with col_d1:
-                data_ini_hist = st.date_input("De", value=datetime.today().replace(day=1), key="hist_ini")
-            with col_d2:
-                data_fim_hist = st.date_input("Até", value=datetime.today(), key="hist_fim")
-            with col_d3:
-                tipo_hist = st.selectbox("Tipo", ["Todos", "Mão de Obra", "Materiais", "Geral"], key="hist_tipo")
+    df_hist = load_despesas()
+    if df_hist.empty:
+        st.info("Nenhuma despesa registrada ainda.")
+        return
 
-            if tipo_hist != "Todos":
-                df_view = df_view[df_view['TIPO'] == tipo_hist]
-            df_view = df_view[
-                (df_view['DATA'] >= pd.Timestamp(data_ini_hist)) &
-                (df_view['DATA'] <= pd.Timestamp(data_fim_hist))
-            ].sort_values('DATA', ascending=False)
+    df_view = df_hist.copy()
+    if sel_obras:
+        df_view = df_view[df_view['OBRA'].isin(sel_obras)]
+    if sel_etapas:
+        df_view = df_view[df_view['ETAPA'].isin(sel_etapas)]
 
-            total_hist = df_view['VALOR_TOTAL'].sum() if 'VALOR_TOTAL' in df_view.columns else 0
-            st.metric("Total no período", format_currency(total_hist))
+    col_d1, col_d2, col_d3 = st.columns(3)
+    with col_d1:
+        data_ini_hist = st.date_input("De", value=datetime.today().replace(day=1), key="hist_ini")
+    with col_d2:
+        data_fim_hist = st.date_input("Até", value=datetime.today(), key="hist_fim")
+    with col_d3:
+        tipo_hist = st.selectbox("Tipo", ["Todos"] + load_tipos_custo(), key="hist_tipo")
 
-            if df_view.empty:
-                st.info("Nenhuma despesa no período selecionado.")
+    if tipo_hist != "Todos":
+        df_view = df_view[df_view['TIPO'] == tipo_hist]
+    df_view = df_view[
+        (df_view['DATA'] >= pd.Timestamp(data_ini_hist)) &
+        (df_view['DATA'] <= pd.Timestamp(data_fim_hist))
+    ].sort_values('DATA', ascending=False)
+
+    total_hist = df_view['VALOR_TOTAL'].sum() if 'VALOR_TOTAL' in df_view.columns else 0
+    st.metric("Total no período", format_currency(total_hist))
+
+    if df_view.empty:
+        st.info("Nenhuma despesa no período selecionado.")
+        return
+
+    _COL_MAP = {
+        'DATA': 'data', 'OBRA': 'obra', 'ETAPA': 'etapa', 'TIPO': 'tipo',
+        'DESPESA': 'despesa', 'FORNECEDOR': 'fornecedor',
+        'DESCRICAO': 'descricao', 'VALOR_TOTAL': 'valor_total',
+        'FORMA': 'forma', 'BANCO': 'banco',
+    }
+    cols_editor = [c for c in ['id'] + list(_COL_MAP.keys()) if c in df_view.columns]
+    df_editor = df_view[cols_editor].copy().reset_index(drop=True)
+
+    _cats_opts   = load_categorias()
+    _formas_opts = load_formas_pagamento()
+    _obras_df    = load_obras()
+    _obras_opts  = _obras_df['nome'].tolist() if not _obras_df.empty else []
+    _etapas_opts = load_etapas()
+    _tipos_opts  = load_tipos_custo()
+
+    st.data_editor(
+        df_editor,
+        column_config={
+            "id":          st.column_config.TextColumn("id", disabled=True),
+            "OBRA":        st.column_config.SelectboxColumn("Obra", options=_obras_opts),
+            "ETAPA":       st.column_config.SelectboxColumn("Etapa", options=_etapas_opts),
+            "TIPO":        st.column_config.SelectboxColumn("Tipo", options=_tipos_opts),
+            "DATA":        st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+            "VALOR_TOTAL": st.column_config.NumberColumn("Valor (R$)", min_value=0, format="R$ %.2f"),
+            "DESPESA":     st.column_config.SelectboxColumn("Despesa", options=_cats_opts),
+            "FORNECEDOR":  st.column_config.TextColumn("Fornecedor"),
+            "DESCRICAO":   st.column_config.TextColumn("Descrição"),
+            "FORMA":       st.column_config.SelectboxColumn("Forma Pgto", options=_formas_opts),
+            "BANCO":       st.column_config.TextColumn("Banco"),
+        },
+        column_order=[c for c in cols_editor if c != 'id'],
+        use_container_width=True,
+        hide_index=True,
+        height=600,
+        key="editor_desp_hist",
+    )
+
+    col_save, col_csv = st.columns([1, 2])
+    with col_save:
+        if st.button("💾 Salvar alterações", type="primary", use_container_width=True):
+            changes = st.session_state.get("editor_desp_hist", {}).get("edited_rows", {})
+            if not changes:
+                st.info("Nenhuma alteração detectada.")
             else:
-                cols_show = [c for c in ['DATA', 'OBRA', 'ETAPA', 'TIPO', 'DESPESA', 'FORNECEDOR', 'DESCRICAO', 'VALOR_TOTAL'] if c in df_view.columns]
-                df_disp = df_view[cols_show].copy()
-                if 'DATA' in df_disp.columns:
-                    df_disp['DATA'] = df_disp['DATA'].dt.strftime('%d/%m/%Y')
-                if 'VALOR_TOTAL' in df_disp.columns:
-                    df_disp['VALOR_TOTAL'] = df_disp['VALOR_TOTAL'].apply(format_currency)
-                df_disp.rename(columns={
-                    'DATA': 'Data', 'OBRA': 'Obra', 'ETAPA': 'Etapa', 'TIPO': 'Tipo',
-                    'DESPESA': 'Despesa', 'FORNECEDOR': 'Fornecedor',
-                    'DESCRICAO': 'Descrição', 'VALOR_TOTAL': 'Valor'
-                }, inplace=True)
-                st.dataframe(df_disp, use_container_width=True, hide_index=True)
+                _sb_edit = init_supabase()
+                erros_edit = []
+                for idx, vals in changes.items():
+                    row_id = df_editor.iloc[idx]["id"]
+                    payload = {
+                        _COL_MAP[k]: (v.isoformat() if hasattr(v, 'isoformat') else v)
+                        for k, v in vals.items() if k in _COL_MAP
+                    }
+                    try:
+                        _sb_edit.table("c_despesas").update(payload).eq("id", row_id).execute()
+                    except Exception as e_upd:
+                        erros_edit.append(str(e_upd))
+                if erros_edit:
+                    st.error("Erros: " + "; ".join(erros_edit))
+                else:
+                    load_despesas.clear()
+                    st.success(f"{len(changes)} despesa(s) atualizada(s)!")
+                    st.rerun(scope="fragment")
 
-                csv_data = df_view.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "⬇️ Exportar CSV",
-                    csv_data,
-                    f"despesas_{data_ini_hist.strftime('%Y%m%d')}_{data_fim_hist.strftime('%Y%m%d')}.csv",
-                    "text/csv",
-                    use_container_width=True,
-                )
+    with col_csv:
+        csv_data = df_view.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "⬇️ Exportar CSV",
+            csv_data,
+            f"despesas_{data_ini_hist.strftime('%Y%m%d')}_{data_fim_hist.strftime('%Y%m%d')}.csv",
+            "text/csv",
+            use_container_width=True,
+        )
 
 
 @st.fragment
@@ -1056,22 +1256,28 @@ def _render_despesas(df_raw):
 
     if df_raw.empty:
         st.warning("Sem conexão com o banco de dados.")
-    else:
-        obras_list = sorted(df_raw['OBRA'].dropna().unique().tolist())
+        return
 
-        st.markdown('<p class="section-header">Nova Despesa</p>', unsafe_allow_html=True)
+    df_obras_ref = load_obras()
+    obras_list = sorted(df_obras_ref['nome'].dropna().tolist()) if not df_obras_ref.empty else sorted(df_raw['OBRA'].dropna().unique().tolist())
 
-        # ── Seletores fora do form para atualização dinâmica ──────────────────
+    st.markdown('<p class="section-header">Nova Despesa</p>', unsafe_allow_html=True)
+
+    modo = st.radio("Modo de cadastro", ["📝 Individual", "📦 Lote (IA)", "🧾 Folha de Pagamento"],
+                    horizontal=True, key="cad_modo")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODO INDIVIDUAL
+    # ══════════════════════════════════════════════════════════════════════════
+    if modo == "📝 Individual":
         col_obra, col_nota, _ = st.columns([1, 1, 1])
         with col_obra:
             obra_form = st.selectbox("Obra *", obras_list, key="cad_obra")
         with col_nota:
             tem_nota = st.checkbox("📄 Tem nota fiscal?", key="cad_tem_nota")
 
-        etapas_obra_form = sorted(df_raw[df_raw['OBRA'] == obra_form]['ETAPA'].dropna().unique().tolist())
+        etapas_obra_form = load_etapas()
 
-        # ── Nota fiscal + extração IA (fora do form para permitir botão) ──────
-        # Uploader sempre renderizado para evitar rerun com scroll ao topo
         upload_key = f"cad_comprovante_{st.session_state.get('cad_upload_key', 0)}"
         col_file, col_ia = st.columns([3, 1])
         with col_file:
@@ -1093,48 +1299,16 @@ def _render_despesas(df_raw):
                     except Exception as e_ia:
                         st.error(f"Erro na extração: {e_ia}")
 
-        # ── Pré-preenchimento via IA ───────────────────────────────────────────
         ia = st.session_state.get('ia_resultado') or {}
         if ia:
             st.info("🤖 Campos pré-preenchidos pela IA — revise antes de cadastrar.")
 
-        _tipos = ["Mão de Obra", "Materiais", "Geral"]
-        _formas = ["", "PIX", "Boleto", "Cartão", "Dinheiro", "Transferência", "Outro"]
-        _despesas = [
-            "",
-            # Infraestrutura e Pavimentação
-            "AREIA COLCHÃO", "BLOCO INTERTRAVADO", "CALCETEIRO", "ESTACAS",
-            "MEIO-FIO", "PARALELEPÍPEDO", "PEDRA CORTADA", "PÓ DE PEDRA", "SOLO-BRITA",
-            # Estrutura e Alvenaria
-            "AÇO / VERGALHÃO", "ADITIVOS", "AREIA LAVADA", "ARGAMASSA",
-            "BLOCO CERÂMICO", "BLOCO DE CIMENTO", "BRITA GRAVILHÃO", "CIMENTO",
-            "COMBOGÓ", "FERRO", "MADERITE", "PREGO", "TÁBUA",
-            # Cobertura e Carpintaria
-            "BLOCO CALHA", "MADEIRA P/ TELHADO", "TELHA CERÂMICA", "TELHA FIBROCIMENTO",
-            # Instalações (Elétrica/Hidráulica)
-            "BOMBA", "CABOS", "CAIXA D'ÁGUA", "DISJUNTORES",
-            "ELETRODUTO E CONEXÕES", "EMPREITEIRO ELETRICISTA", "EMPREITEIRO ENCANADOR",
-            "TUBO ÁGUA E CONEXÕES", "TUBO ESGOTO E CONEXÕES",
-            # Acabamento e Fechamentos
-            "ESQUADRIA DE FERRO", "ESQUADRIA DE MADEIRA", "GESSO ACARTONADO",
-            "LOUÇAS", "LUMINÁRIAS", "SOLDA",
-            # Serviços Gerais e Administração
-            "COMPRA EQUIPAMENTOS", "DIVERSOS", "EMPREITEIRO", "ENTULHO",
-            "EQUIPAMENTOS URBANOS", "FARDAS E EPIS", "LOCAÇÃO EQUIPAMENTOS",
-            "MADEIRA LOCAÇÃO OBRA", "MADEIRA TRATADA", "PAISAGISMO", "PROJETOS",
-            # Despesas Fixas e Escritório
-            "ÁGUA", "ALUGUEL", "CONDOMÍNIO", "CONTABILIDADE", "ENERGIA",
-            "IMPRESSÃO / GRÁFICA", "INTERNET / TI", "MANUTENÇÃO",
-            "MATERIAL PARA ESCRITÓRIO", "TELEFONIA FIXA", "TELEFONIA MÓVEL",
-            # Logística
-            "ALIMENTAÇÃO", "COMBUSTÍVEL", "DIÁRIA", "FERRYBOAT / BALSA",
-            "HOSPEDAGEM", "PEDÁGIO", "SALÁRIO PESSOAL", "TRANSPORTE",
-            # Financeiro e Tributário
-            "IMPOSTOS", "JUROS", "RECEITA", "REPOSIÇÃO DE CAIXA",
-        ]
+        _tipos    = load_tipos_custo()
+        _formas   = load_formas_pagamento()
+        _despesas = load_categorias()
 
-        ia_tipo_idx = _tipos.index(ia['TIPO']) if ia.get('TIPO') in _tipos else 0
-        ia_forma_idx = _formas.index(ia['FORMA']) if ia.get('FORMA') in _formas else 0
+        ia_tipo_idx    = _tipos.index(ia['TIPO'])    if ia.get('TIPO')    in _tipos    else 0
+        ia_forma_idx   = _formas.index(ia['FORMA'])  if ia.get('FORMA')   in _formas   else 0
         ia_despesa_idx = _despesas.index(ia['DESPESA']) if ia.get('DESPESA') in _despesas else 0
         ia_data = None
         if ia.get('DATA'):
@@ -1142,12 +1316,18 @@ def _render_despesas(df_raw):
                 ia_data = datetime.strptime(ia['DATA'], '%Y-%m-%d').date()
             except Exception:
                 pass
-        ia_valor = float(ia['VALOR_TOTAL']) if ia.get('VALOR_TOTAL') else 0.0
+        ia_valor      = float(ia['VALOR_TOTAL']) if ia.get('VALOR_TOTAL') else 0.0
         ia_fornecedor = str(ia.get('FORNECEDOR') or '')
-        ia_descricao = str(ia.get('DESCRICAO') or '')
+        ia_descricao  = str(ia.get('DESCRICAO') or '')
 
-        with st.form("form_despesa", clear_on_submit=True):
-            # ── Campos obrigatórios ───────────────────────────────────────────
+        _draft_fornecedor = st.session_state.pop('_draft_fornecedor', None)
+        _draft_descricao  = st.session_state.pop('_draft_descricao', None)
+        _draft_banco      = st.session_state.pop('_draft_banco', None)
+        fornecedor_init   = _draft_fornecedor if _draft_fornecedor is not None else ia_fornecedor
+        descricao_init    = _draft_descricao  if _draft_descricao  is not None else ia_descricao
+        banco_init        = _draft_banco      if _draft_banco       is not None else ''
+
+        with st.form("form_despesa", clear_on_submit=False):
             st.caption("Campos obrigatórios *")
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -1159,19 +1339,18 @@ def _render_despesas(df_raw):
 
             col4, col5, col6 = st.columns([2, 1, 1])
             with col4:
-                fornecedor_form = st.text_input("Fornecedor *", value=ia_fornecedor)
+                fornecedor_form = st.text_input("Fornecedor *", value=fornecedor_init)
             with col5:
                 valor_form = st.number_input("Valor Total (R$) *", min_value=0.0, value=ia_valor, step=0.01, format="%.2f")
             with col6:
                 despesa_form = st.selectbox("Despesa", _despesas, index=ia_despesa_idx)
 
-            descricao_form = st.text_area("Descrição *", value=ia_descricao, max_chars=500, placeholder="Descrição detalhada da despesa...")
+            descricao_form = st.text_area("Descrição *", value=descricao_init, max_chars=500, placeholder="Descrição detalhada da despesa...")
 
-            # ── Campos opcionais ──────────────────────────────────────────────
             st.caption("Campos opcionais")
             col7, col8 = st.columns(2)
             with col7:
-                banco_form = st.text_input("Banco")
+                banco_form = st.text_input("Banco", value=banco_init)
             with col8:
                 forma_form = st.selectbox("Forma Pagamento", _formas, index=ia_forma_idx)
 
@@ -1213,27 +1392,27 @@ def _render_despesas(df_raw):
                             comprovante_form.getvalue(),
                             {"content-type": comprovante_form.type}
                         )
-                        comprovante_url = supabase.storage.from_("comprovantes").get_public_url(nome_arq)
+                        _sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+                        comprovante_url = f"{_sb_url}/storage/v1/object/public/comprovantes/{nome_arq}"
                     except Exception as e_storage:
                         st.warning(f"Nota fiscal não pôde ser salva: {e_storage}")
-                # Garante que fornecedor existe na tabela de referência
                 if fornecedor_form.strip():
                     supabase.table("fornecedores").upsert(
                         {"nome": fornecedor_form.strip()}, on_conflict="nome"
                     ).execute()
                 record = {
-                    "obra":             obra_form,
-                    "etapa":            etapa_form,
-                    "tipo":             tipo_form,
-                    "fornecedor":       fornecedor_form.strip() or None,
-                    "valor_total":      float(valor_form),
-                    "data":             data_form.strftime('%Y-%m-%d'),
-                    "descricao":        descricao_form.strip() or None,
-                    "despesa":          despesa_form or None,
-                    "banco":            banco_form.strip() or None,
-                    "forma":            forma_form or None,
-                    "tem_nota_fiscal":  tem_nota,
-                    "comprovante_url":  comprovante_url,
+                    "obra":            obra_form,
+                    "etapa":           etapa_form,
+                    "tipo":            tipo_form,
+                    "fornecedor":      fornecedor_form.strip() or None,
+                    "valor_total":     float(valor_form),
+                    "data":            data_form.strftime('%Y-%m-%d'),
+                    "descricao":       descricao_form.strip() or None,
+                    "despesa":         despesa_form or None,
+                    "banco":           banco_form.strip() or None,
+                    "forma":           forma_form or None,
+                    "tem_nota_fiscal": tem_nota,
+                    "comprovante_url": comprovante_url,
                 }
                 try:
                     supabase.table("c_despesas").insert(record).execute()
@@ -1241,8 +1420,997 @@ def _render_despesas(df_raw):
                     st.session_state.pop('ia_resultado', None)
                     st.session_state['cad_upload_key'] = st.session_state.get('cad_upload_key', 0) + 1
                     st.success("✅ Despesa cadastrada com sucesso!")
+                    st.rerun(scope="fragment")
                 except Exception as e_ins:
+                    st.session_state['_draft_fornecedor'] = fornecedor_form
+                    st.session_state['_draft_descricao']  = descricao_form
+                    st.session_state['_draft_banco']      = banco_form
                     st.error(f"Erro ao cadastrar: {e_ins}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODO LOTE (IA)
+    # ══════════════════════════════════════════════════════════════════════════
+    elif modo == "📦 Lote (IA)":
+        st.info("Selecione a obra e etapa comuns ao lote, depois envie as notas fiscais.")
+
+        col_lo, col_le = st.columns(2)
+        with col_lo:
+            obra_lote  = st.selectbox("Obra (todo o lote) *", obras_list, key="lote_obra")
+        with col_le:
+            etapa_lote = st.selectbox("Etapa (todo o lote) *", load_etapas(), key="lote_etapa")
+
+        arquivos_lote = st.file_uploader(
+            "Notas fiscais",
+            type=["pdf", "jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+            key="lote_arquivos",
+        )
+        st.caption(f"{len(arquivos_lote)} arquivo(s) selecionado(s)")
+
+        if st.button("🤖 Extrair todas com IA",
+                     disabled=(not arquivos_lote),
+                     type="primary", key="btn_lote_ia"):
+            barra = st.progress(0, text="Iniciando extração...")
+            resultados_lote = []
+            for i, f in enumerate(arquivos_lote):
+                barra.progress((i) / len(arquivos_lote),
+                               text=f"Extraindo {i+1}/{len(arquivos_lote)}: {f.name}")
+                try:
+                    r = _extrair_com_ia(f.getvalue(), f.type)
+                except Exception:
+                    r = {}
+                r['_file_name']  = f.name
+                r['_file_bytes'] = f.getvalue()
+                r['_file_type']  = f.type
+                resultados_lote.append(r)
+            barra.progress(1.0, text="Extração concluída!")
+            st.session_state['batch_results']  = resultados_lote
+            st.session_state['batch_obra']     = obra_lote
+            st.session_state['batch_etapa']    = etapa_lote
+            st.success(f"✅ {len(resultados_lote)} nota(s) extraída(s). Revise a tabela abaixo.")
+
+        # ── Tabela de revisão ──────────────────────────────────────────────────
+        batch = st.session_state.get('batch_results', [])
+        if batch:
+            _obra_orig  = st.session_state.get('batch_obra',  obra_lote)
+            _etapa_orig = st.session_state.get('batch_etapa', etapa_lote)
+
+            _tipos_b    = load_tipos_custo()
+            _formas_b   = load_formas_pagamento()
+            _despesas_b = load_categorias()
+            _obras_b    = load_obras()['nome'].tolist() if not load_obras().empty else obras_list
+            _etapas_b   = load_etapas()
+
+            df_batch = pd.DataFrame([{
+                'OBRA':        r.get('OBRA',        _obra_orig),
+                'ETAPA':       r.get('ETAPA',       _etapa_orig),
+                'TIPO':        r.get('TIPO',        ''),
+                'DATA':        r.get('DATA',        None),
+                'DESPESA':     r.get('DESPESA',     ''),
+                'FORNECEDOR':  r.get('FORNECEDOR',  ''),
+                'DESCRICAO':   r.get('DESCRICAO',   ''),
+                'VALOR_TOTAL': float(r.get('VALOR_TOTAL') or 0),
+                'FORMA':       r.get('FORMA',       ''),
+                'BANCO':       r.get('BANCO',       ''),
+            } for r in batch])
+
+            df_batch['OBRA']  = df_batch['OBRA'].fillna(_obra_orig)
+            df_batch['ETAPA'] = df_batch['ETAPA'].fillna(_etapa_orig)
+            df_batch['DATA']  = pd.to_datetime(df_batch['DATA'], errors='coerce').dt.date
+
+            st.markdown("#### Revisão do lote — edite antes de cadastrar")
+            edited_batch = st.data_editor(
+                df_batch,
+                column_config={
+                    'OBRA':        st.column_config.SelectboxColumn("Obra",       options=_obras_b),
+                    'ETAPA':       st.column_config.SelectboxColumn("Etapa",      options=_etapas_b),
+                    'TIPO':        st.column_config.SelectboxColumn("Tipo",       options=_tipos_b),
+                    'DATA':        st.column_config.DateColumn("Data",            format="DD/MM/YYYY"),
+                    'DESPESA':     st.column_config.SelectboxColumn("Despesa",    options=_despesas_b),
+                    'FORNECEDOR':  st.column_config.TextColumn("Fornecedor"),
+                    'DESCRICAO':   st.column_config.TextColumn("Descrição"),
+                    'VALOR_TOTAL': st.column_config.NumberColumn("Valor (R$)",   min_value=0, format="R$ %.2f"),
+                    'FORMA':       st.column_config.SelectboxColumn("Forma Pgto", options=_formas_b),
+                    'BANCO':       st.column_config.TextColumn("Banco"),
+                },
+                use_container_width=True,
+                hide_index=True,
+                key="editor_batch",
+            )
+
+            col_salvar, col_limpar = st.columns([2, 1])
+            with col_salvar:
+                if st.button("✅ Cadastrar todas", type="primary",
+                             use_container_width=True, key="btn_lote_save"):
+                    sb = init_supabase()
+                    ok_lote, erros_lote = 0, []
+                    for i, row in edited_batch.iterrows():
+                        orig = batch[i]
+                        try:
+                            comp_url = None
+                            if orig.get('_file_bytes'):
+                                try:
+                                    ext_l = orig['_file_name'].rsplit('.', 1)[-1].lower()
+                                    _sl = lambda s: str(s).strip().replace(' ', '_')[:20]
+                                    nome_l = (
+                                        f"{row['DATA']}_{_sl(row['OBRA'])}"
+                                        f"_{_sl(row['FORNECEDOR'] or 'sem_forn')}"
+                                        f"_{i}_{datetime.now().strftime('%H%M%S')}.{ext_l}"
+                                    )
+                                    sb.storage.from_("comprovantes").upload(
+                                        nome_l, orig['_file_bytes'],
+                                        {"content-type": orig['_file_type']}
+                                    )
+                                    _sb_url_l = os.environ.get("SUPABASE_URL", "").rstrip("/")
+                                    comp_url = f"{_sb_url_l}/storage/v1/object/public/comprovantes/{nome_l}"
+                                except Exception:
+                                    pass
+
+                            rec = {
+                                "obra":            row['OBRA'],
+                                "etapa":           row['ETAPA'],
+                                "tipo":            row['TIPO']       or None,
+                                "data":            str(row['DATA'])  if row['DATA'] else None,
+                                "despesa":         row['DESPESA']    or None,
+                                "fornecedor":      row['FORNECEDOR'] or None,
+                                "descricao":       row['DESCRICAO']  or None,
+                                "valor_total":     float(row['VALOR_TOTAL']),
+                                "forma":           row['FORMA']      or None,
+                                "banco":           row['BANCO']      or None,
+                                "tem_nota_fiscal": True,
+                                "comprovante_url": comp_url,
+                            }
+                            if row['FORNECEDOR']:
+                                sb.table("fornecedores").upsert(
+                                    {"nome": str(row['FORNECEDOR'])}, on_conflict="nome"
+                                ).execute()
+                            sb.table("c_despesas").insert(rec).execute()
+                            ok_lote += 1
+                        except Exception as e_lote:
+                            erros_lote.append(f"Linha {i+1} ({orig.get('_file_name','')}): {e_lote}")
+
+                    load_despesas.clear()
+                    st.session_state.pop('batch_results', None)
+                    for msg in erros_lote:
+                        st.error(msg)
+                    st.success(f"✅ {ok_lote}/{len(edited_batch)} despesas cadastradas!")
+                    st.rerun(scope="fragment")
+
+            with col_limpar:
+                if st.button("🗑️ Limpar lote", use_container_width=True, key="btn_lote_clear"):
+                    st.session_state.pop('batch_results', None)
+                    st.rerun(scope="fragment")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # MODO FOLHA DE PAGAMENTO
+    # ══════════════════════════════════════════════════════════════════════════
+    elif modo == "🧾 Folha de Pagamento":
+        st.info("Distribua o valor da folha por etapa. Cada etapa com valor > 0 gera um registro separado.")
+
+        col_fo, col_fd = st.columns(2)
+        with col_fo:
+            obra_folha = st.selectbox("Obra *", obras_list, key="folha_obra")
+        with col_fd:
+            data_folha = st.date_input("Data da quinzena *", value=datetime.today(), key="folha_data")
+
+        # ── Tabela de distribuição por etapa ──────────────────────────────────
+        etapas_folha = load_etapas()
+        st.markdown("#### Distribuição por etapa")
+
+        etapas_selecionadas = st.multiselect(
+            "Selecione as etapas com trabalhadores nesta quinzena",
+            options=etapas_folha,
+            key="folha_etapas_sel",
+        )
+
+        _valores_etapa = {}
+        _total_folha = 0.0
+        if etapas_selecionadas:
+            st.caption("Informe o valor de cada etapa:")
+            for etapa in etapas_selecionadas:
+                _val = st.number_input(
+                    etapa, min_value=0.0, value=0.0,
+                    step=0.01, format="%.2f", key=f"folha_val_{etapa}"
+                )
+                _valores_etapa[etapa] = _val
+            _total_folha = sum(_valores_etapa.values())
+            st.metric("Total da folha", f"R$ {_total_folha:,.2f}")
+
+        st.markdown("---")
+
+        # ── Comprovantes e opções finais ──────────────────────────────────────
+        comprovantes_folha = st.file_uploader(
+            "Comprovantes dos funcionários (PIX, recibos...)",
+            type=["pdf", "jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+            key="folha_arquivos",
+        )
+        st.caption(f"{len(comprovantes_folha)} comprovante(s) selecionado(s)")
+
+        with st.form("form_folha", clear_on_submit=False):
+            forma_folha = st.selectbox("Forma de pagamento", load_formas_pagamento(), key="folha_forma")
+            desc_folha  = st.text_area(
+                "Descrição",
+                value=f"Folha de pagamento quinzenal — {data_folha.strftime('%d/%m/%Y')}",
+                max_chars=500,
+            )
+            submitted_folha = st.form_submit_button("✅ Registrar Folha", type="primary", use_container_width=True)
+
+        if submitted_folha:
+            etapas_preenchidas = {e: v for e, v in _valores_etapa.items() if v > 0}
+            erros_f = []
+            if not etapas_preenchidas:
+                erros_f.append("Informe o valor de ao menos uma etapa.")
+            if not comprovantes_folha:
+                erros_f.append("Anexe ao menos um comprovante.")
+            if erros_f:
+                for e in erros_f:
+                    st.error(e)
+            else:
+                sb_f    = init_supabase()
+                _sb_url_f = os.environ.get("SUPABASE_URL", "").rstrip("/")
+
+                # 1. Faz upload de todos os comprovantes uma única vez
+                urls_comp = []
+                erros_comp = []
+                for i, comp in enumerate(comprovantes_folha):
+                    try:
+                        ext_f = comp.name.rsplit('.', 1)[-1].lower()
+                        nome_comp = (
+                            f"folha_{data_folha.strftime('%Y-%m-%d')}"
+                            f"_{obra_folha[:20].replace(' ', '_')}"
+                            f"_{i}_{datetime.now().strftime('%H%M%S')}.{ext_f}"
+                        )
+                        sb_f.storage.from_("comprovantes").upload(
+                            nome_comp, comp.getvalue(),
+                            {"content-type": comp.type}
+                        )
+                        urls_comp.append((nome_comp, comp.name,
+                            f"{_sb_url_f}/storage/v1/object/public/comprovantes/{nome_comp}"))
+                    except Exception as e_comp:
+                        erros_comp.append(f"{comp.name}: {e_comp}")
+
+                # 2. Cria um registro em c_despesas por etapa preenchida
+                ids_inseridos = []
+                try:
+                    for etapa, valor in etapas_preenchidas.items():
+                        rec_f = {
+                            "obra":            obra_folha,
+                            "etapa":           etapa,
+                            "tipo":            "Mão de Obra",
+                            "data":            data_folha.strftime('%Y-%m-%d'),
+                            "despesa":         "SALÁRIO PESSOAL",
+                            "fornecedor":      None,
+                            "descricao":       desc_folha.strip() or f"Folha quinzenal — {etapa}",
+                            "valor_total":     float(valor),
+                            "forma":           forma_folha or None,
+                            "banco":           None,
+                            "tem_nota_fiscal": True,
+                            "comprovante_url": None,
+                        }
+                        res_f = sb_f.table("c_despesas").insert(rec_f).execute()
+                        ids_inseridos.append(res_f.data[0]['id'])
+
+                    # 3. Vincula todos os comprovantes a todos os registros criados
+                    for despesa_id in ids_inseridos:
+                        for nome_comp, nome_orig, url_comp in urls_comp:
+                            sb_f.table("comprovantes_despesa").insert({
+                                "despesa_id":   despesa_id,
+                                "url":          url_comp,
+                                "nome_arquivo": nome_orig,
+                            }).execute()
+
+                    load_despesas.clear()
+                    for msg in erros_comp:
+                        st.warning(f"Comprovante não salvo — {msg}")
+                    n_ok = len(comprovantes_folha) - len(erros_comp)
+                    st.success(
+                        f"✅ Folha registrada em {len(ids_inseridos)} etapa(s) — "
+                        f"{n_ok}/{len(comprovantes_folha)} comprovantes salvos. "
+                        f"Total: R$ {_total_folha:,.2f}"
+                    )
+                    st.rerun(scope="fragment")
+                except Exception as e_folha:
+                    st.error(f"Erro ao registrar folha: {e_folha}")
 
 with tab_desp:
     _render_despesas(df_raw)
+
+with tab_hist:
+    _render_historico(sel_obras, sel_etapas)
+
+# ── Funções auxiliares da Folha ────────────────────────────────────────────────
+
+def _salvar_folha(folha, edited, calcular_valor_fn, col_map):
+    sb = init_supabase()
+    changes     = st.session_state.get("editor_folha", {})
+    added       = changes.get("added_rows", [])
+    edited_rows = changes.get("edited_rows", {})
+    deleted     = changes.get("deleted_rows", [])
+    erros = []
+
+    for row in added:
+        diarias = row.get("DIÁRIAS", 0)
+        servico = row.get("SERVIÇO", "")
+        valor   = calcular_valor_fn(servico, diarias)
+        rec = {col_map[k]: v for k, v in row.items() if k in col_map and k != "VALOR"}
+        rec["valor"]    = valor
+        rec["folha_id"] = folha["id"]
+        try:
+            sb.table("folha_funcionarios").insert(rec).execute()
+        except Exception as e:
+            erros.append(str(e))
+
+    for idx, vals in edited_rows.items():
+        row_id  = edited.iloc[idx]["id"]
+        diarias = vals.get("DIÁRIAS", edited.iloc[idx].get("DIÁRIAS", 0))
+        servico = vals.get("SERVIÇO", edited.iloc[idx].get("SERVIÇO", ""))
+        payload = {col_map[k]: v for k, v in vals.items() if k in col_map and k != "VALOR"}
+        payload["valor"] = calcular_valor_fn(servico, diarias)
+        try:
+            sb.table("folha_funcionarios").update(payload).eq("id", int(row_id)).execute()
+        except Exception as e:
+            erros.append(str(e))
+
+    for idx in deleted:
+        row_id = edited.iloc[idx]["id"]
+        try:
+            sb.table("folha_funcionarios").delete().eq("id", int(row_id)).execute()
+        except Exception as e:
+            erros.append(str(e))
+
+    if erros:
+        st.error("Erros ao salvar: " + "; ".join(erros))
+    else:
+        st.success("✅ Folha salva!")
+        st.rerun(scope="fragment")
+
+
+def _gerar_mensagem(obra, quinzena, df, total):
+    # Agrupa por PIX somando valores — trabalhador com diárias + empreitada aparece uma só vez
+    grupos = {}
+    for _, row in df.iterrows():
+        pix   = row.get("PIX") or "—"
+        nome  = row.get("NOME") or "—"
+        conta = row.get("NOME DA CONTA") or "—"
+        valor = float(row.get("VALOR") or 0)
+        if pix not in grupos:
+            grupos[pix] = {"nome": nome, "conta": conta, "valor": 0.0}
+        grupos[pix]["valor"] += valor
+
+    linhas = ["📋 FOLHA DE PAGAMENTO", f"Obra: {obra}",
+              f"Quinzena: {quinzena.strftime('%d/%m/%Y')}", ""]
+    for i, (pix, dados) in enumerate(grupos.items()):
+        linhas.append(f"{i+1}. {dados['nome']}")
+        linhas.append(f"   PIX: {pix}")
+        linhas.append(f"   Conta: {dados['conta']}")
+        linhas.append(f"   Valor: R$ {dados['valor']:,.2f}")
+        linhas.append("")
+    linhas.append(f"TOTAL: R$ {total:,.2f}")
+    return "\n".join(linhas)
+
+
+def _fechar_folha(folha, df, obra, quinzena, comprovantes=None):
+    sb = init_supabase()
+    etapas_vals = df.groupby("ETAPA")["VALOR"].sum().to_dict()
+    erros = []
+    despesa_ids = []
+    for etapa, valor in etapas_vals.items():
+        if not etapa or valor <= 0:
+            continue
+        try:
+            res_ins = sb.table("c_despesas").insert({
+                "obra":            obra,
+                "etapa":           etapa,
+                "tipo":            "Mão de Obra",
+                "data":            str(quinzena),
+                "despesa":         "SALÁRIO PESSOAL",
+                "descricao":       f"Folha quinzenal — {quinzena.strftime('%d/%m/%Y')}",
+                "valor_total":     float(valor),
+                "tem_nota_fiscal": False,
+                "folha_id":        folha["id"],
+            }).execute()
+            if res_ins.data:
+                despesa_ids.append(res_ins.data[0]["id"])
+        except Exception as e:
+            erros.append(f"{etapa}: {e}")
+
+    if erros:
+        st.error("Erros ao gerar despesas: " + "; ".join(erros))
+        return
+
+    # Upload comprovantes para todos os registros gerados
+    if comprovantes and despesa_ids:
+        bucket = "comprovantes"
+        for comp in comprovantes:
+            try:
+                path = (f"folha_{quinzena.strftime('%Y-%m-%d')}"
+                        f"_{obra[:20].replace(' ', '_')}"
+                        f"_{comp.name}")
+                sb.storage.from_(bucket).upload(path, comp.getvalue(),
+                    file_options={"content-type": comp.type, "upsert": "true"})
+                url = sb.storage.from_(bucket).get_public_url(path)
+                for did in despesa_ids:
+                    sb.table("comprovantes_despesa").insert({
+                        "despesa_id":   did,
+                        "url":          url,
+                        "nome_arquivo": comp.name,
+                    }).execute()
+            except Exception as e_up:
+                st.warning(f"Comprovante '{comp.name}' não salvo: {e_up}")
+
+    sb.table("folhas").update({"status": "fechada"}).eq("id", folha["id"]).execute()
+    load_despesas.clear()
+    st.success(f"✅ Folha fechada! {len(despesa_ids)} lançamento(s) em c_despesas."
+               + (f" {len(comprovantes)} comprovante(s) enviado(s)." if comprovantes else ""))
+    st.rerun(scope="fragment")
+
+
+@st.fragment
+def _render_folha():
+    st.markdown("""
+    <div class="main-header">
+        <h1>Folha de Pagamento</h1>
+        <p>Gerencie a folha quinzenal por obra.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+
+    _STATUS_COLOR = {"rascunho": "🟡", "enviada": "🔵", "fechada": "🟢"}
+
+    obras_list = sorted(load_obras()["nome"].dropna().tolist()) if not load_obras().empty else []
+    col_o, col_n = st.columns([3, 1])
+    with col_o:
+        obra_f = st.selectbox("Obra", obras_list, key="folha_obra_sel")
+    with col_n:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("➕ Nova folha", key="btn_nova_folha", use_container_width=True):
+            st.session_state["folha_criar_modo"] = True
+
+    # Modo criação de nova folha
+    if st.session_state.get("folha_criar_modo"):
+        nova_data = st.date_input("Data da quinzena", value=datetime.today(), key="folha_nova_data")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("✅ Criar", key="btn_criar_confirm", type="primary"):
+                sb = init_supabase()
+                try:
+                    sb.table("folhas").insert({"obra": obra_f, "quinzena": str(nova_data)}).execute()
+                    st.session_state.pop("folha_criar_modo", None)
+                    st.rerun(scope="fragment")
+                except Exception as e_cf:
+                    st.error(f"Erro: {e_cf}")
+        with c2:
+            if st.button("❌ Cancelar", key="btn_criar_cancel"):
+                st.session_state.pop("folha_criar_modo", None)
+                st.rerun(scope="fragment")
+        return
+
+    folhas_obra = load_folhas_by_obra(obra_f)
+    if not folhas_obra:
+        st.info("Nenhuma folha cadastrada para esta obra.")
+        return
+
+    opcoes_label = {
+        f"{f['quinzena']}  {_STATUS_COLOR.get(f['status'], '⚪')} {f['status'].upper()}": f
+        for f in folhas_obra
+    }
+    sel_label = st.selectbox("Quinzena", list(opcoes_label.keys()), key="folha_sel")
+    folha = opcoes_label[sel_label]
+
+    df_func = load_folha_funcionarios(folha["id"])
+    quinzena_f = (datetime.strptime(folha["quinzena"], "%Y-%m-%d").date()
+                  if isinstance(folha["quinzena"], str) else folha["quinzena"])
+
+    st.markdown(f"**Status:** {_STATUS_COLOR.get(folha['status'], '⚪')} `{folha['status'].upper()}`")
+
+    # Regras da obra
+    df_regras  = load_folha_regras()
+    regras_obra = (df_regras[df_regras["obra"] == obra_f].set_index("servico")
+                   if not df_regras.empty else pd.DataFrame())
+
+    def _calc(servico, diarias):
+        if regras_obra.empty or servico not in regras_obra.index:
+            return 0.0
+        r = regras_obra.loc[servico]
+        return float(r["valor"]) if r["tipo"] == "fixo" else float(r["valor"]) * float(diarias or 0)
+
+    _COL_MAP_F = {
+        "NOME": "nome", "PIX": "pix", "NOME DA CONTA": "nome_conta",
+        "SERVIÇO": "servico", "ETAPA": "etapa", "DIÁRIAS": "diarias", "VALOR": "valor",
+    }
+    etapas_opts = load_etapas()
+
+    if not df_func.empty:
+        df_view = df_func.rename(columns={v: k for k, v in _COL_MAP_F.items()})
+        df_view["VALOR"] = df_view.apply(lambda r: _calc(r["SERVIÇO"], r["DIÁRIAS"]), axis=1)
+    else:
+        df_view = pd.DataFrame(columns=["id", "folha_id"] + list(_COL_MAP_F.keys()))
+
+    cols_show   = [c for c in list(_COL_MAP_F.keys()) if c in df_view.columns]
+    df_editor   = df_view[["id"] + cols_show].copy().reset_index(drop=True)
+
+    edited = st.data_editor(
+        df_editor,
+        column_config={
+            "id":            st.column_config.NumberColumn("id", disabled=True),
+            "NOME":          st.column_config.TextColumn("Nome"),
+            "PIX":           st.column_config.TextColumn("PIX"),
+            "NOME DA CONTA": st.column_config.TextColumn("Nome da Conta"),
+            "SERVIÇO":       st.column_config.SelectboxColumn("Serviço", options=regras_obra.index.tolist() if not regras_obra.empty else []),
+            "ETAPA":         st.column_config.SelectboxColumn("Etapa", options=etapas_opts),
+            "DIÁRIAS":       st.column_config.NumberColumn("Diárias", min_value=0, step=0.5, format="%.1f"),
+            "VALOR":         st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f", disabled=True),
+        },
+        column_order=cols_show,
+        use_container_width=True,
+        hide_index=True,
+        disabled=False,
+        num_rows="dynamic",
+        key="editor_folha",
+    )
+
+    total_folha = float(edited["VALOR"].sum()) if "VALOR" in edited.columns else 0.0
+    st.metric("Total da quinzena", f"R$ {total_folha:,.2f}")
+
+    col_s, col_m, col_f = st.columns(3)
+    with col_s:
+        if st.button("💾 Salvar", use_container_width=True, key="btn_folha_salvar"):
+            _salvar_folha(folha, df_editor, _calc, _COL_MAP_F)
+    with col_m:
+        if st.button("📋 Criar Mensagem", use_container_width=True,
+                     type="primary", key="btn_folha_msg"):
+            st.session_state["folha_msg"] = _gerar_mensagem(obra_f, quinzena_f, edited, total_folha)
+    with col_f:
+        if folha["status"] != "fechada":
+            comprovantes_fechar = st.file_uploader(
+                "Comprovantes de pagamento",
+                type=["jpg", "jpeg", "png", "pdf"],
+                accept_multiple_files=True,
+                key="folha_comprovantes",
+            )
+            if st.button("✅ Fechar Folha", use_container_width=True, key="btn_folha_fechar", type="primary"):
+                _fechar_folha(folha, edited, obra_f, quinzena_f, comprovantes_fechar)
+        else:
+            if st.button("🔓 Reabrir Folha", use_container_width=True, key="btn_folha_reabrir"):
+                sb = init_supabase()
+                sb.table("c_despesas").delete().eq("folha_id", folha["id"]).execute()
+                sb.table("folhas").update({"status": "rascunho"}).eq("id", folha["id"]).execute()
+                load_despesas.clear()
+                st.rerun(scope="fragment")
+
+    if st.session_state.get("folha_msg"):
+        st.markdown("#### Mensagem para o pagador")
+        st.code(st.session_state["folha_msg"], language=None)
+        st.caption("Copie o texto acima e envie ao pagador.")
+        if st.button("🗑️ Limpar mensagem", key="btn_clear_msg"):
+            st.session_state.pop("folha_msg")
+            st.rerun(scope="fragment")
+
+
+with tab_folha:
+    _render_folha()
+
+
+@st.fragment
+def _render_conf():
+    st.markdown("""
+    <div class="main-header">
+        <h1>Configurações</h1>
+        <p>Gerencie obras, etapas, orçamentos e taxas de conclusão.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+
+    sub_obras, sub_etapas, sub_orc, sub_taxa, sub_formas, sub_cat, sub_regras = st.tabs(
+        ["🏗️ Obras", "🔧 Etapas", "💼 Orçamentos", "📊 Taxa de Conclusão",
+         "💳 Formas de Pagamento", "🏷️ Categorias de Despesa", "📐 Regras de Diária"]
+    )
+
+    # ── Sub-aba Obras ──────────────────────────────────────────────────────────
+    with sub_obras:
+        df_obras_conf = load_obras()
+        if not df_obras_conf.empty:
+            cols_show = [c for c in ['nome', 'descricao', 'contrato', 'art'] if c in df_obras_conf.columns]
+            st.dataframe(df_obras_conf[cols_show], use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhuma obra cadastrada ainda.")
+
+        st.markdown("#### Nova Obra")
+        with st.form("form_nova_obra"):
+            col_n1, col_n2 = st.columns(2)
+            with col_n1:
+                nova_obra_nome = st.text_input("Nome *")
+                nova_obra_contrato = st.text_input("Contrato")
+            with col_n2:
+                nova_obra_descricao = st.text_input("Descrição")
+                nova_obra_art = st.text_input("ART")
+            if st.form_submit_button("➕ Adicionar Obra", type="primary"):
+                if not nova_obra_nome.strip():
+                    st.error("Nome é obrigatório.")
+                else:
+                    try:
+                        _sb = init_supabase()
+                        _sb.table("obras").insert({
+                            "nome": nova_obra_nome.strip(),
+                            "descricao": nova_obra_descricao.strip() or None,
+                            "contrato": nova_obra_contrato.strip() or None,
+                            "art": nova_obra_art.strip() or None,
+                        }).execute()
+                        load_obras.clear()
+                        load_data.clear()
+                        st.success(f"Obra '{nova_obra_nome.strip()}' adicionada!")
+                        st.rerun(scope="fragment")
+                    except Exception as e_obra:
+                        st.error(f"Erro ao adicionar obra: {e_obra}")
+
+        if not df_obras_conf.empty:
+            st.markdown("#### Editar Obra")
+            obra_edit_nome = st.selectbox("Selecione a obra", df_obras_conf['nome'].tolist(), key="conf_edit_obra")
+            row_edit = df_obras_conf[df_obras_conf['nome'] == obra_edit_nome].iloc[0]
+            with st.form("form_editar_obra"):
+                col_e1, col_e2 = st.columns(2)
+                with col_e1:
+                    edit_descricao = st.text_input("Descrição", value=row_edit.get('descricao') or '')
+                    edit_contrato = st.text_input("Contrato", value=row_edit.get('contrato') or '')
+                with col_e2:
+                    edit_art = st.text_input("ART", value=row_edit.get('art') or '')
+                if st.form_submit_button("💾 Salvar Alterações", type="primary"):
+                    try:
+                        _sb = init_supabase()
+                        _sb.table("obras").update({
+                            "descricao": edit_descricao.strip() or None,
+                            "contrato": edit_contrato.strip() or None,
+                            "art": edit_art.strip() or None,
+                        }).eq("nome", obra_edit_nome).execute()
+                        load_obras.clear()
+                        load_data.clear()
+                        st.success("Obra atualizada!")
+                        st.rerun(scope="fragment")
+                    except Exception as e_edit:
+                        st.error(f"Erro ao editar obra: {e_edit}")
+
+            st.markdown("#### Remover Obra")
+            obra_remover = st.selectbox("Obra a remover", df_obras_conf['nome'].tolist(), key="conf_rm_obra")
+            if st.button("🗑️ Remover obra", key="btn_rm_obra", type="secondary"):
+                try:
+                    _sb = init_supabase()
+                    _sb.table("obras").delete().eq("nome", obra_remover).execute()
+                    load_obras.clear()
+                    load_data.clear()
+                    st.success(f"Obra '{obra_remover}' removida!")
+                    st.rerun(scope="fragment")
+                except Exception as e_rm:
+                    st.error(f"Erro ao remover: {e_rm}")
+
+    # ── Sub-aba Etapas ─────────────────────────────────────────────────────────
+    with sub_etapas:
+        _sb_etapas = init_supabase()
+        if _sb_etapas:
+            _res_etapas = _sb_etapas.table("etapas").select("nome,ordem").order("ordem").execute()
+            df_etapas_conf = pd.DataFrame(_res_etapas.data) if _res_etapas.data else pd.DataFrame(columns=["nome", "ordem"])
+        else:
+            df_etapas_conf = pd.DataFrame(columns=["nome", "ordem"])
+
+        if not df_etapas_conf.empty:
+            st.markdown("#### Ordem das Etapas")
+            df_etapas_edit = st.data_editor(
+                df_etapas_conf,
+                column_config={
+                    "nome": st.column_config.TextColumn("Etapa", disabled=True),
+                    "ordem": st.column_config.NumberColumn("Ordem", min_value=0, step=1),
+                },
+                use_container_width=True,
+                hide_index=True,
+                key="editor_etapas",
+            )
+            if st.button("💾 Salvar Ordem das Etapas", type="primary"):
+                try:
+                    _sb2 = init_supabase()
+                    rows_upsert = df_etapas_edit[['nome', 'ordem']].to_dict(orient='records')
+                    _sb2.table("etapas").upsert(rows_upsert, on_conflict="nome").execute()
+                    load_data.clear()
+                    st.success("Ordem salva!")
+                    st.rerun(scope="fragment")
+                except Exception as e_et:
+                    st.error(f"Erro ao salvar etapas: {e_et}")
+
+        st.markdown("#### Nova Etapa")
+        with st.form("form_nova_etapa"):
+            col_et1, col_et2 = st.columns([3, 1])
+            with col_et1:
+                nova_etapa_nome = st.text_input("Nome *")
+            with col_et2:
+                nova_etapa_ordem = st.number_input("Ordem", min_value=0, value=999, step=1)
+            if st.form_submit_button("➕ Adicionar Etapa", type="primary"):
+                if not nova_etapa_nome.strip():
+                    st.error("Nome é obrigatório.")
+                else:
+                    try:
+                        _sb3 = init_supabase()
+                        _sb3.table("etapas").insert({
+                            "nome": nova_etapa_nome.strip(),
+                            "ordem": int(nova_etapa_ordem),
+                        }).execute()
+                        load_data.clear()
+                        st.success(f"Etapa '{nova_etapa_nome.strip()}' adicionada!")
+                        st.rerun(scope="fragment")
+                    except Exception as e_novaet:
+                        st.error(f"Erro ao adicionar etapa: {e_novaet}")
+
+    # ── Sub-aba Orçamentos ─────────────────────────────────────────────────────
+    with sub_orc:
+        import itertools as _it
+        _todas_obras_orc  = load_obras()
+        _todas_etapas_orc = load_etapas()
+        _tipos_orc        = load_tipos_custo()
+
+        _sb_orc = init_supabase()
+        if _sb_orc and not _todas_obras_orc.empty and _todas_etapas_orc and _tipos_orc:
+            _res_orc = _sb_orc.table("orcamentos").select("obra,etapa,tipo_custo,valor_estimado").execute()
+            df_orc_conf = pd.DataFrame(_res_orc.data) if _res_orc.data else pd.DataFrame(
+                columns=["obra","etapa","tipo_custo","valor_estimado"])
+
+            # Filtro por obra
+            _obras_lista_orc = _todas_obras_orc['nome'].tolist()
+            _filtro_orc = st.selectbox("Filtrar por obra", ["Todas"] + _obras_lista_orc, key="filtro_orc")
+
+            # Grade completa: todas obras × etapas × tipos
+            _obras_grid = [_filtro_orc] if _filtro_orc != "Todas" else _obras_lista_orc
+            grid_orc = pd.DataFrame([
+                {"obra": o, "etapa": e, "tipo_custo": t, "valor_estimado": 0.0}
+                for o, e, t in _it.product(_obras_grid, _todas_etapas_orc, _tipos_orc)
+            ])
+            if not df_orc_conf.empty:
+                df_orc_filtrado = df_orc_conf[df_orc_conf["obra"].isin(_obras_grid)] if _filtro_orc != "Todas" else df_orc_conf
+                grid_orc = grid_orc.merge(
+                    df_orc_filtrado[["obra","etapa","tipo_custo","valor_estimado"]],
+                    on=["obra","etapa","tipo_custo"], how="left", suffixes=("_z","")
+                )
+                grid_orc["valor_estimado"] = grid_orc["valor_estimado"].fillna(
+                    grid_orc.get("valor_estimado_z", 0)
+                ).fillna(0)
+                grid_orc = grid_orc[["obra","etapa","tipo_custo","valor_estimado"]]
+
+            grid_orc["col_label"] = grid_orc["obra"] + " — " + grid_orc["tipo_custo"]
+            pivot_orc = grid_orc.pivot_table(
+                index="etapa", columns="col_label", values="valor_estimado", aggfunc="sum"
+            ).fillna(0)
+            pivot_orc.index.name = "Etapa"
+            pivot_orc.columns.name = None
+
+            col_cfg_orc = {
+                col: st.column_config.NumberColumn(col, min_value=0, format="R$ %.2f")
+                for col in pivot_orc.columns
+            }
+            pivot_editado = st.data_editor(
+                pivot_orc.reset_index(),
+                column_config={"Etapa": st.column_config.TextColumn("Etapa", disabled=True), **col_cfg_orc},
+                use_container_width=True,
+                hide_index=True,
+                key="editor_orc",
+            )
+
+            if st.button("💾 Salvar Orçamentos", type="primary", key="btn_salvar_orc"):
+                try:
+                    _sb4 = init_supabase()
+                    rows_orc = []
+                    for _, row in pivot_editado.iterrows():
+                        etapa = row["Etapa"]
+                        for col_lbl in pivot_orc.columns:
+                            partes = col_lbl.split(" — ", 1)
+                            if len(partes) == 2:
+                                rows_orc.append({
+                                    "obra": partes[0], "etapa": etapa,
+                                    "tipo_custo": partes[1],
+                                    "valor_estimado": float(row[col_lbl]),
+                                })
+                    _sb4.table("orcamentos").upsert(rows_orc, on_conflict="obra,etapa,tipo_custo").execute()
+                    load_data.clear()
+                    st.success("Orçamentos salvos!")
+                    st.rerun(scope="fragment")
+                except Exception as e_orc:
+                    st.error(f"Erro ao salvar orçamentos: {e_orc}")
+        else:
+            st.info("Configure obras, etapas e tipos de custo primeiro.")
+
+    # ── Sub-aba Taxa de Conclusão ──────────────────────────────────────────────
+    with sub_taxa:
+        _todas_obras_taxa  = load_obras()
+        _todas_etapas_taxa = load_etapas()
+
+        _sb_taxa = init_supabase()
+        if _sb_taxa and not _todas_obras_taxa.empty and _todas_etapas_taxa:
+            _res_taxa = _sb_taxa.table("taxa_conclusao").select("obra,etapa,taxa").execute()
+            df_taxa_conf = pd.DataFrame(_res_taxa.data) if _res_taxa.data else pd.DataFrame(
+                columns=["obra","etapa","taxa"])
+
+            # Filtro por obra
+            _obras_lista_taxa = _todas_obras_taxa['nome'].tolist()
+            _filtro_taxa = st.selectbox("Filtrar por obra", ["Todas"] + _obras_lista_taxa, key="filtro_taxa")
+
+            # Grade completa
+            _obras_grid_taxa = [_filtro_taxa] if _filtro_taxa != "Todas" else _obras_lista_taxa
+            grid_taxa = pd.DataFrame([
+                {"obra": o, "etapa": e, "taxa": 0.0}
+                for o, e in _it.product(_obras_grid_taxa, _todas_etapas_taxa)
+            ])
+            if not df_taxa_conf.empty:
+                df_taxa_filtrado = df_taxa_conf[df_taxa_conf["obra"].isin(_obras_grid_taxa)] if _filtro_taxa != "Todas" else df_taxa_conf
+                grid_taxa = grid_taxa.merge(
+                    df_taxa_filtrado[["obra","etapa","taxa"]],
+                    on=["obra","etapa"], how="left", suffixes=("_z","")
+                )
+                grid_taxa["taxa"] = grid_taxa["taxa"].fillna(grid_taxa.get("taxa_z", 0)).fillna(0)
+                grid_taxa = grid_taxa[["obra","etapa","taxa"]]
+
+            pivot_taxa = grid_taxa.pivot_table(
+                index="etapa", columns="obra", values="taxa", aggfunc="first"
+            ).fillna(0)
+            pivot_taxa.index.name = "Etapa"
+            pivot_taxa.columns.name = None
+
+            col_cfg_taxa = {
+                col: st.column_config.NumberColumn(col, min_value=0, max_value=100, step=0.1, format="%.1f%%")
+                for col in pivot_taxa.columns
+            }
+            pivot_taxa_edit = st.data_editor(
+                pivot_taxa.reset_index(),
+                column_config={"Etapa": st.column_config.TextColumn("Etapa", disabled=True), **col_cfg_taxa},
+                use_container_width=True,
+                hide_index=True,
+                key="editor_taxa",
+            )
+
+            if st.button("💾 Salvar Taxas", type="primary", key="btn_salvar_taxa"):
+                try:
+                    _sb5 = init_supabase()
+                    rows_taxa = []
+                    for _, row in pivot_taxa_edit.iterrows():
+                        etapa = row["Etapa"]
+                        for obra_col in pivot_taxa.columns:
+                            rows_taxa.append({
+                                "obra": obra_col, "etapa": etapa,
+                                "taxa": float(row[obra_col]),
+                            })
+                    _sb5.table("taxa_conclusao").upsert(rows_taxa, on_conflict="obra,etapa").execute()
+                    load_data.clear()
+                    st.success("Taxas de conclusão salvas!")
+                    st.rerun(scope="fragment")
+                except Exception as e_taxa:
+                    st.error(f"Erro ao salvar taxas: {e_taxa}")
+        else:
+            st.info("Configure obras e etapas primeiro.")
+
+    # ── Sub-aba Formas de Pagamento ────────────────────────────────────────────
+    with sub_formas:
+        _formas_atuais = [f for f in load_formas_pagamento() if f]  # remove string vazia
+        st.markdown("**Formas de pagamento cadastradas**")
+        st.dataframe({"Forma": _formas_atuais}, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        with st.form("form_nova_forma"):
+            nova_forma = st.text_input("Nova forma *")
+            if st.form_submit_button("➕ Adicionar"):
+                nova_forma = nova_forma.strip()
+                if not nova_forma:
+                    st.error("Informe um nome.")
+                else:
+                    try:
+                        init_supabase().table("formas_pagamento").insert({"nome": nova_forma}).execute()
+                        load_formas_pagamento.clear()
+                        st.success(f"'{nova_forma}' adicionada!")
+                        st.rerun(scope="fragment")
+                    except Exception as e_f2:
+                        st.error(f"Erro: {e_f2}")
+
+        if _formas_atuais:
+            st.markdown("---")
+            forma_remover = st.selectbox("Remover forma", _formas_atuais, key="sel_rm_forma")
+            if st.button("🗑️ Remover", key="btn_rm_forma", type="secondary"):
+                try:
+                    init_supabase().table("formas_pagamento").delete().eq("nome", forma_remover).execute()
+                    load_formas_pagamento.clear()
+                    st.success(f"'{forma_remover}' removida!")
+                    st.rerun(scope="fragment")
+                except Exception as e_f3:
+                    st.error(f"Erro: {e_f3}")
+
+    with sub_cat:
+        _cats_atuais = [c for c in load_categorias() if c]  # remove string vazia
+        st.markdown("**Categorias de despesa cadastradas**")
+        st.dataframe({"Categoria": _cats_atuais}, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+        with st.form("form_nova_cat"):
+            nova_cat = st.text_input("Nova categoria *")
+            if st.form_submit_button("➕ Adicionar"):
+                nova_cat = nova_cat.strip().upper()
+                if not nova_cat:
+                    st.error("Informe um nome.")
+                else:
+                    try:
+                        init_supabase().table("categorias_despesa").insert({"nome": nova_cat}).execute()
+                        load_categorias.clear()
+                        st.success(f"'{nova_cat}' adicionada!")
+                        st.rerun(scope="fragment")
+                    except Exception as e_c2:
+                        st.error(f"Erro: {e_c2}")
+
+        if _cats_atuais:
+            st.markdown("---")
+            cat_remover = st.selectbox("Remover categoria", _cats_atuais, key="sel_rm_cat")
+            if st.button("🗑️ Remover", key="btn_rm_cat", type="secondary"):
+                try:
+                    init_supabase().table("categorias_despesa").delete().eq("nome", cat_remover).execute()
+                    load_categorias.clear()
+                    st.success(f"'{cat_remover}' removida!")
+                    st.rerun(scope="fragment")
+                except Exception as e_c3:
+                    st.error(f"Erro: {e_c3}")
+
+    # ── Sub-aba Regras de Diária ───────────────────────────────────────────────
+    with sub_regras:
+        _obras_reg = load_obras()
+        _obras_reg_list = sorted(_obras_reg["nome"].dropna().tolist()) if not _obras_reg.empty else []
+        obra_reg = st.selectbox("Obra", _obras_reg_list, key="reg_obra_sel")
+
+        df_reg_atual = load_folha_regras()
+        df_reg_obra  = df_reg_atual[df_reg_atual["obra"] == obra_reg][
+            ["servico", "tipo", "valor"]
+        ].copy() if not df_reg_atual.empty else pd.DataFrame(columns=["servico", "tipo", "valor"])
+
+        if not df_reg_obra.empty:
+            st.markdown(f"**Regras cadastradas para {obra_reg}**")
+            df_reg_edit = st.data_editor(
+                df_reg_obra.reset_index(drop=True),
+                column_config={
+                    "servico": st.column_config.TextColumn("Serviço", disabled=True),
+                    "tipo":    st.column_config.SelectboxColumn("Tipo", options=["diaria", "fixo"]),
+                    "valor":   st.column_config.NumberColumn("Valor (R$)", min_value=0, format="R$ %.2f"),
+                },
+                use_container_width=True,
+                hide_index=True,
+                key="editor_regras",
+            )
+            if st.button("💾 Salvar regras", type="primary", key="btn_salvar_regras"):
+                try:
+                    _sb_reg = init_supabase()
+                    rows_reg = [{"obra": obra_reg, "servico": r["servico"],
+                                 "tipo": r["tipo"], "valor": float(r["valor"])}
+                                for _, r in df_reg_edit.iterrows()]
+                    _sb_reg.table("folha_regras").upsert(rows_reg, on_conflict="obra,servico").execute()
+                    load_folha_regras.clear()
+                    st.success("Regras salvas!")
+                    st.rerun(scope="fragment")
+                except Exception as e_reg:
+                    st.error(f"Erro: {e_reg}")
+        else:
+            st.info(f"Nenhuma regra cadastrada para {obra_reg}.")
+
+        st.markdown("---")
+        st.markdown("#### Adicionar regra")
+        with st.form("form_nova_regra"):
+            col_r1, col_r2, col_r3 = st.columns(3)
+            with col_r1:
+                novo_servico = st.text_input("Serviço *", key="nova_reg_serv")
+            with col_r2:
+                novo_tipo = st.selectbox("Tipo", ["diaria", "fixo"], key="nova_reg_tipo")
+            with col_r3:
+                novo_valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f")
+            if st.form_submit_button("➕ Adicionar"):
+                try:
+                    init_supabase().table("folha_regras").upsert(
+                        {"obra": obra_reg, "servico": novo_servico,
+                         "tipo": novo_tipo, "valor": float(novo_valor)},
+                        on_conflict="obra,servico"
+                    ).execute()
+                    load_folha_regras.clear()
+                    st.success(f"Regra '{novo_servico}' adicionada!")
+                    st.rerun(scope="fragment")
+                except Exception as e_nr:
+                    st.error(f"Erro: {e_nr}")
+
+
+with tab_conf:
+    _render_conf()

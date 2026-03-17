@@ -34,21 +34,6 @@ LARGURA_UTIL = LARGURA_PAG - 2 * MARGEM
 
 LOGO_PATH = os.path.join(os.path.dirname(__file__), 'logo.png')
 
-# Metadados fixos por obra para o timbrado do relatório simples
-OBRAS_METADATA = {
-    'Creche Teoflandia': {
-        'descricao': 'Creche proinfância tipo 01 no município de Teofilândia',
-        'contrato':  '0252/2025',
-        'art':       'BA20240905989',
-    },
-    'Administrativo': {
-        'descricao': 'Centro de custos administrativos',
-        'contrato':  '—',
-        'art':       '—',
-    },
-    # Adicione outras obras aqui conforme necessário
-}
-
 
 def _fmt(value: float) -> str:
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -184,7 +169,7 @@ def _linha_separadora(largura: float) -> Table:
         ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]))
     return t
-j
+
 
 def _timbrado(obra_nome: str, etapa_nome: str, subtitulo: str, estilos: dict, largura: float) -> Table:
     data = [[
@@ -209,12 +194,12 @@ def _timbrado(obra_nome: str, etapa_nome: str, subtitulo: str, estilos: dict, la
     return t
 
 
-def _timbrado_simples(obra_nome: str, largura: float) -> Table:
+def _timbrado_simples(obra_nome: str, largura: float, obra_info: dict = None) -> Table:
     """Timbrado completo para o relatório simples: logo + dados da obra."""
-    meta = OBRAS_METADATA.get(obra_nome, {})
-    descricao = meta.get('descricao', obra_nome)
-    contrato  = meta.get('contrato',  '—')
-    art       = meta.get('art',       '—')
+    info      = obra_info or {}
+    descricao = info.get('descricao') or obra_nome
+    contrato  = info.get('contrato')  or '—'
+    art       = info.get('art')       or '—'
 
     st_label = ParagraphStyle('TimLabel', fontSize=7.5, textColor=C_CINZA_MED, fontName='Helvetica')
     st_valor = ParagraphStyle('TimValor', fontSize=9,   textColor=C_CINZA_ESC, fontName='Helvetica-Bold')
@@ -444,7 +429,7 @@ def _tabela_despesas_semana(df_desp: pd.DataFrame, estilos, largura, mostrar_eta
 # RELATÓRIO DETALHADO — uma página por etapa
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str, df_despesas_semana: pd.DataFrame = None) -> bytes:
+def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str, df_despesas_semana: pd.DataFrame = None, obra_info: dict = None) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=landscape(A4),
@@ -476,7 +461,7 @@ def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str, df_despesas_
         pct_consumo    = (gasto / orc * 100) if orc > 0 else 0.0
         pct_realizacao = float(df_etapa['TAXA_CONCLUSAO'].iloc[0]) if 'TAXA_CONCLUSAO' in df_etapa.columns and not df_etapa.empty else 0.0
 
-        story.append(_timbrado_simples(obra_nome, LARGURA_UTIL))
+        story.append(_timbrado_simples(obra_nome, LARGURA_UTIL, obra_info))
         story.append(_linha_separadora(LARGURA_UTIL))
         story.append(Spacer(1, 0.35 * cm))
 
@@ -511,7 +496,7 @@ def gerar_relatorio_detalhado(df_raw: pd.DataFrame, obra_nome: str, df_despesas_
 # RELATÓRIO SIMPLES — todas as etapas em uma única página
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str, df_despesas_semana: pd.DataFrame = None) -> bytes:
+def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str, df_despesas_semana: pd.DataFrame = None, obra_info: dict = None) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=landscape(A4),
@@ -533,7 +518,7 @@ def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str, df_despesas_se
         etapas_ativas = etapas_com_orc.tolist()
 
     # ── Timbrado ─────────────────────────────────────────────────────────────
-    story.append(_timbrado_simples(obra_nome, LARGURA_UTIL))
+    story.append(_timbrado_simples(obra_nome, LARGURA_UTIL, obra_info))
     story.append(_linha_separadora(LARGURA_UTIL))
     story.append(Spacer(1, 0.4 * cm))
 
@@ -608,7 +593,7 @@ def gerar_relatorio_simples(df_raw: pd.DataFrame, obra_nome: str, df_despesas_se
 # RELATÓRIO ADMINISTRATIVO — centro de custos com filtro de período
 # ─────────────────────────────────────────────────────────────────────────────
 
-def gerar_relatorio_administrativo(df_despesas: pd.DataFrame, obra_nome: str, data_inicio, data_fim) -> bytes:
+def gerar_relatorio_administrativo(df_despesas: pd.DataFrame, obra_nome: str, data_inicio, data_fim, obra_info: dict = None) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=landscape(A4),
@@ -628,7 +613,7 @@ def gerar_relatorio_administrativo(df_despesas: pd.DataFrame, obra_nome: str, da
         df  = df[(df['DATA'] >= ini) & (df['DATA'] <= fim)]
 
     # Timbrado
-    story.append(_timbrado_simples(obra_nome, LARGURA_UTIL))
+    story.append(_timbrado_simples(obra_nome, LARGURA_UTIL, obra_info))
     story.append(_linha_separadora(LARGURA_UTIL))
     story.append(Spacer(1, 0.4 * cm))
 
