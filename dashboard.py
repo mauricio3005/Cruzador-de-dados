@@ -4,7 +4,8 @@ import plotly.graph_objects as go
 import os
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -635,6 +636,30 @@ def load_tipos_custo():
         return []
 
 
+def load_contas_pagar(obra=None):
+    sb = init_supabase()
+    if not sb:
+        return pd.DataFrame()
+    try:
+        q = sb.table("contas_pagar").select("*").order("vencimento")
+        if obra:
+            q = q.eq("obra", obra)
+        res = q.execute()
+        if not res.data:
+            return pd.DataFrame()
+        df = pd.DataFrame(res.data)
+        hoje = datetime.today().date()
+        df["vencimento"] = pd.to_datetime(df["vencimento"]).dt.date
+        df["status_display"] = df.apply(
+            lambda r: "pago" if r["pago"]
+                      else ("vencido" if r["vencimento"] < hoje else "pendente"),
+            axis=1
+        )
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 @st.cache_data(ttl=300)
 def load_folha_regras():
     sb = init_supabase()
@@ -861,7 +886,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 # --- CONTEÚDO PRINCIPAL ---
-tab_dash, tab_desp, tab_hist, tab_folha, tab_conf = st.tabs(["📊 Dashboard", "📋 Despesas", "🗂️ Histórico", "👥 Folha", "⚙️ Configurações"])
+tab_dash, tab_desp, tab_hist, tab_folha, tab_contas, tab_conf = st.tabs(["📊 Dashboard", "📋 Despesas", "🗂️ Histórico", "👥 Folha", "💳 Contas a Pagar", "⚙️ Configurações"])
 
 with tab_dash:
     if df_raw.empty:
@@ -1988,8 +2013,216 @@ def _render_folha():
             st.rerun(scope="fragment")
 
 
+def _form_nova_conta(obras_list):
+    with st.form("form_nova_conta", clear_on_submit=True):
+        obra_nc      = st.selectbox("Obra *", obras_list, key="nc_obra")
+        etapa_nc     = st.selectbox("Etapa", [""] + load_etapas(), key="nc_etapa")
+        desc_nc      = st.text_input("Descrição *", key="nc_desc")
+        fornec_nc    = st.text_input("Fornecedor / Credor", key="nc_fornec")
+        cat_nc       = st.selectbox("Categoria", load_categorias(), key="nc_cat")
+        tipo_nc      = st.selectbox("Tipo", [""] + load_tipos_custo(), key="nc_tipo")
+        col_v, col_d = st.columns(2)
+        with col_v:
+            valor_nc = st.number_input("Valor Total (R$) *", min_value=0.01, step=0.01, format="%.2f", key="nc_valor")
+        with col_d:
+            venc_nc = st.date_input("Vencimento *", value=datetime.today(), key="nc_venc")
+        col_p, col_r = st.columns(2)
+        with col_p:
+            parc_nc = st.number_input("Nº Parcelas", min_value=1, max_value=60, value=1, step=1, key="nc_parc")
+        with col_r:
+            recorr_nc = st.checkbox("Recorrente", key="nc_recorr")
+        freq_nc = None
+        if recorr_nc:
+            freq_nc = st.selectbox("Frequência", ["mensal", "quinzenal"], key="nc_freq")
+        obs_nc    = st.text_area("Observação", key="nc_obs")
+        submitted = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
+
+    if submitted:
+        if not desc_nc or valor_nc <= 0:
+            st.error("Descrição e valor são obrigatórios.")
+            return
+        sb = init_supabase()
+        valor_parcela = round(valor_nc / parc_nc, 2)
+        ids_inseridos = []
+        for i in range(int(parc_nc)):
+            venc_i = venc_nc + relativedelta(months=i)
+            rec = {
+                "obra":           obra_nc,
+                "etapa":          etapa_nc or None,
+                "descricao":      desc_nc,
+                "fornecedor":     fornec_nc or None,
+                "categoria":      cat_nc or None,
+                "tipo":           tipo_nc or None,
+                "valor":          float(valor_parcela),
+                "vencimento":     str(venc_i),
+                "pago":           False,
+                "recorrente":     recorr_nc,
+                "frequencia":     freq_nc,
+                "parcela_num":    i + 1,
+                "total_parcelas": int(parc_nc),
+                "observacao":     obs_nc or None,
+            }
+            res = sb.table("contas_pagar").insert(rec).execute()
+            if res.data:
+                ids_inseridos.append(res.data[0]["id"])
+        if len(ids_inseridos) > 1:
+            for rid in ids_inseridos:
+                sb.table("contas_pagar").update({"grupo_id": ids_inseridos[0]}).eq("id", rid).execute()
+        st.success(f"✅ {int(parc_nc)} conta(s) cadastrada(s)!")
+        st.rerun(scope="fragment")
+
+
+def _form_pagar_conta(df):
+    if df.empty:
+        st.info("Nenhuma conta para pagar.")
+        return
+    pendentes = df[df["status_display"].isin(["pendente", "vencido"])]
+    if pendentes.empty:
+        st.info("Sem contas pendentes.")
+        return
+    opcoes = {
+        f"{r['descricao']} — R$ {r['valor']:,.2f} (venc. {r['vencimento']})": r["id"]
+        for _, r in pendentes.iterrows()
+    }
+    sel_label = st.selectbox("Conta a pagar", list(opcoes.keys()), key="cp_sel_pagar")
+    conta_id  = opcoes[sel_label]
+    conta_row = pendentes[pendentes["id"] == conta_id].iloc[0]
+
+    with st.form("form_pagar", clear_on_submit=True):
+        data_pgto = st.date_input("Data do pagamento", value=datetime.today(), key="cp_data_pgto")
+        forma_pg  = st.selectbox("Forma de pagamento", load_formas_pagamento(), key="cp_forma")
+        banco_pg  = st.text_input("Banco / Conta", key="cp_banco")
+        submitted = st.form_submit_button("✅ Confirmar Pagamento", type="primary", use_container_width=True)
+
+    if submitted:
+        sb = init_supabase()
+        try:
+            res_desp = sb.table("c_despesas").insert({
+                "obra":            conta_row["obra"],
+                "etapa":           conta_row.get("etapa") or "",
+                "tipo":            conta_row.get("tipo") or "Outros",
+                "despesa":         conta_row.get("categoria") or conta_row["descricao"],
+                "descricao":       conta_row["descricao"],
+                "fornecedor":      conta_row.get("fornecedor") or "",
+                "valor_total":     float(conta_row["valor"]),
+                "data":            str(data_pgto),
+                "forma":           forma_pg or None,
+                "banco":           banco_pg or None,
+                "tem_nota_fiscal": False,
+            }).execute()
+            despesa_id = res_desp.data[0]["id"] if res_desp.data else None
+            sb.table("contas_pagar").update({
+                "pago":           True,
+                "data_pagamento": str(data_pgto),
+                "despesa_id":     despesa_id,
+            }).eq("id", int(conta_id)).execute()
+            if conta_row.get("recorrente"):
+                freq  = conta_row.get("frequencia", "mensal")
+                delta = relativedelta(months=1) if freq == "mensal" else relativedelta(weeks=2)
+                novo_venc = conta_row["vencimento"] + delta
+                sb.table("contas_pagar").insert({
+                    "obra":           conta_row["obra"],
+                    "etapa":          conta_row.get("etapa"),
+                    "descricao":      conta_row["descricao"],
+                    "fornecedor":     conta_row.get("fornecedor"),
+                    "categoria":      conta_row.get("categoria"),
+                    "tipo":           conta_row.get("tipo"),
+                    "valor":          float(conta_row["valor"]),
+                    "vencimento":     str(novo_venc),
+                    "pago":           False,
+                    "recorrente":     True,
+                    "frequencia":     freq,
+                    "parcela_num":    1,
+                    "total_parcelas": 1,
+                }).execute()
+                st.info(f"Nova ocorrência criada para {novo_venc.strftime('%d/%m/%Y')}.")
+            load_despesas.clear()
+            st.success("✅ Pagamento registrado! Despesa gerada em c_despesas.")
+            st.rerun(scope="fragment")
+        except Exception as e:
+            st.error(f"Erro ao registrar pagamento: {e}")
+
+
+@st.fragment
+def _render_contas_pagar():
+    st.markdown("""
+    <div class="main-header">
+        <h1>Contas a Pagar</h1>
+        <p>Controle de vencimentos e pagamentos por obra.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+
+    obras_list = sorted(load_obras()["nome"].dropna().tolist()) if not load_obras().empty else []
+
+    col_o, col_s = st.columns(2)
+    with col_o:
+        filtro_obra = st.selectbox("Obra", ["Todas"] + obras_list, key="cp_obra")
+    with col_s:
+        filtro_status = st.selectbox(
+            "Status", ["Todos", "pendente", "vencido", "pago"], key="cp_status"
+        )
+
+    obra_query = None if filtro_obra == "Todas" else filtro_obra
+    df = load_contas_pagar(obra_query)
+
+    if not df.empty and filtro_status != "Todos":
+        df = df[df["status_display"] == filtro_status]
+
+    if not df.empty:
+        hoje       = datetime.today().date()
+        total_pend = df[df["status_display"] == "pendente"]["valor"].sum()
+        total_venc = df[df["status_display"] == "vencido"]["valor"].sum()
+        em_7_dias  = df[
+            (df["status_display"] == "pendente") &
+            (df["vencimento"] <= hoje + timedelta(days=7))
+        ]["valor"].sum()
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Pendente",     f"R$ {total_pend:,.2f}")
+        c2.metric("Vencido",      f"R$ {total_venc:,.2f}")
+        c3.metric("Próx. 7 dias", f"R$ {em_7_dias:,.2f}")
+
+    _COLS_SHOW = ["obra", "etapa", "descricao", "fornecedor", "valor",
+                  "vencimento", "parcela_num", "total_parcelas", "status_display"]
+    _COL_CONFIG = {
+        "obra":          st.column_config.TextColumn("Obra",        disabled=True),
+        "etapa":         st.column_config.TextColumn("Etapa",       disabled=True),
+        "descricao":     st.column_config.TextColumn("Descrição",   disabled=True),
+        "fornecedor":    st.column_config.TextColumn("Fornecedor",  disabled=True),
+        "valor":         st.column_config.NumberColumn("Valor", format="R$ %.2f", disabled=True),
+        "vencimento":    st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY", disabled=True),
+        "parcela_num":   st.column_config.NumberColumn("Parcela",   disabled=True),
+        "total_parcelas":st.column_config.NumberColumn("Total Parc.", disabled=True),
+        "status_display":st.column_config.TextColumn("Status",     disabled=True),
+    }
+    df_show = df[[c for c in ["id"] + _COLS_SHOW if c in df.columns]].copy() if not df.empty \
+              else pd.DataFrame(columns=["id"] + _COLS_SHOW)
+
+    st.data_editor(
+        df_show,
+        column_config=_COL_CONFIG,
+        column_order=_COLS_SHOW,
+        use_container_width=True,
+        hide_index=True,
+        disabled=True,
+        key="editor_contas",
+    )
+
+    st.divider()
+    col_nova, col_pagar = st.columns(2)
+    with col_nova:
+        with st.expander("➕ Nova Conta a Pagar"):
+            _form_nova_conta(obras_list)
+    with col_pagar:
+        with st.expander("✅ Registrar Pagamento"):
+            _form_pagar_conta(df)
+
+
 with tab_folha:
     _render_folha()
+
+with tab_contas:
+    _render_contas_pagar()
 
 
 @st.fragment
