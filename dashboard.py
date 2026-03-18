@@ -689,12 +689,13 @@ def load_tipos_custo():
         return []
 
 
+@st.cache_data(ttl=300)
 def load_contas_pagar(obra=None):
     sb = init_supabase()
     if not sb:
         return pd.DataFrame()
     try:
-        q = sb.table("contas_pagar").select("*").order("vencimento")
+        q = sb.table("contas_a_pagar").select("*").order("vencimento")
         if obra:
             q = q.eq("obra", obra)
         res = q.execute()
@@ -793,6 +794,18 @@ def load_formas_pagamento():
         return [""]
 
 
+@st.cache_data(ttl=300)
+def load_fornecedores():
+    supabase = init_supabase()
+    if not supabase:
+        return []
+    try:
+        res = supabase.table("fornecedores").select("nome").order("nome").execute()
+        return [r["nome"] for r in res.data] if res.data else []
+    except Exception:
+        return []
+
+
 # Template base para todos os gráficos Plotly
 CHART_LAYOUT = dict(
     paper_bgcolor='rgba(0,0,0,0)',
@@ -874,9 +887,9 @@ with st.sidebar:
         if obra_rel == "Administrativo":
             col_di, col_df = st.columns(2)
             with col_di:
-                data_ini_adm = st.date_input("De", value=datetime.today().replace(day=1), key="adm_data_ini")
+                data_ini_adm = st.date_input("De", value=datetime.today().replace(day=1), format="DD/MM/YYYY", key="adm_data_ini")
             with col_df:
-                data_fim_adm = st.date_input("Até", value=datetime.today(), key="adm_data_fim")
+                data_fim_adm = st.date_input("Até", value=datetime.today(), format="DD/MM/YYYY", key="adm_data_fim")
 
             _, col_btn_adm, _ = st.columns([1, 2, 1])
             with col_btn_adm:
@@ -1028,24 +1041,16 @@ with tab_dash:
                 st.metric(label="💸 Custo Realizado", value=format_currency(gasto_total))
         else:
             if uma_obra_sel:
-                kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
             else:
-                kpi1, kpi2, kpi3 = st.columns(3)
+                kpi1, kpi2 = st.columns(2)
 
             with kpi1:
                 st.metric(label="💼 Orçamento Total Estimado", value=format_currency(orcamento_total))
             with kpi2:
                 st.metric(label="💸 Custo Realizado", value=format_currency(gasto_total))
-            with kpi3:
-                delta_color = "normal" if saldo_total >= 0 else "inverse"
-                st.metric(
-                    label="🏦 Saldo Financeiro",
-                    value=format_currency(saldo_total),
-                    delta=f"{'+ ' if saldo_total >= 0 else '- '}{format_currency(abs(saldo_total))}",
-                    delta_color=delta_color
-                )
             if uma_obra_sel:
-                with kpi4:
+                with kpi3:
                     st.metric(
                         label="📊 % de Consumo",
                         value=f"{pct_consumo:.1f}%",
@@ -1053,7 +1058,7 @@ with tab_dash:
                         delta_color="inverse"
                     )
                     st.progress(min(pct_consumo / 100, 1.0))
-                with kpi5:
+                with kpi4:
                     st.metric(label="🏗️ % de Realização", value=f"{pct_realizacao:.1f}%")
                     st.progress(min(pct_realizacao / 100, 1.0))
 
@@ -1304,9 +1309,9 @@ def _render_historico(sel_obras, sel_etapas):
 
     col_d1, col_d2, col_d3 = st.columns(3)
     with col_d1:
-        data_ini_hist = st.date_input("De", value=datetime.today().replace(day=1), key="hist_ini")
+        data_ini_hist = st.date_input("De", value=datetime.today().replace(day=1), format="DD/MM/YYYY", key="hist_ini")
     with col_d2:
-        data_fim_hist = st.date_input("Até", value=datetime.today(), key="hist_fim")
+        data_fim_hist = st.date_input("Até", value=datetime.today(), format="DD/MM/YYYY", key="hist_fim")
     with col_d3:
         tipo_hist = st.selectbox("Tipo", ["Todos"] + load_tipos_custo(), key="hist_tipo")
 
@@ -1421,7 +1426,7 @@ def _render_despesas(df_raw):
 
     st.markdown('<p class="section-header">Nova Despesa</p>', unsafe_allow_html=True)
 
-    modo = st.radio("Modo de cadastro", ["📝 Individual", "📦 Lote (IA)", "🧾 Folha de Pagamento"],
+    modo = st.radio("Modo de cadastro", ["📝 Individual", "📦 Lote (IA)"],
                     horizontal=True, key="cad_modo")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1461,9 +1466,11 @@ def _render_despesas(df_raw):
         if ia:
             st.info("🤖 Campos pré-preenchidos pela IA — revise antes de cadastrar.")
 
-        _tipos    = load_tipos_custo()
-        _formas   = load_formas_pagamento()
-        _despesas = load_categorias()
+        _tipos        = load_tipos_custo()
+        _formas       = load_formas_pagamento()
+        _despesas     = load_categorias()
+        _fornecedores = load_fornecedores()
+        _NOVO_FORN    = "➕ Adicionar novo fornecedor..."
 
         ia_tipo_idx    = _tipos.index(ia['TIPO'])    if ia.get('TIPO')    in _tipos    else 0
         ia_forma_idx   = _formas.index(ia['FORMA'])  if ia.get('FORMA')   in _formas   else 0
@@ -1485,6 +1492,12 @@ def _render_despesas(df_raw):
         descricao_init    = _draft_descricao  if _draft_descricao  is not None else ia_descricao
         banco_init        = _draft_banco      if _draft_banco       is not None else ''
 
+        # Se a IA sugeriu um fornecedor que já existe na lista, pré-seleciona; senão vai para "novo"
+        _forn_opts      = [""] + _fornecedores + [_NOVO_FORN]
+        _forn_sel_idx   = _forn_opts.index(fornecedor_init) if fornecedor_init in _forn_opts else (
+                          _forn_opts.index(_NOVO_FORN) if fornecedor_init else 0)
+        _forn_novo_init = fornecedor_init if fornecedor_init not in _forn_opts else ""
+
         with st.form("form_despesa", clear_on_submit=False):
             st.caption("Campos obrigatórios *")
             col1, col2, col3 = st.columns(3)
@@ -1493,11 +1506,12 @@ def _render_despesas(df_raw):
             with col2:
                 tipo_form = st.selectbox("Tipo *", _tipos, index=ia_tipo_idx)
             with col3:
-                data_form = st.date_input("Data *", value=ia_data or datetime.today())
+                data_form = st.date_input("Data *", value=ia_data or datetime.today(), format="DD/MM/YYYY")
 
             col4, col5, col6 = st.columns([2, 1, 1])
             with col4:
-                fornecedor_form = st.text_input("Fornecedor *", value=fornecedor_init)
+                fornec_sel_form  = st.selectbox("Fornecedor *", _forn_opts, index=_forn_sel_idx)
+                fornec_novo_form = st.text_input("Nome do novo fornecedor", value=_forn_novo_init)
             with col5:
                 valor_form = st.number_input("Valor Total (R$) *", min_value=0.0, value=ia_valor, step=0.01, format="%.2f")
             with col6:
@@ -1515,8 +1529,14 @@ def _render_despesas(df_raw):
             submitted = st.form_submit_button("✅ Cadastrar Despesa", use_container_width=True, type="primary")
 
         if submitted:
+            # resolve fornecedor final
+            if fornec_sel_form == _NOVO_FORN:
+                fornecedor_final = fornec_novo_form.strip()
+            else:
+                fornecedor_final = fornec_sel_form.strip()
+
             erros = []
-            if not fornecedor_form.strip():
+            if not fornecedor_final:
                 erros.append("Fornecedor é obrigatório.")
             if valor_form <= 0:
                 erros.append("Valor Total deve ser maior que zero.")
@@ -1546,15 +1566,16 @@ def _render_despesas(df_raw):
                     except Exception as e_storage:
                         st.warning(f"Nota fiscal não pôde ser salva: {e_storage}")
                         tem_nota = False  # upload falhou — não marcar como tendo NF
-                if fornecedor_form.strip():
+                if fornecedor_final:
                     supabase.table("fornecedores").upsert(
-                        {"nome": fornecedor_form.strip()}, on_conflict="nome"
+                        {"nome": fornecedor_final}, on_conflict="nome"
                     ).execute()
+                    load_fornecedores.clear()
                 record = {
                     "obra":            obra_form,
                     "etapa":           etapa_form,
                     "tipo":            tipo_form,
-                    "fornecedor":      fornecedor_form.strip() or None,
+                    "fornecedor":      fornecedor_final or None,
                     "valor_total":     float(valor_form),
                     "data":            data_form.strftime('%Y-%m-%d'),
                     "descricao":       descricao_form.strip() or None,
@@ -1736,7 +1757,7 @@ def _render_despesas(df_raw):
         with col_fo:
             obra_folha = st.selectbox("Obra *", obras_list, key="folha_obra")
         with col_fd:
-            data_folha = st.date_input("Data da quinzena *", value=datetime.today(), key="folha_data")
+            data_folha = st.date_input("Data da quinzena *", value=datetime.today(), format="DD/MM/YYYY", key="folha_data")
 
         # ── Tabela de distribuição por etapa ──────────────────────────────────
         etapas_folha = load_etapas()
@@ -2025,7 +2046,7 @@ def _render_folha():
 
     # Modo criação de nova folha
     if st.session_state.get("folha_criar_modo"):
-        nova_data = st.date_input("Data da quinzena", value=datetime.today(), key="folha_nova_data")
+        nova_data = st.date_input("Data da quinzena", value=datetime.today(), format="DD/MM/YYYY", key="folha_nova_data")
         c1, c2 = st.columns(2)
         with c1:
             if st.button("✅ Criar", key="btn_criar_confirm", type="primary"):
@@ -2070,6 +2091,7 @@ def _render_folha():
             return 0.0
         r = regras_obra.loc[servico]
         return float(r["valor"]) if r["tipo"] == "fixo" else float(r["valor"]) * float(diarias or 0)
+    # tipos "diaria" e "m2" são ambos calculados por quantidade (multiplicados)
 
     _COL_MAP_F = {
         "NOME": "nome", "PIX": "pix", "NOME DA CONTA": "nome_conta",
@@ -2095,7 +2117,7 @@ def _render_folha():
             "NOME DA CONTA": st.column_config.TextColumn("Nome da Conta"),
             "SERVIÇO":       st.column_config.SelectboxColumn("Serviço", options=regras_obra.index.tolist() if not regras_obra.empty else []),
             "ETAPA":         st.column_config.SelectboxColumn("Etapa", options=etapas_opts),
-            "DIÁRIAS":       st.column_config.NumberColumn("Diárias", min_value=0, step=0.5, format="%.1f"),
+            "DIÁRIAS":       st.column_config.NumberColumn("Diárias / M²", min_value=0, step=0.5, format="%.1f"),
             "VALOR":         st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f", disabled=True),
         },
         column_order=cols_show,
@@ -2228,27 +2250,25 @@ def _render_folha():
 
 
 def _form_nova_conta(obras_list):
+    _fornecedores = load_fornecedores()
+    _NOVO = "➕ Adicionar novo fornecedor..."
+
     with st.form("form_nova_conta", clear_on_submit=True):
-        obra_nc      = st.selectbox("Obra *", obras_list, key="nc_obra")
-        etapa_nc     = st.selectbox("Etapa", [""] + load_etapas(), key="nc_etapa")
+        obra_nc   = st.selectbox("Obra *", obras_list, key="nc_obra")
+        col_e, col_t = st.columns(2)
+        with col_e:
+            etapa_nc = st.selectbox("Etapa", [""] + load_etapas(), key="nc_etapa")
+        with col_t:
+            tipo_nc  = st.selectbox("Tipo", [""] + load_tipos_custo(), key="nc_tipo")
+        desp_nc      = st.selectbox("Categoria de Despesa", [""] + load_categorias(), key="nc_desp")
         desc_nc      = st.text_input("Descrição *", key="nc_desc")
-        fornec_nc    = st.text_input("Fornecedor / Credor", key="nc_fornec")
-        cat_nc       = st.selectbox("Categoria", load_categorias(), key="nc_cat")
-        tipo_nc      = st.selectbox("Tipo", [""] + load_tipos_custo(), key="nc_tipo")
+        fornec_sel   = st.selectbox("Fornecedor / Credor", [""] + _fornecedores + [_NOVO], key="nc_fornec_sel")
+        fornec_novo  = st.text_input("Nome do novo fornecedor", key="nc_fornec_novo")
         col_v, col_d = st.columns(2)
         with col_v:
-            valor_nc = st.number_input("Valor Total (R$) *", min_value=0.01, step=0.01, format="%.2f", key="nc_valor")
+            valor_nc = st.number_input("Valor (R$) *", min_value=0.01, step=0.01, format="%.2f", key="nc_valor")
         with col_d:
-            venc_nc = st.date_input("Vencimento *", value=datetime.today(), key="nc_venc")
-        col_p, col_r = st.columns(2)
-        with col_p:
-            parc_nc = st.number_input("Nº Parcelas", min_value=1, max_value=60, value=1, step=1, key="nc_parc")
-        with col_r:
-            recorr_nc = st.checkbox("Recorrente", key="nc_recorr")
-        freq_nc = None
-        if recorr_nc:
-            freq_nc = st.selectbox("Frequência", ["mensal", "quinzenal"], key="nc_freq")
-        obs_nc    = st.text_area("Observação", key="nc_obs")
+            venc_nc = st.date_input("Vencimento *", value=datetime.today(), format="DD/MM/YYYY", key="nc_venc")
         submitted = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
 
     if submitted:
@@ -2256,34 +2276,40 @@ def _form_nova_conta(obras_list):
             st.error("Descrição e valor são obrigatórios.")
             return
         sb = init_supabase()
-        valor_parcela = round(valor_nc / parc_nc, 2)
-        ids_inseridos = []
-        for i in range(int(parc_nc)):
-            venc_i = venc_nc + relativedelta(months=i)
-            rec = {
-                "obra":           obra_nc,
-                "etapa":          etapa_nc or None,
-                "descricao":      desc_nc,
-                "fornecedor":     fornec_nc or None,
-                "categoria":      cat_nc or None,
-                "tipo":           tipo_nc or None,
-                "valor":          float(valor_parcela),
-                "vencimento":     str(venc_i),
-                "pago":           False,
-                "recorrente":     recorr_nc,
-                "frequencia":     freq_nc,
-                "parcela_num":    i + 1,
-                "total_parcelas": int(parc_nc),
-                "observacao":     obs_nc or None,
-            }
-            res = sb.table("contas_pagar").insert(rec).execute()
-            if res.data:
-                ids_inseridos.append(res.data[0]["id"])
-        if len(ids_inseridos) > 1:
-            for rid in ids_inseridos:
-                sb.table("contas_pagar").update({"grupo_id": ids_inseridos[0]}).eq("id", rid).execute()
-        st.success(f"✅ {int(parc_nc)} conta(s) cadastrada(s)!")
-        st.rerun(scope="fragment")
+
+        # resolve fornecedor
+        if fornec_sel == _NOVO:
+            if not fornec_novo.strip():
+                st.error("Informe o nome do novo fornecedor.")
+                return
+            fornec_final = fornec_novo.strip()
+            try:
+                sb.table("fornecedores").insert({"nome": fornec_final}).execute()
+                load_fornecedores.clear()
+            except Exception as e:
+                st.error(f"Erro ao cadastrar fornecedor: {e}")
+                return
+        else:
+            fornec_final = fornec_sel or None
+
+        rec = {
+            "obra":       obra_nc,
+            "etapa":      etapa_nc or None,
+            "tipo":       tipo_nc or None,
+            "despesa":    desp_nc or None,
+            "descricao":  desc_nc,
+            "fornecedor": fornec_final,
+            "valor":      float(valor_nc),
+            "vencimento": str(venc_nc),
+            "pago":       False,
+        }
+        try:
+            sb.table("contas_a_pagar").insert(rec).execute()
+            load_contas_pagar.clear()
+            st.success("✅ Conta cadastrada!")
+            st.rerun(scope="fragment")
+        except Exception as e:
+            st.error(f"Erro ao cadastrar conta: {e}")
 
 
 def _form_pagar_conta(df):
@@ -2303,7 +2329,7 @@ def _form_pagar_conta(df):
     conta_row = pendentes[pendentes["id"] == conta_id].iloc[0]
 
     with st.form("form_pagar", clear_on_submit=True):
-        data_pgto = st.date_input("Data do pagamento", value=datetime.today(), key="cp_data_pgto")
+        data_pgto = st.date_input("Data do pagamento", value=datetime.today(), format="DD/MM/YYYY", key="cp_data_pgto")
         forma_pg  = st.selectbox("Forma de pagamento", load_formas_pagamento(), key="cp_forma")
         banco_pg  = st.text_input("Banco / Conta", key="cp_banco")
         submitted = st.form_submit_button("✅ Confirmar Pagamento", type="primary", use_container_width=True)
@@ -2311,11 +2337,11 @@ def _form_pagar_conta(df):
     if submitted:
         sb = init_supabase()
         try:
-            res_desp = sb.table("c_despesas").insert({
+            sb.table("c_despesas").insert({
                 "obra":            conta_row["obra"],
                 "etapa":           conta_row.get("etapa") or "",
                 "tipo":            conta_row.get("tipo") or "Outros",
-                "despesa":         conta_row.get("categoria") or conta_row["descricao"],
+                "despesa":         conta_row.get("despesa") or conta_row["descricao"],
                 "descricao":       conta_row["descricao"],
                 "fornecedor":      conta_row.get("fornecedor") or "",
                 "valor_total":     float(conta_row["valor"]),
@@ -2324,40 +2350,18 @@ def _form_pagar_conta(df):
                 "banco":           banco_pg or None,
                 "tem_nota_fiscal": False,
             }).execute()
-            despesa_id = res_desp.data[0]["id"] if res_desp.data else None
-            sb.table("contas_pagar").update({
+            sb.table("contas_a_pagar").update({
                 "pago":           True,
                 "data_pagamento": str(data_pgto),
-                "despesa_id":     despesa_id,
             }).eq("id", int(conta_id)).execute()
-            if conta_row.get("recorrente"):
-                freq  = conta_row.get("frequencia", "mensal")
-                delta = relativedelta(months=1) if freq == "mensal" else relativedelta(weeks=2)
-                novo_venc = conta_row["vencimento"] + delta
-                sb.table("contas_pagar").insert({
-                    "obra":           conta_row["obra"],
-                    "etapa":          conta_row.get("etapa"),
-                    "descricao":      conta_row["descricao"],
-                    "fornecedor":     conta_row.get("fornecedor"),
-                    "categoria":      conta_row.get("categoria"),
-                    "tipo":           conta_row.get("tipo"),
-                    "valor":          float(conta_row["valor"]),
-                    "vencimento":     str(novo_venc),
-                    "pago":           False,
-                    "recorrente":     True,
-                    "frequencia":     freq,
-                    "parcela_num":    1,
-                    "total_parcelas": 1,
-                }).execute()
-                st.info(f"Nova ocorrência criada para {novo_venc.strftime('%d/%m/%Y')}.")
             load_despesas.clear()
+            load_contas_pagar.clear()
             st.success("✅ Pagamento registrado! Despesa gerada em c_despesas.")
             st.rerun(scope="fragment")
         except Exception as e:
             st.error(f"Erro ao registrar pagamento: {e}")
 
 
-@st.fragment
 @st.fragment
 def _render_documentos():
     st.markdown("""
@@ -2528,17 +2532,16 @@ def _render_contas_pagar():
         c2.metric("Vencido",      f"R$ {total_venc:,.2f}")
         c3.metric("Próx. 7 dias", f"R$ {em_7_dias:,.2f}")
 
-    _COLS_SHOW = ["obra", "etapa", "descricao", "fornecedor", "valor",
-                  "vencimento", "parcela_num", "total_parcelas", "status_display"]
+    _COLS_SHOW = ["obra", "etapa", "tipo", "despesa", "descricao", "fornecedor", "valor", "vencimento", "status_display"]
     _COL_CONFIG = {
-        "obra":          st.column_config.TextColumn("Obra",        disabled=True),
-        "etapa":         st.column_config.TextColumn("Etapa",       disabled=True),
-        "descricao":     st.column_config.TextColumn("Descrição",   disabled=True),
-        "fornecedor":    st.column_config.TextColumn("Fornecedor",  disabled=True),
+        "obra":          st.column_config.TextColumn("Obra",       disabled=True),
+        "etapa":         st.column_config.TextColumn("Etapa",      disabled=True),
+        "tipo":          st.column_config.TextColumn("Tipo",       disabled=True),
+        "despesa":       st.column_config.TextColumn("Categoria",  disabled=True),
+        "descricao":     st.column_config.TextColumn("Descrição",  disabled=True),
+        "fornecedor":    st.column_config.TextColumn("Fornecedor", disabled=True),
         "valor":         st.column_config.NumberColumn("Valor", format="R$ %.2f", disabled=True),
         "vencimento":    st.column_config.DateColumn("Vencimento", format="DD/MM/YYYY", disabled=True),
-        "parcela_num":   st.column_config.NumberColumn("Parcela",   disabled=True),
-        "total_parcelas":st.column_config.NumberColumn("Total Parc.", disabled=True),
         "status_display":st.column_config.TextColumn("Status",     disabled=True),
     }
     df_show = df[[c for c in ["id"] + _COLS_SHOW if c in df.columns]].copy() if not df.empty \
@@ -2593,9 +2596,9 @@ def _render_recebimentos():
     with col_fo:
         _filtro_obra_r = st.selectbox("Obra", ["Todas"] + _obras_lista_r, key="rec_obra")
     with col_di:
-        _data_ini_r = st.date_input("De", value=datetime.today().replace(day=1), key="rec_ini")
+        _data_ini_r = st.date_input("De", value=datetime.today().replace(day=1), format="DD/MM/YYYY", key="rec_ini")
     with col_df:
-        _data_fim_r = st.date_input("Até", value=datetime.today(), key="rec_fim")
+        _data_fim_r = st.date_input("Até", value=datetime.today(), format="DD/MM/YYYY", key="rec_fim")
 
     obra_param = None if _filtro_obra_r == "Todas" else _filtro_obra_r
     df_rec = load_recebimentos(obra_param)
@@ -2669,27 +2672,43 @@ def _render_recebimentos():
     st.divider()
 
     # ── Novo recebimento ─────────────────────────────────────────────────────
+    _fornecedores_r = load_fornecedores()
+    _NOVO_FORN_R    = "➕ Adicionar novo..."
     with st.expander("➕ Novo Recebimento"):
         with st.form("form_novo_rec", clear_on_submit=True):
             col_r1, col_r2 = st.columns(2)
             with col_r1:
-                obra_nr   = st.selectbox("Obra *", _obras_lista_r, key="nr_obra")
-                data_nr   = st.date_input("Data *", value=datetime.today(), key="nr_data")
-                valor_nr  = st.number_input("Valor Total (R$) *", min_value=0.01, step=0.01, format="%.2f", key="nr_valor")
-                parc_nr   = st.number_input("Nº Parcelas", min_value=1, max_value=60, value=1, step=1, key="nr_parc")
+                obra_nr      = st.selectbox("Obra *", _obras_lista_r, key="nr_obra")
+                data_nr      = st.date_input("Data *", value=datetime.today(), format="DD/MM/YYYY", key="nr_data")
+                valor_nr     = st.number_input("Valor Total (R$) *", min_value=0.01, step=0.01, format="%.2f", key="nr_valor")
+                parc_nr      = st.number_input("Nº Parcelas", min_value=1, max_value=60, value=1, step=1, key="nr_parc")
             with col_r2:
-                desc_nr   = st.text_input("Descrição", key="nr_desc")
-                fornec_nr = st.text_input("Fornecedor / Pagador", key="nr_fornec")
-                forma_nr  = st.selectbox("Forma", load_formas_pagamento(), key="nr_forma")
-                banco_nr  = st.text_input("Banco / Conta", key="nr_banco")
+                desc_nr      = st.text_input("Descrição", key="nr_desc")
+                fornec_sel_r = st.selectbox("Pagador / Contratante", [""] + _fornecedores_r + [_NOVO_FORN_R], key="nr_fornec_sel")
+                fornec_novo_r = st.text_input("Nome do novo pagador", key="nr_fornec_novo")
+                forma_nr     = st.selectbox("Forma", load_formas_pagamento(), key="nr_forma")
+                banco_nr     = st.text_input("Banco / Conta", key="nr_banco")
             obs_nr = st.text_area("Observação", key="nr_obs")
             submitted_nr = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
 
         if submitted_nr:
+            if fornec_sel_r == _NOVO_FORN_R:
+                fornec_final_r = fornec_novo_r.strip()
+            else:
+                fornec_final_r = fornec_sel_r or None
+
             if valor_nr <= 0:
                 st.error("Valor é obrigatório.")
             else:
                 _sb_nr = init_supabase()
+                if fornec_final_r:
+                    try:
+                        _sb_nr.table("fornecedores").upsert(
+                            {"nome": fornec_final_r}, on_conflict="nome"
+                        ).execute()
+                        load_fornecedores.clear()
+                    except Exception:
+                        pass
                 _valor_parc = round(valor_nr / parc_nr, 2)
                 _ids_nr = []
                 for _i in range(int(parc_nr)):
@@ -2699,7 +2718,7 @@ def _render_recebimentos():
                         "data":           str(_data_i),
                         "valor":          float(_valor_parc),
                         "descricao":      desc_nr or None,
-                        "fornecedor":     fornec_nr or None,
+                        "fornecedor":     fornec_final_r or None,
                         "forma":          forma_nr or None,
                         "banco":          banco_nr or None,
                         "observacao":     obs_nr or None,
@@ -2748,7 +2767,7 @@ def _render_conf():
 
     sub_obras, sub_etapas, sub_orc, sub_taxa, sub_formas, sub_cat, sub_regras = st.tabs(
         ["🏗️ Obras", "🔧 Etapas", "💼 Orçamentos", "📊 Taxa de Conclusão",
-         "💳 Formas de Pagamento", "🏷️ Categorias de Despesa", "📐 Regras de Diária"]
+         "💳 Formas de Pagamento", "🏷️ Categorias de Despesa", "📐 Regras de Serviço"]
     )
 
     # ── Sub-aba Obras ──────────────────────────────────────────────────────────
@@ -3095,6 +3114,7 @@ def _render_conf():
 
     # ── Sub-aba Regras de Diária ───────────────────────────────────────────────
     with sub_regras:
+        # tipos: "diaria" = valor × qtd dias, "m2" = valor × qtd m², "fixo" = valor fixo
         _obras_reg = load_obras()
         _obras_reg_list = sorted(_obras_reg["nome"].dropna().tolist()) if not _obras_reg.empty else []
         obra_reg = st.selectbox("Obra", _obras_reg_list, key="reg_obra_sel")
@@ -3110,7 +3130,7 @@ def _render_conf():
                 df_reg_obra.reset_index(drop=True),
                 column_config={
                     "servico": st.column_config.TextColumn("Serviço", disabled=True),
-                    "tipo":    st.column_config.SelectboxColumn("Tipo", options=["diaria", "fixo"]),
+                    "tipo":    st.column_config.SelectboxColumn("Tipo", options=["diaria", "m2", "fixo"]),
                     "valor":   st.column_config.NumberColumn("Valor (R$)", min_value=0, format="R$ %.2f"),
                 },
                 use_container_width=True,
@@ -3139,7 +3159,7 @@ def _render_conf():
             with col_r1:
                 novo_servico = st.text_input("Serviço *", key="nova_reg_serv")
             with col_r2:
-                novo_tipo = st.selectbox("Tipo", ["diaria", "fixo"], key="nova_reg_tipo")
+                novo_tipo = st.selectbox("Tipo", ["diaria", "m2", "fixo"], key="nova_reg_tipo")
             with col_r3:
                 novo_valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f")
             if st.form_submit_button("➕ Adicionar"):
