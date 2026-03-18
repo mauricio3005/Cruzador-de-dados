@@ -714,6 +714,21 @@ def load_contas_pagar(obra=None):
 
 
 @st.cache_data(ttl=300)
+def load_recebimentos(obra=None):
+    sb = init_supabase()
+    if not sb:
+        return pd.DataFrame()
+    try:
+        q = sb.table("recebimentos").select("*").order("data", desc=True)
+        if obra:
+            q = q.eq("obra", obra)
+        res = q.execute()
+        return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
 def load_folha_regras():
     sb = init_supabase()
     if not sb:
@@ -863,7 +878,10 @@ with st.sidebar:
             with col_df:
                 data_fim_adm = st.date_input("Até", value=datetime.today(), key="adm_data_fim")
 
-            if st.button("📄 Gerar Relatório PDF"):
+            _, col_btn_adm, _ = st.columns([1, 2, 1])
+            with col_btn_adm:
+                btn_adm = st.button("📄 Gerar Relatório PDF")
+            if btn_adm:
                 with st.spinner("Gerando PDF…"):
                     from relatorio import gerar_relatorio_administrativo
                     df_desp = load_despesas()
@@ -903,7 +921,10 @@ with st.sidebar:
             else:
                 st.caption(label_vazio)
 
-            if st.button("📄 Gerar Relatório PDF", disabled=not etapas_preview):
+            _, col_btn_rel, _ = st.columns([1, 2, 1])
+            with col_btn_rel:
+                btn_rel = st.button("📄 Gerar Relatório PDF", disabled=not etapas_preview)
+            if btn_rel:
                 with st.spinner("Gerando PDF…"):
                     from relatorio import gerar_relatorio_detalhado, gerar_relatorio_simples
                     df_desp = load_despesas()
@@ -939,7 +960,10 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 # --- CONTEÚDO PRINCIPAL ---
-tab_dash, tab_desp, tab_hist, tab_folha, tab_docs, tab_contas, tab_conf = st.tabs(["📊 Dashboard", "📋 Despesas", "🗂️ Histórico", "👥 Folha", "📄 Documentos", "💳 Contas a Pagar", "⚙️ Configurações"])
+tab_dash, tab_desp, tab_hist, tab_folha, tab_docs, tab_contas, tab_rec, tab_conf = st.tabs([
+    "📊 Dashboard", "📋 Despesas", "🗂️ Histórico", "👥 Folha",
+    "📄 Documentos", "💳 Contas a Pagar", "💰 Recebimentos", "⚙️ Configurações"
+])
 
 with tab_dash:
     if df_raw.empty:
@@ -1203,6 +1227,59 @@ with tab_dash:
             )
             st.plotly_chart(fig_rank, use_container_width=True)
 
+        # ── Fluxo de Caixa ─────────────────────────────────────────────────
+        st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+        st.markdown("### 📈 Fluxo de Caixa")
+
+        _df_rec_d  = load_recebimentos()
+        _df_desp_d = load_despesas()
+        _df_cp_d   = load_contas_pagar()
+        _obras_fc  = sel_obras if sel_obras else (load_obras()['nome'].tolist() if not load_obras().empty else [])
+
+        _rows_fc = []
+        for _ob_fc in _obras_fc:
+            _rec_fc   = float(_df_rec_d[_df_rec_d["obra"] == _ob_fc]["valor"].sum()) if not _df_rec_d.empty and "obra" in _df_rec_d.columns else 0.0
+            _gasto_fc = float(_df_desp_d[_df_desp_d["OBRA"] == _ob_fc]["VALOR_TOTAL"].sum()) if not _df_desp_d.empty and "OBRA" in _df_desp_d.columns else 0.0
+            _pagar_fc = float(_df_cp_d[(_df_cp_d["obra"] == _ob_fc) & (_df_cp_d["pago"] == False)]["valor"].sum()) if not _df_cp_d.empty and "obra" in _df_cp_d.columns else 0.0
+            _rows_fc.append({
+                "Obra":            _ob_fc,
+                "Recebido":        _rec_fc,
+                "Gasto":           _gasto_fc,
+                "A Pagar":         _pagar_fc,
+                "Saldo Atual":     _rec_fc - _gasto_fc,
+                "Saldo Projetado": _rec_fc - _gasto_fc - _pagar_fc,
+            })
+
+        if _rows_fc:
+            _df_fc_d = pd.DataFrame(_rows_fc)
+            _c1, _c2, _c3, _c4, _c5 = st.columns(5)
+            _c1.metric("💰 Recebido",        f"R$ {_df_fc_d['Recebido'].sum():,.2f}")
+            _c2.metric("💸 Gasto",           f"R$ {_df_fc_d['Gasto'].sum():,.2f}")
+            _c3.metric("📋 A Pagar",         f"R$ {_df_fc_d['A Pagar'].sum():,.2f}")
+            _c4.metric("✅ Saldo Atual",     f"R$ {_df_fc_d['Saldo Atual'].sum():,.2f}")
+            _c5.metric("🔮 Saldo Projetado", f"R$ {_df_fc_d['Saldo Projetado'].sum():,.2f}")
+
+            if len(_obras_fc) > 1:
+                st.dataframe(
+                    _df_fc_d,
+                    column_config={
+                        "Recebido":        st.column_config.NumberColumn("Recebido", format="R$ %.2f"),
+                        "Gasto":           st.column_config.NumberColumn("Gasto", format="R$ %.2f"),
+                        "A Pagar":         st.column_config.NumberColumn("A Pagar", format="R$ %.2f"),
+                        "Saldo Atual":     st.column_config.NumberColumn("Saldo Atual", format="R$ %.2f"),
+                        "Saldo Projetado": st.column_config.NumberColumn("Saldo Projetado", format="R$ %.2f"),
+                    },
+                    use_container_width=True, hide_index=True,
+                )
+
+            _fig_fc_d = go.Figure(data=[
+                go.Bar(name="Recebido", x=_df_fc_d["Obra"], y=_df_fc_d["Recebido"], marker_color="#2ecc71"),
+                go.Bar(name="Gasto",    x=_df_fc_d["Obra"], y=_df_fc_d["Gasto"],    marker_color="#e74c3c"),
+                go.Bar(name="A Pagar",  x=_df_fc_d["Obra"], y=_df_fc_d["A Pagar"],  marker_color="#f39c12"),
+            ])
+            _fig_fc_d.update_layout(barmode="group", height=350, xaxis_title="Obra", yaxis_title="R$", **CHART_LAYOUT)
+            st.plotly_chart(_fig_fc_d, use_container_width=True)
+
 
 @st.fragment
 def _render_historico(sel_obras, sel_etapas):
@@ -1458,16 +1535,7 @@ def _render_despesas(df_raw):
                 if comprovante_form is not None:
                     try:
                         ext = comprovante_form.name.rsplit('.', 1)[-1].lower()
-                        def _slug(s): return str(s).strip().replace(' ', '_')[:30]
-                        valor_slug = f"R${valor_form:.2f}".replace('.', ',')
-                        nome_arq = (
-                            f"{data_form.strftime('%Y-%m-%d')}"
-                            f"_{_slug(obra_form)}"
-                            f"_{_slug(etapa_form)}"
-                            f"_{_slug(fornecedor_form)}"
-                            f"_{valor_slug}"
-                            f"_{datetime.now().strftime('%H%M%S')}.{ext}"
-                        )
+                        nome_arq = f"nf_{uuid.uuid4().hex[:12]}.{ext}"
                         supabase.storage.from_("comprovantes").upload(
                             nome_arq,
                             comprovante_form.getvalue(),
@@ -1612,13 +1680,8 @@ def _render_despesas(df_raw):
                             comp_url = None
                             if orig.get('_file_bytes'):
                                 try:
-                                    ext_l = orig['_file_name'].rsplit('.', 1)[-1].lower()
-                                    _sl = lambda s: str(s).strip().replace(' ', '_')[:20]
-                                    nome_l = (
-                                        f"{row['DATA']}_{_sl(row['OBRA'])}"
-                                        f"_{_sl(row['FORNECEDOR'] or 'sem_forn')}"
-                                        f"_{i}_{datetime.now().strftime('%H%M%S')}.{ext_l}"
-                                    )
+                                    ext_l  = orig['_file_name'].rsplit('.', 1)[-1].lower()
+                                    nome_l = f"nf_{uuid.uuid4().hex[:12]}.{ext_l}"
                                     sb.storage.from_("comprovantes").upload(
                                         nome_l, orig['_file_bytes'],
                                         {"content-type": orig['_file_type']}
@@ -2295,6 +2358,7 @@ def _form_pagar_conta(df):
 
 
 @st.fragment
+@st.fragment
 def _render_documentos():
     st.markdown("""
     <div class="main-header">
@@ -2340,7 +2404,10 @@ def _render_documentos():
     df_doc_editor = df_view_d[_doc_cols].copy().reset_index(drop=True)
     if 'comprovante_url' in df_doc_editor.columns:
         df_doc_editor['comprovante_url'] = df_doc_editor['comprovante_url'].fillna('')
+    df_doc_editor['📎'] = False
+    df_doc_editor['🗑️'] = False
 
+    _disabled_cols = [c for c in _doc_cols if c != 'id']
     st.data_editor(
         df_doc_editor,
         column_config={
@@ -2352,64 +2419,74 @@ def _render_documentos():
             "VALOR_TOTAL":     st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f", disabled=True),
             "TEM_NOTA_FISCAL": st.column_config.CheckboxColumn("Tem NF?", disabled=True),
             "comprovante_url": st.column_config.LinkColumn("📄 Abrir NF", display_text="Abrir", disabled=True),
+            "📎":              st.column_config.CheckboxColumn("📎 Anexar", help="Marque para anexar uma nota fiscal"),
+            "🗑️":             st.column_config.CheckboxColumn("🗑️ Remover", help="Marque para remover a nota fiscal"),
         },
-        column_order=[c for c in _doc_cols if c != 'id'],
+        column_order=[c for c in _doc_cols if c != 'id'] + ['📎', '🗑️'],
+        disabled=_disabled_cols,
         use_container_width=True,
         hide_index=True,
         height=500,
-        disabled=True,
         key="editor_docs",
     )
 
-    st.divider()
+    # ── Ações para linhas selecionadas ──────────────────────────────────────
+    _editor_state  = st.session_state.get("editor_docs", {})
+    _edited_rows   = _editor_state.get("edited_rows", {})
+    _anexar_idxs   = [int(idx) for idx, ch in _edited_rows.items() if ch.get("📎")]
+    _remover_idxs  = [int(idx) for idx, ch in _edited_rows.items() if ch.get("🗑️")]
 
-    # ── Anexar NF a despesa existente ───────────────────────────────────────
-    with st.expander("📎 Anexar nota fiscal a despesa existente"):
-        df_sem_nf = df_docs[df_docs['TEM_NOTA_FISCAL'] != True].copy()
-        if df_sem_nf.empty:
-            st.info("Todas as despesas já têm nota fiscal.")
-        else:
-            _col_anx_o, _col_anx_e = st.columns(2)
-            with _col_anx_o:
-                _obras_sem_nf = sorted(df_sem_nf['OBRA'].dropna().unique().tolist())
-                _filtro_obra_anx = st.selectbox("Filtrar por obra", ["Todas"] + _obras_sem_nf, key="anexar_nf_obra")
-            with _col_anx_e:
-                _df_anx = df_sem_nf if _filtro_obra_anx == "Todas" else df_sem_nf[df_sem_nf['OBRA'] == _filtro_obra_anx]
-                _etapas_sem_nf = sorted(_df_anx['ETAPA'].dropna().unique().tolist())
-                _filtro_etapa_anx = st.selectbox("Filtrar por etapa (opcional)", ["Todas"] + _etapas_sem_nf, key="anexar_nf_etapa")
-            if _filtro_etapa_anx != "Todas":
-                _df_anx = _df_anx[_df_anx['ETAPA'] == _filtro_etapa_anx]
-            opcoes_nf = {
-                f"{r['OBRA']} — {pd.Timestamp(r['DATA']).strftime('%d/%m/%Y') if pd.notna(r['DATA']) else '?'} — {r.get('DESPESA','?')} — R$ {r.get('VALOR_TOTAL', 0):,.2f}": r['id']
-                for _, r in _df_anx.iterrows()
-                if pd.notna(r.get('id'))
-            }
-            if not opcoes_nf:
-                st.info("Nenhuma despesa sem NF nos filtros selecionados.")
-            else:
-                sel_label_nf = st.selectbox("Despesa sem NF", list(opcoes_nf.keys()), key="anexar_nf_sel")
-                sel_id_nf    = opcoes_nf[sel_label_nf]
-                arquivo_nf   = st.file_uploader("Nota fiscal", type=["pdf", "jpg", "jpeg", "png"], key="anexar_nf_file")
+    if _anexar_idxs or _remover_idxs:
+        st.divider()
 
-                if st.button("📎 Anexar NF", type="primary", disabled=arquivo_nf is None, key="btn_anexar_nf"):
+    if _anexar_idxs:
+        st.markdown("#### 📎 Anexar nota fiscal")
+        for _idx in _anexar_idxs:
+            _row      = df_doc_editor.iloc[_idx]
+            _data_str = pd.Timestamp(_row['DATA']).strftime('%d/%m/%Y') if pd.notna(_row.get('DATA')) else '?'
+            st.markdown(f"**{_row['OBRA']}** — {_data_str} — {_row.get('DESPESA','?')} — R$ {_row.get('VALOR_TOTAL', 0):,.2f}")
+            _arquivo  = st.file_uploader("Nota fiscal", type=["pdf", "jpg", "jpeg", "png"], key=f"nf_upload_{_idx}")
+            if st.button("📎 Anexar", key=f"btn_nf_{_idx}", type="primary", disabled=_arquivo is None):
+                try:
+                    _sb_anx = init_supabase()
+                    _sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+                    _ext  = _arquivo.name.rsplit(".", 1)[-1].lower()
+                    _nome = f"nf_{uuid.uuid4().hex[:12]}.{_ext}"
+                    _sb_anx.storage.from_("comprovantes").upload(_nome, _arquivo.getvalue(), {"content-type": _arquivo.type})
+                    _url    = f"{_sb_url}/storage/v1/object/public/comprovantes/{_nome}"
+                    _sb_anx.table("c_despesas").update({"comprovante_url": _url, "tem_nota_fiscal": True}).eq("id", int(_row['id'])).execute()
+                    load_despesas.clear()
+                    st.success("NF anexada com sucesso!")
+                    st.rerun(scope="fragment")
+                except Exception as _e:
+                    st.error(f"Erro ao anexar: {_e}")
+
+    if _remover_idxs:
+        st.markdown("#### 🗑️ Remover nota fiscal")
+        for _idx in _remover_idxs:
+            _row      = df_doc_editor.iloc[_idx]
+            _data_str = pd.Timestamp(_row['DATA']).strftime('%d/%m/%Y') if pd.notna(_row.get('DATA')) else '?'
+            _url_rem  = _row.get('comprovante_url', '')
+            if not _url_rem:
+                st.info(f"Linha {_idx + 1} não possui NF vinculada.")
+                continue
+            st.markdown(f"**{_row['OBRA']}** — {_data_str} — {_row.get('DESPESA','?')} — R$ {_row.get('VALOR_TOTAL', 0):,.2f}")
+            st.caption(f"Arquivo: `{_url_rem.split('/')[-1]}`")
+            if st.button("🗑️ Confirmar Remoção", key=f"btn_rm_nf_{_idx}", type="secondary"):
+                try:
+                    _sb_rm = init_supabase()
+                    # Remove arquivo do bucket
+                    _nome_arq = _url_rem.split("/comprovantes/")[-1]
                     try:
-                        _sb_anx  = init_supabase()
-                        _sb_url  = os.environ.get("SUPABASE_URL", "").rstrip("/")
-                        ext_nf   = arquivo_nf.name.rsplit(".", 1)[-1].lower()
-                        nome_nf  = f"nf_{sel_id_nf}_{uuid.uuid4().hex[:8]}.{ext_nf}"
-                        _sb_anx.storage.from_("comprovantes").upload(
-                            nome_nf, arquivo_nf.getvalue(), {"content-type": arquivo_nf.type}
-                        )
-                        url_nf = f"{_sb_url}/storage/v1/object/public/comprovantes/{nome_nf}"
-                        _sb_anx.table("c_despesas").update({
-                            "comprovante_url": url_nf,
-                            "tem_nota_fiscal": True,
-                        }).eq("id", int(sel_id_nf)).execute()
-                        load_despesas.clear()
-                        st.success("NF anexada com sucesso!")
-                        st.rerun(scope="fragment")
-                    except Exception as e_anx:
-                        st.error(f"Erro ao anexar: {e_anx}")
+                        _sb_rm.storage.from_("comprovantes").remove([_nome_arq])
+                    except Exception:
+                        pass  # Segue mesmo se não conseguir deletar do bucket
+                    _sb_rm.table("c_despesas").update({"comprovante_url": None, "tem_nota_fiscal": False}).eq("id", int(_row['id'])).execute()
+                    load_despesas.clear()
+                    st.success("NF removida com sucesso!")
+                    st.rerun(scope="fragment")
+                except Exception as _e:
+                    st.error(f"Erro ao remover: {_e}")
 
 
 @st.fragment
@@ -2495,6 +2572,168 @@ with tab_docs:
 
 with tab_contas:
     _render_contas_pagar()
+
+
+
+
+@st.fragment
+def _render_recebimentos():
+    st.markdown("""
+    <div class="main-header">
+        <h1>Recebimentos</h1>
+        <p>Registre os valores recebidos por obra.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+
+    _obras_df_r = load_obras()
+    _obras_lista_r = _obras_df_r['nome'].tolist() if not _obras_df_r.empty else []
+
+    col_fo, col_di, col_df = st.columns(3)
+    with col_fo:
+        _filtro_obra_r = st.selectbox("Obra", ["Todas"] + _obras_lista_r, key="rec_obra")
+    with col_di:
+        _data_ini_r = st.date_input("De", value=datetime.today().replace(day=1), key="rec_ini")
+    with col_df:
+        _data_fim_r = st.date_input("Até", value=datetime.today(), key="rec_fim")
+
+    obra_param = None if _filtro_obra_r == "Todas" else _filtro_obra_r
+    df_rec = load_recebimentos(obra_param)
+
+    if not df_rec.empty:
+        df_rec["data"] = pd.to_datetime(df_rec["data"]).dt.date
+        df_rec = df_rec[
+            (df_rec["data"] >= _data_ini_r) & (df_rec["data"] <= _data_fim_r)
+        ]
+
+    hoje_r = datetime.today().date()
+    total_rec   = float(df_rec["valor"].sum()) if not df_rec.empty else 0.0
+    futuras_r   = int((df_rec["data"] > hoje_r).sum()) if not df_rec.empty else 0
+    qtd_rec     = len(df_rec)
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total recebido", f"R$ {total_rec:,.2f}")
+    c2.metric("Parcelas futuras", futuras_r)
+    c3.metric("Registros", qtd_rec)
+
+    # ── Tabela editável ──────────────────────────────────────────────────────
+    if not df_rec.empty:
+        _rec_cols = [c for c in ["id", "data", "obra", "descricao", "fornecedor",
+                                  "valor", "parcela_num", "total_parcelas", "forma", "banco", "observacao"]
+                     if c in df_rec.columns]
+        df_rec_ed = df_rec[_rec_cols].copy().reset_index(drop=True)
+        _disabled_r = [c for c in _rec_cols if c != "id"]
+
+        st.data_editor(
+            df_rec_ed,
+            column_config={
+                "id":             st.column_config.NumberColumn("id", disabled=True),
+                "data":           st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+                "obra":           st.column_config.SelectboxColumn("Obra", options=_obras_lista_r),
+                "descricao":      st.column_config.TextColumn("Descrição"),
+                "fornecedor":     st.column_config.TextColumn("Fornecedor"),
+                "valor":          st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f", min_value=0),
+                "parcela_num":    st.column_config.NumberColumn("Parc.", disabled=True),
+                "total_parcelas": st.column_config.NumberColumn("Total Parc.", disabled=True),
+                "forma":          st.column_config.SelectboxColumn("Forma", options=load_formas_pagamento()),
+                "banco":          st.column_config.TextColumn("Banco"),
+                "observacao":     st.column_config.TextColumn("Observação"),
+            },
+            column_order=[c for c in _rec_cols if c != "id"],
+            disabled=_disabled_r,
+            use_container_width=True,
+            hide_index=True,
+            key="editor_rec",
+        )
+
+        _rec_state = st.session_state.get("editor_rec", {})
+        _rec_edited = _rec_state.get("edited_rows", {})
+        if _rec_edited:
+            if st.button("💾 Salvar alterações", key="btn_rec_salvar", type="primary"):
+                _sb_r = init_supabase()
+                _col_map_r = {"data": "data", "obra": "obra", "descricao": "descricao",
+                               "fornecedor": "fornecedor", "valor": "valor",
+                               "forma": "forma", "banco": "banco", "observacao": "observacao"}
+                for _idx_r, _changes_r in _rec_edited.items():
+                    _row_r = df_rec_ed.iloc[int(_idx_r)]
+                    _payload_r = {_col_map_r[k]: (str(v) if k == "data" else v)
+                                   for k, v in _changes_r.items() if k in _col_map_r}
+                    if _payload_r:
+                        _sb_r.table("recebimentos").update(_payload_r).eq("id", int(_row_r["id"])).execute()
+                load_recebimentos.clear()
+                st.success("Alterações salvas!")
+                st.rerun(scope="fragment")
+    else:
+        st.info("Nenhum recebimento encontrado para os filtros selecionados.")
+
+    st.divider()
+
+    # ── Novo recebimento ─────────────────────────────────────────────────────
+    with st.expander("➕ Novo Recebimento"):
+        with st.form("form_novo_rec", clear_on_submit=True):
+            col_r1, col_r2 = st.columns(2)
+            with col_r1:
+                obra_nr   = st.selectbox("Obra *", _obras_lista_r, key="nr_obra")
+                data_nr   = st.date_input("Data *", value=datetime.today(), key="nr_data")
+                valor_nr  = st.number_input("Valor Total (R$) *", min_value=0.01, step=0.01, format="%.2f", key="nr_valor")
+                parc_nr   = st.number_input("Nº Parcelas", min_value=1, max_value=60, value=1, step=1, key="nr_parc")
+            with col_r2:
+                desc_nr   = st.text_input("Descrição", key="nr_desc")
+                fornec_nr = st.text_input("Fornecedor / Pagador", key="nr_fornec")
+                forma_nr  = st.selectbox("Forma", load_formas_pagamento(), key="nr_forma")
+                banco_nr  = st.text_input("Banco / Conta", key="nr_banco")
+            obs_nr = st.text_area("Observação", key="nr_obs")
+            submitted_nr = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
+
+        if submitted_nr:
+            if valor_nr <= 0:
+                st.error("Valor é obrigatório.")
+            else:
+                _sb_nr = init_supabase()
+                _valor_parc = round(valor_nr / parc_nr, 2)
+                _ids_nr = []
+                for _i in range(int(parc_nr)):
+                    _data_i = data_nr + relativedelta(months=_i)
+                    _rec_nr = {
+                        "obra":           obra_nr,
+                        "data":           str(_data_i),
+                        "valor":          float(_valor_parc),
+                        "descricao":      desc_nr or None,
+                        "fornecedor":     fornec_nr or None,
+                        "forma":          forma_nr or None,
+                        "banco":          banco_nr or None,
+                        "observacao":     obs_nr or None,
+                        "parcela_num":    _i + 1,
+                        "total_parcelas": int(parc_nr),
+                    }
+                    _res_nr = _sb_nr.table("recebimentos").insert(_rec_nr).execute()
+                    if _res_nr.data:
+                        _ids_nr.append(_res_nr.data[0]["id"])
+                if len(_ids_nr) > 1:
+                    for _rid in _ids_nr:
+                        _sb_nr.table("recebimentos").update({"grupo_id": _ids_nr[0]}).eq("id", _rid).execute()
+                load_recebimentos.clear()
+                st.success(f"✅ {int(parc_nr)} recebimento(s) cadastrado(s)!")
+                st.rerun(scope="fragment")
+
+    # ── Remover recebimento ──────────────────────────────────────────────────
+    with st.expander("🗑️ Remover Recebimento"):
+        df_rec_all = load_recebimentos(obra_param)
+        if df_rec_all.empty:
+            st.info("Nenhum recebimento cadastrado.")
+        else:
+            _opcoes_rm = {
+                f"{pd.Timestamp(r['data']).strftime('%d/%m/%Y')} — {r.get('obra','')} — {r.get('descricao') or r.get('fornecedor','?')} — R$ {float(r.get('valor',0)):,.2f}": r["id"]
+                for _, r in df_rec_all.iterrows()
+            }
+            _sel_rm = st.selectbox("Recebimento", list(_opcoes_rm.keys()), key="rec_rm_sel")
+            _id_rm  = _opcoes_rm[_sel_rm]
+            if st.button("🗑️ Remover", key="btn_rec_rm", type="secondary"):
+                _sb_rm_r = init_supabase()
+                _sb_rm_r.table("recebimentos").delete().eq("id", int(_id_rm)).execute()
+                load_recebimentos.clear()
+                st.success("Recebimento removido!")
+                st.rerun(scope="fragment")
 
 
 @st.fragment
@@ -2916,6 +3155,9 @@ def _render_conf():
                 except Exception as e_nr:
                     st.error(f"Erro: {e_nr}")
 
+
+with tab_rec:
+    _render_recebimentos()
 
 with tab_conf:
     _render_conf()
