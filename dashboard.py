@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import os
 import base64
 import json
+import uuid
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from supabase import create_client, Client
@@ -489,6 +490,57 @@ def _extrair_com_ia(file_bytes: bytes, media_type: str) -> dict:
     return json.loads(texto)
 
 
+def _nome_arquivo_pix(comp, idx: int, ext: str) -> str:
+    """Usa IA para nomear comprovante como 'NOME DO FUNCIONÁRIO - VALOR.ext'."""
+    try:
+        resultado = _extrair_nome_valor_pix(comp.getvalue(), comp.type)
+        nome = (resultado.get("nome") or "").strip().upper()
+        valor = str(resultado.get("valor") or "").strip()
+        if nome and valor:
+            nome_limpo = nome.replace("/", "-").replace("\\", "-")[:50]
+            return f"{nome_limpo} - {valor}.{ext}"
+    except Exception:
+        pass
+    return f"comprovante_{idx}.{ext}"
+
+
+def _extrair_nome_valor_pix(file_bytes: bytes, media_type: str) -> dict:
+    """Extrai nome do beneficiário e valor de um comprovante PIX para nomear o arquivo."""
+    import io
+    import pypdf
+    from openai import OpenAI
+    load_dotenv()
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return {}
+    client = OpenAI(api_key=api_key)
+    prompt = (
+        "Analise este comprovante de pagamento PIX. "
+        "Retorne SOMENTE um JSON válido com exatamente dois campos:\n"
+        '{"nome": "nome completo do beneficiário/destinatário", "valor": "valor numérico ex: 150.00"}\n'
+        "Se não encontrar o nome ou valor, use null."
+    )
+    try:
+        if media_type == "application/pdf":
+            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+            texto = "\n".join(page.extract_text() or "" for page in reader.pages)
+            messages = [{"role": "user", "content": f"{prompt}\n\nTexto do comprovante:\n{texto}"}]
+        else:
+            b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
+            messages = [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
+                {"type": "text", "text": prompt},
+            ]}]
+        resp = client.chat.completions.create(model="gpt-4.1-mini", max_tokens=100, messages=messages)
+        texto_resp = resp.choices[0].message.content.strip()
+        if texto_resp.startswith("```"):
+            linhas = texto_resp.splitlines()
+            texto_resp = "\n".join(linhas[1:-1] if linhas[-1].strip() == "```" else linhas[1:])
+        return json.loads(texto_resp)
+    except Exception:
+        return {}
+
+
 # --- INICIALIZAÇÃO E DADOS ---
 @st.cache_resource
 def init_supabase():
@@ -591,6 +643,7 @@ def load_despesas():
                 "valor_total": "VALOR_TOTAL", "data": "DATA",
                 "descricao": "DESCRICAO", "banco": "BANCO",
                 "forma": "FORMA", "tem_nota_fiscal": "TEM_NOTA_FISCAL",
+                # comprovante_url mantido em lowercase
             }, inplace=True)
             df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce')
         return df
@@ -886,7 +939,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 # --- CONTEÚDO PRINCIPAL ---
-tab_dash, tab_desp, tab_hist, tab_folha, tab_contas, tab_conf = st.tabs(["📊 Dashboard", "📋 Despesas", "🗂️ Histórico", "👥 Folha", "💳 Contas a Pagar", "⚙️ Configurações"])
+tab_dash, tab_desp, tab_hist, tab_folha, tab_docs, tab_contas, tab_conf = st.tabs(["📊 Dashboard", "📋 Despesas", "🗂️ Histórico", "👥 Folha", "📄 Documentos", "💳 Contas a Pagar", "⚙️ Configurações"])
 
 with tab_dash:
     if df_raw.empty:
@@ -1200,7 +1253,8 @@ def _render_historico(sel_obras, sel_etapas):
         'DESCRICAO': 'descricao', 'VALOR_TOTAL': 'valor_total',
         'FORMA': 'forma', 'BANCO': 'banco',
     }
-    cols_editor = [c for c in ['id'] + list(_COL_MAP.keys()) if c in df_view.columns]
+    _extra_cols = [c for c in ['TEM_NOTA_FISCAL', 'comprovante_url'] if c in df_view.columns]
+    cols_editor = [c for c in ['id'] + list(_COL_MAP.keys()) + _extra_cols if c in df_view.columns]
     df_editor = df_view[cols_editor].copy().reset_index(drop=True)
 
     _cats_opts   = load_categorias()
@@ -1222,8 +1276,10 @@ def _render_historico(sel_obras, sel_etapas):
             "DESPESA":     st.column_config.SelectboxColumn("Despesa", options=_cats_opts),
             "FORNECEDOR":  st.column_config.TextColumn("Fornecedor"),
             "DESCRICAO":   st.column_config.TextColumn("Descrição"),
-            "FORMA":       st.column_config.SelectboxColumn("Forma Pgto", options=_formas_opts),
-            "BANCO":       st.column_config.TextColumn("Banco"),
+            "FORMA":           st.column_config.SelectboxColumn("Forma Pgto", options=_formas_opts),
+            "BANCO":           st.column_config.TextColumn("Banco"),
+            "TEM_NOTA_FISCAL": st.column_config.CheckboxColumn("Tem NF?", disabled=True),
+            "comprovante_url": st.column_config.LinkColumn("📄 NF", display_text="Abrir", disabled=True),
         },
         column_order=[c for c in cols_editor if c != 'id'],
         use_container_width=True,
@@ -1421,6 +1477,7 @@ def _render_despesas(df_raw):
                         comprovante_url = f"{_sb_url}/storage/v1/object/public/comprovantes/{nome_arq}"
                     except Exception as e_storage:
                         st.warning(f"Nota fiscal não pôde ser salva: {e_storage}")
+                        tem_nota = False  # upload falhou — não marcar como tendo NF
                 if fornecedor_form.strip():
                     supabase.table("fornecedores").upsert(
                         {"nome": fornecedor_form.strip()}, on_conflict="nome"
@@ -1678,22 +1735,25 @@ def _render_despesas(df_raw):
                 # 1. Faz upload de todos os comprovantes uma única vez
                 urls_comp = []
                 erros_comp = []
+                prog_bar = st.progress(0, text="Analisando comprovantes com IA...")
                 for i, comp in enumerate(comprovantes_folha):
+                    prog_bar.progress((i + 1) / len(comprovantes_folha),
+                                      text=f"Analisando {i+1}/{len(comprovantes_folha)}: {comp.name}")
                     try:
                         ext_f = comp.name.rsplit('.', 1)[-1].lower()
-                        nome_comp = (
-                            f"folha_{data_folha.strftime('%Y-%m-%d')}"
-                            f"_{obra_folha[:20].replace(' ', '_')}"
-                            f"_{i}_{datetime.now().strftime('%H%M%S')}.{ext_f}"
-                        )
+                        nome_ia = _nome_arquivo_pix(comp, i, ext_f)
+                        prefixo = (f"folha_{data_folha.strftime('%Y-%m-%d')}"
+                                   f"_{obra_folha[:15].replace(' ', '_')}_")
+                        nome_comp = prefixo + nome_ia
                         sb_f.storage.from_("comprovantes").upload(
                             nome_comp, comp.getvalue(),
-                            {"content-type": comp.type}
+                            {"content-type": comp.type, "upsert": "true"}
                         )
-                        urls_comp.append((nome_comp, comp.name,
+                        urls_comp.append((nome_comp, nome_ia,
                             f"{_sb_url_f}/storage/v1/object/public/comprovantes/{nome_comp}"))
                     except Exception as e_comp:
                         erros_comp.append(f"{comp.name}: {e_comp}")
+                prog_bar.empty()
 
                 # 2. Cria um registro em c_despesas por etapa preenchida
                 ids_inseridos = []
@@ -1705,7 +1765,7 @@ def _render_despesas(df_raw):
                             "tipo":            "Mão de Obra",
                             "data":            data_folha.strftime('%Y-%m-%d'),
                             "despesa":         "SALÁRIO PESSOAL",
-                            "fornecedor":      None,
+                            "fornecedor":      "FOLHA",
                             "descricao":       desc_folha.strip() or f"Folha quinzenal — {etapa}",
                             "valor_total":     float(valor),
                             "forma":           forma_folha or None,
@@ -1830,6 +1890,7 @@ def _fechar_folha(folha, df, obra, quinzena, comprovantes=None):
                 "tipo":            "Mão de Obra",
                 "data":            str(quinzena),
                 "despesa":         "SALÁRIO PESSOAL",
+                "fornecedor":      "FOLHA",
                 "descricao":       f"Folha quinzenal — {quinzena.strftime('%d/%m/%Y')}",
                 "valor_total":     float(valor),
                 "tem_nota_fiscal": False,
@@ -1846,23 +1907,30 @@ def _fechar_folha(folha, df, obra, quinzena, comprovantes=None):
 
     # Upload comprovantes para todos os registros gerados
     if comprovantes and despesa_ids:
+        _sb_url_f = os.environ.get("SUPABASE_URL", "").rstrip("/")
         bucket = "comprovantes"
-        for comp in comprovantes:
+        prog = st.progress(0, text="Analisando comprovantes com IA...")
+        for i, comp in enumerate(comprovantes):
+            prog.progress((i + 1) / len(comprovantes),
+                          text=f"Analisando {i+1}/{len(comprovantes)}: {comp.name}")
             try:
-                path = (f"folha_{quinzena.strftime('%Y-%m-%d')}"
-                        f"_{obra[:20].replace(' ', '_')}"
-                        f"_{comp.name}")
+                ext_f = comp.name.rsplit('.', 1)[-1].lower()
+                nome_ia = _nome_arquivo_pix(comp, i, ext_f)
+                prefixo = (f"folha_{quinzena.strftime('%Y-%m-%d')}"
+                           f"_{obra[:15].replace(' ', '_')}_")
+                path = prefixo + nome_ia
                 sb.storage.from_(bucket).upload(path, comp.getvalue(),
                     file_options={"content-type": comp.type, "upsert": "true"})
-                url = sb.storage.from_(bucket).get_public_url(path)
+                url = f"{_sb_url_f}/storage/v1/object/public/{bucket}/{path}"
                 for did in despesa_ids:
                     sb.table("comprovantes_despesa").insert({
                         "despesa_id":   did,
                         "url":          url,
-                        "nome_arquivo": comp.name,
+                        "nome_arquivo": nome_ia,
                     }).execute()
             except Exception as e_up:
                 st.warning(f"Comprovante '{comp.name}' não salvo: {e_up}")
+        prog.empty()
 
     sb.table("folhas").update({"status": "fechada"}).eq("id", folha["id"]).execute()
     load_despesas.clear()
@@ -2012,6 +2080,89 @@ def _render_folha():
             st.session_state.pop("folha_msg")
             st.rerun(scope="fragment")
 
+    # ── Comprovantes da folha ────────────────────────────────────────────────
+    st.divider()
+    st.markdown("#### 📎 Comprovantes")
+    _sb_comp = init_supabase()
+    try:
+        # Busca despesa_ids vinculadas a esta folha
+        _res_ids = _sb_comp.table("c_despesas").select("id") \
+            .eq("folha_id", folha["id"]).execute()
+        _desp_ids = [r["id"] for r in _res_ids.data] if _res_ids.data else []
+        if _desp_ids:
+            _res_comps = _sb_comp.table("comprovantes_despesa") \
+                .select("url, nome_arquivo") \
+                .in_("despesa_id", _desp_ids) \
+                .execute()
+            # Deduplica por URL
+            _vistos = set()
+            _comps_unicos = []
+            for _c in (_res_comps.data or []):
+                if _c["url"] not in _vistos:
+                    _vistos.add(_c["url"])
+                    _comps_unicos.append(_c)
+            if _comps_unicos:
+                for _c in _comps_unicos:
+                    _label = _c.get("nome_arquivo") or _c["url"].split("/")[-1]
+                    st.markdown(f"- [{_label}]({_c['url']})")
+            else:
+                st.caption("Nenhum comprovante vinculado ainda.")
+        else:
+            st.caption("Folha ainda sem lançamentos em c_despesas.")
+    except Exception:
+        st.caption("Não foi possível carregar comprovantes.")
+
+    # Adicionar comprovantes (sempre disponível, mesmo após fechamento)
+    with st.expander("➕ Adicionar comprovantes"):
+        novos_comps = st.file_uploader(
+            "Selecione os comprovantes",
+            type=["jpg", "jpeg", "png", "pdf"],
+            accept_multiple_files=True,
+            key="folha_add_comps",
+        )
+        if st.button("📤 Enviar comprovantes", key="btn_add_comps",
+                     disabled=not novos_comps, type="primary"):
+            _sb_add = init_supabase()
+            _sb_url_add = os.environ.get("SUPABASE_URL", "").rstrip("/")
+            # Pega despesa_ids desta folha
+            _r_ids = _sb_add.table("c_despesas").select("id") \
+                .eq("folha_id", folha["id"]).execute()
+            _did_list = [r["id"] for r in _r_ids.data] if _r_ids.data else []
+            if not _did_list:
+                st.error("Feche a folha primeiro para gerar os lançamentos antes de anexar comprovantes.")
+            else:
+                _prog_add = st.progress(0, text="Analisando com IA...")
+                _erros_add = []
+                for _i, _comp in enumerate(novos_comps):
+                    _prog_add.progress((_i + 1) / len(novos_comps),
+                                       text=f"Analisando {_i+1}/{len(novos_comps)}: {_comp.name}")
+                    try:
+                        _ext_a = _comp.name.rsplit('.', 1)[-1].lower()
+                        _nome_a = _nome_arquivo_pix(_comp, _i, _ext_a)
+                        _pref_a = (f"folha_{quinzena_f.strftime('%Y-%m-%d')}"
+                                   f"_{obra_f[:15].replace(' ', '_')}_")
+                        _path_a = _pref_a + _nome_a
+                        _sb_add.storage.from_("comprovantes").upload(
+                            _path_a, _comp.getvalue(),
+                            file_options={"content-type": _comp.type, "upsert": "true"}
+                        )
+                        _url_a = f"{_sb_url_add}/storage/v1/object/public/comprovantes/{_path_a}"
+                        for _did in _did_list:
+                            _sb_add.table("comprovantes_despesa").insert({
+                                "despesa_id":   _did,
+                                "url":          _url_a,
+                                "nome_arquivo": _nome_a,
+                            }).execute()
+                    except Exception as _e_a:
+                        _erros_add.append(f"{_comp.name}: {_e_a}")
+                _prog_add.empty()
+                if _erros_add:
+                    for _em in _erros_add:
+                        st.warning(_em)
+                else:
+                    st.success(f"✅ {len(novos_comps)} comprovante(s) adicionado(s)!")
+                    st.rerun(scope="fragment")
+
 
 def _form_nova_conta(obras_list):
     with st.form("form_nova_conta", clear_on_submit=True):
@@ -2144,6 +2295,124 @@ def _form_pagar_conta(df):
 
 
 @st.fragment
+def _render_documentos():
+    st.markdown("""
+    <div class="main-header">
+        <h1>Documentos</h1>
+        <p>Notas fiscais e comprovantes vinculados às despesas.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown('<hr class="custom-divider">', unsafe_allow_html=True)
+
+    df_docs = load_despesas()
+    if df_docs.empty:
+        st.info("Nenhuma despesa registrada ainda.")
+        return
+
+    _obras_df_d = load_obras()
+    _obras_lista_d = _obras_df_d['nome'].tolist() if not _obras_df_d.empty else []
+
+    col_fo, col_fn = st.columns(2)
+    with col_fo:
+        filtro_obra_d = st.selectbox("Obra", ["Todas"] + _obras_lista_d, key="docs_obra")
+    with col_fn:
+        filtro_nf = st.selectbox("Nota Fiscal", ["Todas", "Com NF", "Sem NF"], key="docs_nf")
+
+    df_view_d = df_docs.copy()
+    if filtro_obra_d != "Todas":
+        df_view_d = df_view_d[df_view_d['OBRA'] == filtro_obra_d]
+    if filtro_nf == "Com NF":
+        df_view_d = df_view_d[df_view_d['TEM_NOTA_FISCAL'] == True]
+    elif filtro_nf == "Sem NF":
+        df_view_d = df_view_d[df_view_d['TEM_NOTA_FISCAL'] != True]
+
+    df_view_d = df_view_d.sort_values('DATA', ascending=False)
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total de despesas", len(df_view_d))
+    nf_count = int(df_view_d['TEM_NOTA_FISCAL'].sum()) if 'TEM_NOTA_FISCAL' in df_view_d.columns else 0
+    c2.metric("Com nota fiscal", f"{nf_count} / {len(df_view_d)}")
+
+    # ── Tabela principal ────────────────────────────────────────────────────
+    _doc_cols = [c for c in ['id', 'OBRA', 'DATA', 'DESPESA', 'FORNECEDOR',
+                              'VALOR_TOTAL', 'TEM_NOTA_FISCAL', 'comprovante_url']
+                 if c in df_view_d.columns]
+    df_doc_editor = df_view_d[_doc_cols].copy().reset_index(drop=True)
+    if 'comprovante_url' in df_doc_editor.columns:
+        df_doc_editor['comprovante_url'] = df_doc_editor['comprovante_url'].fillna('')
+
+    st.data_editor(
+        df_doc_editor,
+        column_config={
+            "id":              st.column_config.TextColumn("id", disabled=True),
+            "OBRA":            st.column_config.TextColumn("Obra", disabled=True),
+            "DATA":            st.column_config.DateColumn("Data", format="DD/MM/YYYY", disabled=True),
+            "DESPESA":         st.column_config.TextColumn("Despesa", disabled=True),
+            "FORNECEDOR":      st.column_config.TextColumn("Fornecedor", disabled=True),
+            "VALOR_TOTAL":     st.column_config.NumberColumn("Valor (R$)", format="R$ %.2f", disabled=True),
+            "TEM_NOTA_FISCAL": st.column_config.CheckboxColumn("Tem NF?", disabled=True),
+            "comprovante_url": st.column_config.LinkColumn("📄 Abrir NF", display_text="Abrir", disabled=True),
+        },
+        column_order=[c for c in _doc_cols if c != 'id'],
+        use_container_width=True,
+        hide_index=True,
+        height=500,
+        disabled=True,
+        key="editor_docs",
+    )
+
+    st.divider()
+
+    # ── Anexar NF a despesa existente ───────────────────────────────────────
+    with st.expander("📎 Anexar nota fiscal a despesa existente"):
+        df_sem_nf = df_docs[df_docs['TEM_NOTA_FISCAL'] != True].copy()
+        if df_sem_nf.empty:
+            st.info("Todas as despesas já têm nota fiscal.")
+        else:
+            _col_anx_o, _col_anx_e = st.columns(2)
+            with _col_anx_o:
+                _obras_sem_nf = sorted(df_sem_nf['OBRA'].dropna().unique().tolist())
+                _filtro_obra_anx = st.selectbox("Filtrar por obra", ["Todas"] + _obras_sem_nf, key="anexar_nf_obra")
+            with _col_anx_e:
+                _df_anx = df_sem_nf if _filtro_obra_anx == "Todas" else df_sem_nf[df_sem_nf['OBRA'] == _filtro_obra_anx]
+                _etapas_sem_nf = sorted(_df_anx['ETAPA'].dropna().unique().tolist())
+                _filtro_etapa_anx = st.selectbox("Filtrar por etapa (opcional)", ["Todas"] + _etapas_sem_nf, key="anexar_nf_etapa")
+            if _filtro_etapa_anx != "Todas":
+                _df_anx = _df_anx[_df_anx['ETAPA'] == _filtro_etapa_anx]
+            opcoes_nf = {
+                f"{r['OBRA']} — {pd.Timestamp(r['DATA']).strftime('%d/%m/%Y') if pd.notna(r['DATA']) else '?'} — {r.get('DESPESA','?')} — R$ {r.get('VALOR_TOTAL', 0):,.2f}": r['id']
+                for _, r in _df_anx.iterrows()
+                if pd.notna(r.get('id'))
+            }
+            if not opcoes_nf:
+                st.info("Nenhuma despesa sem NF nos filtros selecionados.")
+            else:
+                sel_label_nf = st.selectbox("Despesa sem NF", list(opcoes_nf.keys()), key="anexar_nf_sel")
+                sel_id_nf    = opcoes_nf[sel_label_nf]
+                arquivo_nf   = st.file_uploader("Nota fiscal", type=["pdf", "jpg", "jpeg", "png"], key="anexar_nf_file")
+
+                if st.button("📎 Anexar NF", type="primary", disabled=arquivo_nf is None, key="btn_anexar_nf"):
+                    try:
+                        _sb_anx  = init_supabase()
+                        _sb_url  = os.environ.get("SUPABASE_URL", "").rstrip("/")
+                        ext_nf   = arquivo_nf.name.rsplit(".", 1)[-1].lower()
+                        nome_nf  = f"nf_{sel_id_nf}_{uuid.uuid4().hex[:8]}.{ext_nf}"
+                        _sb_anx.storage.from_("comprovantes").upload(
+                            nome_nf, arquivo_nf.getvalue(), {"content-type": arquivo_nf.type}
+                        )
+                        url_nf = f"{_sb_url}/storage/v1/object/public/comprovantes/{nome_nf}"
+                        _sb_anx.table("c_despesas").update({
+                            "comprovante_url": url_nf,
+                            "tem_nota_fiscal": True,
+                        }).eq("id", int(sel_id_nf)).execute()
+                        load_despesas.clear()
+                        st.success("NF anexada com sucesso!")
+                        st.rerun(scope="fragment")
+                    except Exception as e_anx:
+                        st.error(f"Erro ao anexar: {e_anx}")
+
+
+@st.fragment
 def _render_contas_pagar():
     st.markdown("""
     <div class="main-header">
@@ -2220,6 +2489,9 @@ def _render_contas_pagar():
 
 with tab_folha:
     _render_folha()
+
+with tab_docs:
+    _render_documentos()
 
 with tab_contas:
     _render_contas_pagar()
