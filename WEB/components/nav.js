@@ -4,28 +4,42 @@
  */
 
 const NAV_ITEMS = [
-    { icon: "📊", label: "Dashboard",       href: "/",                  done: true  },
-    { icon: "📋", label: "Despesas",         href: "/despesas/",         done: false },
-    { icon: "🗂️", label: "Histórico",        href: "/historico/",        done: false },
-    { icon: "👥", label: "Folha",            href: "/folha/",            done: false },
-    { icon: "📄", label: "Documentos",       href: "/documentos/",       done: false },
-    { icon: "💳", label: "Contas a Pagar",   href: "/contas/",           done: false },
-    { icon: "💰", label: "Recebimentos",     href: "/recebimentos/",     done: false },
-    { icon: "⚙️", label: "Configurações",    href: "/configuracoes/",    done: false },
+    { icon: "📊", label: "Dashboard",       path: "/",                  done: true  },
+    { icon: "📋", label: "Despesas",         path: "/despesas/",         done: true  },
+    { icon: "🗂️", label: "Histórico",        path: "/historico/",        done: false },
+    { icon: "👥", label: "Folha",            path: "/folha/",            done: false },
+    { icon: "📄", label: "Documentos",       path: "/documentos/",       done: false },
+    { icon: "💳", label: "Contas a Pagar",   path: "/contas/",           done: false },
+    { icon: "💰", label: "Recebimentos",     path: "/recebimentos/",     done: false },
+    { icon: "⚙️", label: "Configurações",    path: "/configuracoes/",    done: false },
 ];
+
+// Detecta o base path (ex: "/WEB" se servido de diretório pai)
+function getAppBase() {
+    const scripts = document.querySelectorAll('script[src]');
+    for (const s of scripts) {
+        if (s.src.includes('components/nav.js')) {
+            return new URL('../', s.src).pathname.replace(/\/$/, '');
+        }
+    }
+    return '';
+}
 
 function renderNav() {
     const container = document.getElementById("main-nav");
     if (!container) return;
 
+    const BASE    = getAppBase();
     const current = window.location.pathname.replace(/\/index\.html$/, "/");
 
     const html = `
         <div class="nav-section-label">Módulos</div>
         <nav class="nav-links">
             ${NAV_ITEMS.map(item => {
-                const href = item.href;
-                const isActive = current === href || (href !== "/" && current.startsWith(href));
+                const href     = BASE + item.path;
+                const basePath = BASE + "/";
+                const isActive = (item.path === "/" && current === basePath)
+                              || (item.path !== "/" && current.startsWith(BASE + item.path));
                 const classes = ["nav-link", isActive ? "active" : "", !item.done ? "nav-coming-soon" : ""].filter(Boolean).join(" ");
                 return `
                     <a href="${item.done ? href : "#"}"

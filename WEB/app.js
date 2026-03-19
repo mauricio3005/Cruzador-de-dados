@@ -1,162 +1,89 @@
 /**
- * DASHBOARD FINANCEIRO GERENCIAL
- * Arquivo principal de lógica (app.js)
+ * INDUSTRIAL ARCHITECT — Finance Suite
+ * Dashboard principal (app.js)
  */
 
-// --- CONFIGURAÇÃO SUPABASE ---
-// As chaves são carregadas do arquivo local .env
+// --- SUPABASE ---
 let SUPABASE_URL = '';
 let SUPABASE_ANON_KEY = '';
 let dbClient;
 
-// Função para carregar variáveis de ambiente do aqruivo .env
-async function carregarEnv() {
+function carregarEnv() {
     if (window.ENV) {
         SUPABASE_URL = window.ENV.SUPABASE_URL;
         SUPABASE_ANON_KEY = window.ENV.SUPABASE_ANON_KEY;
-
         if (SUPABASE_URL && SUPABASE_ANON_KEY) {
             dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         } else {
-            console.error("Chaves não encontradas no arquivo env.js");
+            console.error("Chaves não encontradas em env.js");
         }
     } else {
-        console.error("Variável window.ENV não encontrada. Verifique se env.js foi carregado no HTML.");
+        console.error("window.ENV não encontrado. Verifique env.js.");
     }
 }
 
-// --- VARIÁVEIS DE ESTADO ---
+// --- ESTADO ---
 let rawData = [];
 let filteredData = [];
-let currentObraFilters = [];
+let currentObraFilters  = [];   // vazio = nenhuma obra selecionada
 let currentEtapaFilters = [];
-let currentTipoFilters = [];
+let currentTipoFilters  = [];
 
-// Referências de Gráficos (Chart.js instâncias)
-let barrasChartInstance = null;
-let roscaChartInstance = null;
-let rankingChartInstance = null;
-
-// --- TEMA (MODO ESCURO) ---
-const getThemeColors = () => {
-    const isDark = document.body.classList.contains('dark-mode');
-    return {
-        text: isDark ? '#9CA3AF' : '#6B7280',
-        grid: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
-        barBg: isDark ? '#4B5563' : '#D1D5DB'
-    };
-};
-
-function initTheme() {
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-        document.body.classList.add('dark-mode');
-    }
-    updateThemeIcon(document.body.classList.contains('dark-mode'));
-
-    document.getElementById('themeToggleBtn').addEventListener('click', () => {
-        const isDark = document.body.classList.toggle('dark-mode');
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
-        updateThemeIcon(isDark);
-        atualizarGraficosTema();
-    });
-}
-
-function updateThemeIcon(isDark) {
-    const icon = document.getElementById('themeIcon');
-    if (!icon) return;
-    if (isDark) {
-        icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
-    } else {
-        icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
-    }
-}
-
-function atualizarGraficosTema() {
-    const theme = getThemeColors();
-    Chart.defaults.color = theme.text;
-    Chart.defaults.borderColor = theme.grid;
-
-    if (barrasChartInstance) {
-        barrasChartInstance.data.datasets[0].backgroundColor = theme.barBg;
-        barrasChartInstance.update();
-    }
-    if (roscaChartInstance) {
-        roscaChartInstance.update();
-    }
-    if (rankingChartInstance) {
-        rankingChartInstance.data.datasets[0].backgroundColor = theme.barBg;
-        rankingChartInstance.update();
-    }
-}
-
-// --- INICIALIZAÇÃO DA APLICAÇÃO ---
+// --- INICIALIZAÇÃO ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // Inicializa o tema escuro
-    initTheme();
-    const theme = getThemeColors();
-
-    // Registra plugin de labels no ChartJS
-    Chart.register(ChartDataLabels);
-    Chart.defaults.font.family = "'Inter', sans-serif";
-    Chart.defaults.color = theme.text;
-    Chart.defaults.borderColor = theme.grid;
-    Chart.defaults.plugins.datalabels.display = false; // Desliga por padrão para evitar poluição
-
-    // Atualiza status na interface inicial
-    document.getElementById('dataMode').textContent = 'Supabase (Ao Vivo)';
-    document.getElementById('dataMode').style.color = '#10B981';
-
-    // 1. Carrega as chaves do env.js primeiro
     carregarEnv();
-
-    // 2. Carrega dados iniciais
     await carregarDados();
 
-    // Configura eventos
-    configurarFiltrosMultiplos('obraCheckboxes', 'obraDropdownText', 'obra');
+    configurarFiltrosMultiplos('obraCheckboxes',  'obraDropdownText',  'obra');
     configurarFiltrosMultiplos('etapaCheckboxes', 'etapaDropdownText', 'etapa');
-    configurarFiltrosMultiplos('tipoCheckboxes', 'tipoDropdownText', 'tipo');
+    configurarFiltrosMultiplos('tipoCheckboxes',  'tipoDropdownText',  'tipo');
 
-    // Configura os Dropdowns
-    setupDropdown('obraDropdownHeader', 'obraCheckboxes');
+    setupDropdown('obraDropdownHeader',  'obraCheckboxes');
     setupDropdown('etapaDropdownHeader', 'etapaCheckboxes');
-    setupDropdown('tipoDropdownHeader', 'tipoCheckboxes');
+    setupDropdown('tipoDropdownHeader',  'tipoCheckboxes');
 
     document.getElementById('refreshBtn').addEventListener('click', async () => {
         const btn = document.getElementById('refreshBtn');
-        btn.innerHTML = 'Atualizando...';
+        btn.textContent = 'Atualizando…';
+        btn.disabled = true;
         await carregarDados();
-        setTimeout(() => {
-            btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> Atualizar Dados';
-        }, 500);
+        btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> Atualizar`;
+        btn.disabled = false;
     });
+
+    document.getElementById('exportPdfBtn').addEventListener('click', () => {
+        if (currentObraFilters.length === 0) {
+            toast.warning('Selecione uma obra antes de exportar o relatório.');
+            return;
+        }
+        if (currentObraFilters.length > 1) {
+            toast.warning('Selecione apenas uma obra para gerar o relatório PDF.');
+            return;
+        }
+        abrirModalRelatorio(currentObraFilters[0]);
+    });
+
+    document.getElementById('applyFiltersBtn').addEventListener('click', atualizarDashboard);
 });
 
+// --- DROPDOWN SETUP ---
 function setupDropdown(headerId, listId) {
     const header = document.getElementById(headerId);
-    const list = document.getElementById(listId);
+    const list   = document.getElementById(listId);
 
-    // Toggle ao clicar no header
     header.addEventListener('click', (e) => {
         e.stopPropagation();
-
-        // Fecha outros dropdowns abertos antes de abrir este
         document.querySelectorAll('.dropdown-list.show').forEach(el => {
             if (el.id !== listId) {
                 el.classList.remove('show');
-                const otherHeader = document.getElementById(el.id.replace('Checkboxes', 'DropdownHeader'));
-                if (otherHeader) otherHeader.classList.remove('active');
+                const h = document.getElementById(el.id.replace('Checkboxes', 'DropdownHeader'));
+                if (h) h.classList.remove('active');
             }
         });
-
         list.classList.toggle('show');
         header.classList.toggle('active');
     });
 
-    // Fecha ao clicar fora
     document.addEventListener('click', (e) => {
         if (!header.contains(e.target) && !list.contains(e.target)) {
             list.classList.remove('show');
@@ -165,130 +92,107 @@ function setupDropdown(headerId, listId) {
     });
 }
 
+// --- FILTROS MÚLTIPLOS ---
 function configurarFiltrosMultiplos(containerId, textId, filterType) {
-    const container = document.getElementById(containerId);
+    const container   = document.getElementById(containerId);
     const textElement = document.getElementById(textId);
 
     container.addEventListener('change', (e) => {
-        if (e.target.tagName === 'INPUT' && e.target.type === 'checkbox') {
-            const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
-            const checkedBoxes = checkboxes.filter(cb => cb.checked);
+        if (e.target.tagName !== 'INPUT' || e.target.type !== 'checkbox') return;
 
-            // Impede desmarcar a última opção para não deixar vazio
-            if (checkedBoxes.length === 0) {
-                e.target.checked = true;
-                return;
-            }
+        const checkboxes   = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+        const checkedBoxes = checkboxes.filter(cb => cb.checked);
+        const values       = checkedBoxes.map(cb => cb.value);
 
-            const values = checkedBoxes.map(cb => cb.value);
-
-            if (filterType === 'obra') {
-                currentObraFilters = values;
-                povoarFiltroEtapas(); // Atualiza etapas dependentes
-            } else if (filterType === 'etapa') {
-                currentEtapaFilters = values;
-            } else if (filterType === 'tipo') {
-                currentTipoFilters = values;
-            }
-
-            // Atualiza resumo textual do botão
-            let textDefault = '';
-            let textPlural = '';
-            if (filterType === 'obra') { textDefault = 'Todas as Obras'; textPlural = 'obras selecionadas'; }
-            else if (filterType === 'etapa') { textDefault = 'Todas as Etapas'; textPlural = 'etapas selecionadas'; }
-            else if (filterType === 'tipo') { textDefault = 'Todos os Tipos'; textPlural = 'tipos selecionados'; }
-
-            if (values.length === checkboxes.length) {
-                textElement.textContent = textDefault;
-            } else if (values.length === 1) {
-                textElement.textContent = checkedBoxes[0].parentElement.textContent.trim();
-            } else {
-                textElement.textContent = `${values.length} ${textPlural}`;
-            }
-
-            atualizarDashboard();
+        if (filterType === 'obra') {
+            currentObraFilters = values;
+            povoarFiltroEtapas();
+        } else if (filterType === 'etapa') {
+            currentEtapaFilters = values;
+        } else if (filterType === 'tipo') {
+            currentTipoFilters = values;
         }
+
+        const defaults = { obra: 'Selecionar Obras', etapa: 'Todas as Etapas', tipo: 'Todos os Tipos' };
+        const todos    = { obra: 'Todas as Obras',   etapa: 'Todas as Etapas', tipo: 'Todos os Tipos' };
+        const plurals  = { obra: 'obras', etapa: 'etapas', tipo: 'tipos' };
+
+        if (values.length === 0) {
+            textElement.textContent = defaults[filterType];
+        } else if (values.length === checkboxes.length) {
+            textElement.textContent = todos[filterType];
+        } else if (values.length === 1) {
+            textElement.textContent = checkedBoxes[0].parentElement.textContent.trim();
+        } else {
+            textElement.textContent = `${values.length} ${plurals[filterType]} selecionados`;
+        }
+
+        atualizarDashboard();
     });
 }
 
-// --- FUNÇÕES DE DADOS ---
-
+// --- CARREGAR DADOS ---
 async function carregarDados() {
     try {
-        if (!dbClient) {
-            console.error("Cliente Supabase não inicializado. Verifique se o env.js está correto.");
-            throw new Error("Cliente Supabase não inicializado.");
-        }
+        if (!dbClient) throw new Error("Cliente Supabase não inicializado.");
 
-        // Consulta real no Supabase
-        const { data, error } = await dbClient
-            .from('relatorios')
-            .select('*');
+        const [resOrc, resDesp] = await Promise.all([
+            dbClient.from('orcamentos').select('obra, etapa, tipo_custo, valor_estimado'),
+            dbClient.from('c_despesas').select('obra, etapa, tipo, valor_total'),
+        ]);
 
-        if (error) {
-            console.error("Erro reportado pelo Supabase:", error);
-            throw error;
-        }
+        if (resOrc.error)  throw resOrc.error;
+        if (resDesp.error) throw resDesp.error;
 
-        // Vamos normalizar os dados vindos do Supabase para garantir que as chaves correspondam ao que o restante do código espera
-        rawData = (data || []).map(item => {
-            // Se o Supabase retornou o nome exato (incluindo o Ç), ou se o banco encodou.
-            // Para maior robustez, pegamos as chaves como elas vieram e padronizamos nas chaves principais
-            let orcamento = item['ORÇAMENTO_ESTIMADO'];
-            if (orcamento === undefined) orcamento = item['ORAMENTO_ESTIMADO'];
-            if (orcamento === undefined) orcamento = item['ORAMENTO_ESTIMADO'];
-
-            return {
-                OBRA: item.OBRA,
-                ETAPA: item.ETAPA,
-                TIPO_CUSTO: item.TIPO_CUSTO || 'Geral',
-                ORÇAMENTO_ESTIMADO: orcamento,
-                GASTO_REALIZADO: item.GASTO_REALIZADO,
-                SALDO_ETAPA: item.SALDO_ETAPA
-            };
+        const gastos = {};
+        (resDesp.data || []).forEach(d => {
+            const key = `${d.obra}||${d.etapa}||${d.tipo || 'Geral'}`;
+            gastos[key] = (gastos[key] || 0) + Number(d.valor_total || 0);
         });
 
-        if (rawData.length === 0) {
-            console.warn("A consulta retornou um array vazio. O banco está vazio ou há bloqueio de RLS.");
-        }
+        const visto = new Set();
+        rawData = (resOrc.data || []).map(o => {
+            const tipo = o.tipo_custo || 'Geral';
+            const key  = `${o.obra}||${o.etapa}||${tipo}`;
+            visto.add(key);
+            const gasto = gastos[key] || 0;
+            const orc   = Number(o.valor_estimado || 0);
+            return { OBRA: o.obra, ETAPA: o.etapa, TIPO_CUSTO: tipo,
+                     ORÇAMENTO_ESTIMADO: orc, GASTO_REALIZADO: gasto, SALDO_ETAPA: orc - gasto };
+        });
 
-        document.getElementById('connectionStatus').textContent = 'Online';
-        document.getElementById('connectionStatus').className = 'status-indicator online';
+        Object.entries(gastos).forEach(([key, gasto]) => {
+            if (!visto.has(key)) {
+                const [obra, etapa, tipo] = key.split('||');
+                rawData.push({ OBRA: obra, ETAPA: etapa, TIPO_CUSTO: tipo,
+                               ORÇAMENTO_ESTIMADO: 0, GASTO_REALIZADO: gasto, SALDO_ETAPA: -gasto });
+            }
+        });
 
-        // Povoar o Slicer (Checkboxes) apenas na primeira carga
+        setStatus('online', 'Sistema Sincronizado');
+
         if (document.getElementById('obraCheckboxes').children.length === 0) {
-            currentObraFilters = [...new Set(rawData.map(item => item.OBRA))].filter(Boolean).sort();
-            currentEtapaFilters = [...new Set(rawData.map(item => item.ETAPA))].filter(Boolean).sort();
-            currentTipoFilters = [...new Set(rawData.map(item => item.TIPO_CUSTO))].filter(Boolean).sort();
-
+            currentObraFilters  = [];
+            currentEtapaFilters = [];
+            currentTipoFilters  = [];
             povoarFiltroObras();
-            povoarFiltroEtapas();
-            povoarFiltroTipos();
-
-            document.getElementById('obraDropdownText').textContent = 'Todas as Obras';
-            document.getElementById('etapaDropdownText').textContent = 'Todas as Etapas';
-            document.getElementById('tipoDropdownText').textContent = 'Todos os Tipos';
         }
 
         atualizarDashboard();
 
     } catch (error) {
         console.error("Erro ao carregar dados:", error);
-        document.getElementById('connectionStatus').textContent = 'Erro ao conectar';
-        document.getElementById('connectionStatus').className = 'status-indicator offline';
+        setStatus('offline', 'Erro de conexão');
     }
 }
 
+// --- POPULAR FILTROS ---
 function povoarFiltroObras() {
     const container = document.getElementById('obraCheckboxes');
     container.innerHTML = '';
-
-    // Extrai nomes únicos
-    const obrasUnicas = [...new Set(rawData.map(item => item.OBRA))].filter(Boolean).sort();
-
-    obrasUnicas.forEach(obra => {
-        const isChecked = currentObraFilters.includes(obra) ? 'checked' : '';
-        container.innerHTML += `<label class="checkbox-item"><input type="checkbox" value="${obra}" ${isChecked}> ${obra}</label>`;
+    const obras = [...new Set(rawData.map(i => i.OBRA))].filter(Boolean).sort();
+    obras.forEach(obra => {
+        container.innerHTML += `<label class="checkbox-item"><input type="checkbox" value="${obra}"> ${obra}</label>`;
     });
 }
 
@@ -296,444 +200,437 @@ function povoarFiltroEtapas() {
     const container = document.getElementById('etapaCheckboxes');
     container.innerHTML = '';
 
-    // Pega as etapas baseadas na obra selecionada
-    let dataForEtapas = rawData.filter(item => currentObraFilters.includes(item.OBRA));
-    const etapasUnicas = [...new Set(dataForEtapas.map(item => item.ETAPA))].filter(Boolean).sort();
-
-    // Filtra as etapas atuais para manter apenas as que ainda existem
-    const stillValid = currentEtapaFilters.filter(e => etapasUnicas.includes(e));
-
-    // Se a lista de ainda válidas está vazia, marcamos tudo
-    if (stillValid.length === 0 && etapasUnicas.length > 0) {
-        currentEtapaFilters = [...etapasUnicas];
-    } else {
-        currentEtapaFilters = stillValid;
+    if (currentObraFilters.length === 0) {
+        currentEtapaFilters = [];
+        document.getElementById('etapaDropdownText').textContent = 'Todas as Etapas';
+        return;
     }
 
-    etapasUnicas.forEach(etapa => {
-        const isChecked = currentEtapaFilters.includes(etapa) ? 'checked' : '';
-        container.innerHTML += `<label class="checkbox-item"><input type="checkbox" value="${etapa}" ${isChecked}> ${etapa}</label>`;
+    const filtradas  = rawData.filter(i => currentObraFilters.includes(i.OBRA));
+    const etapas     = [...new Set(filtradas.map(i => i.ETAPA))].filter(Boolean).sort();
+    const stillValid = currentEtapaFilters.filter(e => etapas.includes(e));
+    currentEtapaFilters = stillValid.length === 0 ? [...etapas] : stillValid;
+
+    etapas.forEach(etapa => {
+        const chk = currentEtapaFilters.includes(etapa) ? 'checked' : '';
+        container.innerHTML += `<label class="checkbox-item"><input type="checkbox" value="${etapa}" ${chk}> ${etapa}</label>`;
     });
 
-    const textElement = document.getElementById('etapaDropdownText');
-    if (currentEtapaFilters.length === etapasUnicas.length) {
-        textElement.textContent = 'Todas as Etapas';
-    } else if (currentEtapaFilters.length === 1) {
-        textElement.textContent = currentEtapaFilters[0];
-    } else {
-        textElement.textContent = `${currentEtapaFilters.length} etapas selecionadas`;
-    }
+    const el = document.getElementById('etapaDropdownText');
+    el.textContent = currentEtapaFilters.length === etapas.length ? 'Todas as Etapas'
+        : currentEtapaFilters.length === 1 ? currentEtapaFilters[0]
+        : `${currentEtapaFilters.length} etapas selecionadas`;
 }
 
 function povoarFiltroTipos() {
     const container = document.getElementById('tipoCheckboxes');
     container.innerHTML = '';
 
-    const tiposUnicos = [...new Set(rawData.map(item => item.TIPO_CUSTO))].filter(Boolean).sort();
-
-    const stillValid = currentTipoFilters.filter(e => tiposUnicos.includes(e));
-
-    if (stillValid.length === 0 && tiposUnicos.length > 0) {
-        currentTipoFilters = [...tiposUnicos];
-    } else {
-        currentTipoFilters = stillValid;
+    if (currentObraFilters.length === 0) {
+        currentTipoFilters = [];
+        document.getElementById('tipoDropdownText').textContent = 'Todos os Tipos';
+        return;
     }
 
-    tiposUnicos.forEach(tipo => {
-        const isChecked = currentTipoFilters.includes(tipo) ? 'checked' : '';
-        container.innerHTML += `<label class="checkbox-item"><input type="checkbox" value="${tipo}" ${isChecked}> ${tipo}</label>`;
+    const tipos      = [...new Set(rawData.map(i => i.TIPO_CUSTO))].filter(Boolean).sort();
+    const stillValid = currentTipoFilters.filter(e => tipos.includes(e));
+    currentTipoFilters = stillValid.length === 0 ? [...tipos] : stillValid;
+
+    tipos.forEach(tipo => {
+        const chk = currentTipoFilters.includes(tipo) ? 'checked' : '';
+        container.innerHTML += `<label class="checkbox-item"><input type="checkbox" value="${tipo}" ${chk}> ${tipo}</label>`;
     });
 
-    const textElement = document.getElementById('tipoDropdownText');
-    if (currentTipoFilters.length === tiposUnicos.length) {
-        textElement.textContent = 'Todos os Tipos';
-    } else if (currentTipoFilters.length === 1) {
-        textElement.textContent = currentTipoFilters[0];
-    } else {
-        textElement.textContent = `${currentTipoFilters.length} tipos selecionados`;
-    }
+    const el = document.getElementById('tipoDropdownText');
+    el.textContent = currentTipoFilters.length === tipos.length ? 'Todos os Tipos'
+        : currentTipoFilters.length === 1 ? currentTipoFilters[0]
+        : `${currentTipoFilters.length} tipos selecionados`;
 }
 
-function atualizarDashboard() {
-    // 1. Filtrar os dados com base nos filtros
-    filteredData = rawData.filter(item =>
-        currentObraFilters.includes(item.OBRA) &&
-        currentEtapaFilters.includes(item.ETAPA) &&
-        currentTipoFilters.includes(item.TIPO_CUSTO)
+// --- ATUALIZAR DASHBOARD ---
+async function atualizarDashboard() {
+    // Sem obra selecionada → estado vazio
+    if (currentObraFilters.length === 0) {
+        resetarKPIs();
+        renderizarTabelaVazia();
+        ocultarFluxo();
+        document.getElementById('dashboardTitle').textContent = 'Visão Geral';
+        return;
+    }
+
+    filteredData = rawData.filter(i =>
+        currentObraFilters.includes(i.OBRA) &&
+        (currentEtapaFilters.length === 0 || currentEtapaFilters.includes(i.ETAPA)) &&
+        (currentTipoFilters.length === 0   || currentTipoFilters.includes(i.TIPO_CUSTO))
     );
 
-    // Configuração de Títulos baseada nos filtros
-    const todasObrasQtd = [...new Set(rawData.map(item => item.OBRA))].filter(Boolean).length;
+    const todasObrasQtd  = [...new Set(rawData.map(i => i.OBRA))].filter(Boolean).length;
     const todasEtapasQtd = [...new Set(rawData.filter(i => currentObraFilters.includes(i.OBRA)).map(i => i.ETAPA))].filter(Boolean).length;
+    const filtroGlobal   = currentObraFilters.length === todasObrasQtd && currentEtapaFilters.length === todasEtapasQtd;
 
-    if (currentObraFilters.length === todasObrasQtd && currentEtapaFilters.length === todasEtapasQtd) {
-        document.getElementById('dashboardTitle').textContent = 'Visão Geral do Portfólio';
-        document.getElementById('rankingTitle').textContent = 'Comparativo (Todas as Obras)';
-    } else {
-        let titleInfo = [];
-        if (currentObraFilters.length < todasObrasQtd) titleInfo.push(`Obras (${currentObraFilters.length})`);
-        if (currentEtapaFilters.length < todasEtapasQtd) titleInfo.push(`Etapas (${currentEtapaFilters.length})`);
-        if (titleInfo.length === 0) titleInfo.push(`Filtro Específico`);
+    document.getElementById('dashboardTitle').textContent = filtroGlobal
+        ? 'Visão Geral'
+        : currentObraFilters.length === 1
+            ? currentObraFilters[0]
+            : `${currentObraFilters.length} Obras Selecionadas`;
 
-        document.getElementById('dashboardTitle').textContent = `Filtro | ${titleInfo.join(' - ')}`;
-        document.getElementById('rankingTitle').textContent = 'Comparativo (Seleção Atual)';
-    }
+    // KPIs — Orçamento, Custo Realizado, % Consumo
+    const orcTotal   = filteredData.reduce((s, i) => s + Number(i.ORÇAMENTO_ESTIMADO || 0), 0);
+    const gastoTotal = filteredData.reduce((s, i) => s + Number(i.GASTO_REALIZADO    || 0), 0);
+    const pctConsumo = orcTotal > 0 ? (gastoTotal / orcTotal) * 100 : 0;
 
-    // 2. Calcular KPIs (Medidas DAX em JS)
-    const orcamentoTotal = filteredData.reduce((acc, curr) => acc + (Number(curr.ORÇAMENTO_ESTIMADO) || 0), 0);
-    const gastoRealizado = filteredData.reduce((acc, curr) => acc + (Number(curr.GASTO_REALIZADO) || 0), 0);
-    const saldoTotal = orcamentoTotal - gastoRealizado; // Equivalente a soma de saldo_etapa
-    const percentualConsumo = orcamentoTotal > 0 ? (gastoRealizado / orcamentoTotal) * 100 : 0;
+    document.getElementById('kpiOrcamento').textContent  = formatCurrency(orcTotal);
+    document.getElementById('kpiRealizado').textContent  = formatCurrency(gastoTotal);
+    document.getElementById('kpiConsumo').textContent    = `${pctConsumo.toFixed(1)}%`;
+    document.getElementById('kpiConsumoMin').textContent = `${pctConsumo.toFixed(1)}%`;
 
-    // 3. Atualizar Cartões na UI
-    document.getElementById('kpiOrcamento').textContent = formatCurrency(orcamentoTotal);
-    document.getElementById('kpiRealizado').textContent = formatCurrency(gastoRealizado);
-    document.getElementById('kpiSaldo').textContent = formatCurrency(saldoTotal);
-    document.getElementById('kpiConsumo').textContent = `${percentualConsumo.toFixed(1)}%`;
+    const fill = document.getElementById('kpiConsumoBar');
+    fill.style.width = `${Math.min(pctConsumo, 100)}%`;
+    fill.className   = pctConsumo > 100 ? 'progress-fill over-budget' : 'progress-fill';
 
-    // 3.1 Formatação Condicional do Cartão de Saldo
-    const cardSaldo = document.getElementById('cardSaldo');
-    const saldoValue = document.getElementById('kpiSaldo');
-    const saldoSubtitle = document.getElementById('kpiSaldoSubtitle');
+    // % Realização — busca taxa_conclusao das obras selecionadas
+    await atualizarRealizacao(orcTotal);
 
-    if (saldoTotal >= 0) {
-        saldoValue.className = 'kpi-value text-green';
-        saldoSubtitle.textContent = 'Dentro da meta / Economia';
-        cardSaldo.style.borderTop = '4px solid var(--success-green)';
-    } else {
-        saldoValue.className = 'kpi-value text-red';
-        saldoSubtitle.textContent = 'Atenção: Estouro de Orçamento';
-        cardSaldo.style.borderTop = '4px solid var(--danger-red)';
-    }
-
-    // 3.2 Formatação Condicional da Barra de Progresso
-    const barra = document.getElementById('kpiConsumoBar');
-    barra.style.width = `${Math.min(percentualConsumo, 100)}%`; // Limita o visual max 100%
-    if (percentualConsumo > 100) {
-        barra.className = 'progress-bar over-budget';
-    } else {
-        barra.className = 'progress-bar';
-    }
-
-    // 4. Atualizar Gráficos
-    renderizarGraficoBarrasAgrupadas();
-    renderizarGraficoRosca();
-    renderizarGraficoRanking();
-
-    // 5. Atualizar Tabela (Matriz)
     renderizarTabela();
+
+    // Fluxo de Caixa — busca dados financeiros das obras selecionadas
+    await atualizarFluxoCaixa(gastoTotal);
 }
 
-// --- UTILITÁRIOS ---
-const formatCurrency = (value) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
+// --- % REALIZAÇÃO ---
+async function atualizarRealizacao(orcTotal) {
+    const realizacaoEl  = document.getElementById('kpiRealizacao');
+    const realizacaoBar = document.getElementById('kpiRealizacaoBar');
+    const realizacaoMin = document.getElementById('kpiRealizacaoMin');
 
-// --- GRÁFICOS ---
+    if (!dbClient) return;
 
-function renderizarGraficoBarrasAgrupadas() {
-    const ctx = document.getElementById('barrasAgrupadasChart').getContext('2d');
+    try {
+        const { data, error } = await dbClient
+            .from('taxa_conclusao')
+            .select('obra, etapa, taxa')
+            .in('obra', currentObraFilters);
 
-    // Agrupar dados por Etapa (Group By)
-    const agrupadoPorEtapa = {};
-    filteredData.forEach(item => {
-        if (!agrupadoPorEtapa[item.ETAPA]) {
-            agrupadoPorEtapa[item.ETAPA] = { previsto: 0, realizado: 0 };
+        if (error) throw error;
+
+        let pctReal = 0;
+
+        if (data && data.length > 0) {
+            if (orcTotal > 0) {
+                // Média ponderada por orçamento de cada etapa
+                let numPonderado = 0;
+                data.forEach(t => {
+                    const etapaOrc = rawData
+                        .filter(r => r.OBRA === t.obra && r.ETAPA === t.etapa)
+                        .reduce((s, r) => s + Number(r.ORÇAMENTO_ESTIMADO || 0), 0);
+                    numPonderado += Number(t.taxa || 0) * etapaOrc;
+                });
+                pctReal = numPonderado / orcTotal;
+            } else {
+                const soma = data.reduce((s, t) => s + Number(t.taxa || 0), 0);
+                pctReal = soma / data.length;
+            }
         }
-        agrupadoPorEtapa[item.ETAPA].previsto += Number(item.ORÇAMENTO_ESTIMADO);
-        agrupadoPorEtapa[item.ETAPA].realizado += Number(item.GASTO_REALIZADO);
-    });
 
-    const labels = Object.keys(agrupadoPorEtapa);
-    const previstoData = labels.map(l => agrupadoPorEtapa[l].previsto);
-    const realizadoData = labels.map(l => agrupadoPorEtapa[l].realizado);
+        realizacaoEl.textContent  = `${pctReal.toFixed(1)}%`;
+        realizacaoMin.textContent = `${pctReal.toFixed(1)}%`;
+        realizacaoBar.style.width = `${Math.min(pctReal, 100)}%`;
+        realizacaoBar.className   = pctReal > 100 ? 'progress-fill over-budget' : 'progress-fill';
 
-    // Arrays de cores dinâmicas (Vermelho se estourar fase, Verde/Azul se ok)
-    const backgroundRealizado = realizadoData.map((val, index) => {
-        return val > previstoData[index] ? 'rgba(239, 68, 68, 0.8)' : 'rgba(16, 185, 129, 0.8)';
-    });
-
-    if (barrasChartInstance) {
-        barrasChartInstance.destroy(); // Limpa antes de redesenhar
+    } catch (err) {
+        console.warn("Erro ao carregar % Realização:", err);
+        realizacaoEl.textContent = '—%';
     }
+}
 
-    barrasChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Orçamento Estimado',
-                    data: previstoData,
-                    backgroundColor: getThemeColors().barBg,
-                    borderRadius: 4
-                },
-                {
-                    label: 'Gasto Realizado',
-                    data: realizadoData,
-                    backgroundColor: backgroundRealizado,
-                    borderRadius: 4
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: function (context) {
-                            return context.dataset.label + ': ' + formatCurrency(context.raw);
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function (value) {
-                            return value >= 1000 ? 'R$ ' + (value / 1000) + 'k' : 'R$ ' + value;
-                        }
-                    }
-                }
-            }
+// --- FLUXO DE CAIXA ---
+async function atualizarFluxoCaixa(gastoTotal) {
+    const section = document.getElementById('fluxoSection');
+    if (!dbClient) { section.style.display = 'none'; return; }
+
+    try {
+        const [resRec, resCap] = await Promise.all([
+            dbClient.from('recebimentos')
+                .select('valor')
+                .in('obra', currentObraFilters)
+                .neq('status', 'cancelado'),
+            dbClient.from('contas_a_pagar')
+                .select('valor')
+                .in('obra', currentObraFilters)
+                .in('status', ['pendente', 'vencido']),
+        ]);
+
+        const recebido    = (resRec.data  || []).reduce((s, r) => s + Number(r.valor || 0), 0);
+        const aPagar      = (resCap.data  || []).reduce((s, r) => s + Number(r.valor || 0), 0);
+        const saldoAtual  = recebido - gastoTotal;
+        const saldoProj   = recebido - gastoTotal - aPagar;
+
+        const colorSaldoAtual = saldoAtual >= 0 ? 'var(--success)' : 'var(--error)';
+        const colorSaldoProj  = saldoProj  >= 0 ? 'var(--success)' : 'var(--error)';
+
+        document.getElementById('fluxoRecebido').textContent      = formatCurrency(recebido);
+        document.getElementById('fluxoGasto').textContent         = formatCurrency(gastoTotal);
+        document.getElementById('fluxoAPagar').textContent        = formatCurrency(aPagar);
+        document.getElementById('fluxoSaldoAtual').textContent    = formatCurrency(saldoAtual);
+        document.getElementById('fluxoSaldoProjetado').textContent = formatCurrency(saldoProj);
+
+        document.getElementById('fluxoSaldoAtual').style.color    = colorSaldoAtual;
+        document.getElementById('fluxoSaldoProjetado').style.color = colorSaldoProj;
+
+        section.style.display = '';
+
+    } catch (err) {
+        console.warn("Erro ao carregar fluxo de caixa:", err);
+        section.style.display = 'none';
+    }
+}
+
+// --- HELPERS ---
+function ocultarFluxo() {
+    const section = document.getElementById('fluxoSection');
+    if (section) section.style.display = 'none';
+}
+
+function resetarKPIs() {
+    document.getElementById('kpiOrcamento').textContent   = 'R$ —';
+    document.getElementById('kpiRealizado').textContent   = 'R$ —';
+    document.getElementById('kpiConsumo').textContent     = '—%';
+    document.getElementById('kpiConsumoMin').textContent  = '0%';
+    document.getElementById('kpiConsumoBar').style.width  = '0%';
+    document.getElementById('kpiRealizacao').textContent  = '—%';
+    document.getElementById('kpiRealizacaoMin').textContent = '0%';
+    document.getElementById('kpiRealizacaoBar').style.width = '0%';
+}
+
+function setStatus(type, text) {
+    const el = document.getElementById('connectionStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.className   = `status-dot ${type}`;
+}
+
+const formatCurrency = (value) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+
+// --- DOWNLOAD PDF ---
+async function baixarPdf(url, nomeArquivo) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: 'Erro desconhecido' }));
+            toast.error(`Erro ao gerar PDF: ${err.detail || res.statusText}`);
+            return;
         }
+        const blob = await res.blob();
+        const link = document.createElement('a');
+        link.href  = URL.createObjectURL(blob);
+        link.download = nomeArquivo;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    } catch (e) {
+        toast.error('Não foi possível conectar à API. Verifique se o servidor está rodando.');
+    }
+}
+
+// --- MODAL RELATÓRIO PDF ---
+function abrirModalRelatorio(obraNome) {
+    // Remove modal anterior se existir
+    const prev = document.getElementById('modalRelatorio');
+    if (prev) prev.remove();
+
+    const hoje  = new Date().toISOString().split('T')[0];
+    const umMesAtras = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().split('T')[0];
+
+    const modal = document.createElement('div');
+    modal.id = 'modalRelatorio';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal" style="max-width:420px;">
+            <div class="modal-header">
+                <h3>Exportar Relatório PDF</h3>
+                <button class="modal-close" id="modalRelatorioClose">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.875rem;color:var(--on-surface-muted);margin-bottom:var(--sp-5);">
+                    Obra: <strong>${obraNome}</strong>
+                </p>
+
+                <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-3);">Tipo de Relatório</div>
+                <div style="display:flex;gap:var(--sp-3);margin-bottom:var(--sp-5);flex-wrap:wrap;">
+                    <label class="radio-pill active">
+                        <input type="radio" name="tipoRel" value="simples" checked style="display:none;">
+                        Simples
+                    </label>
+                    <label class="radio-pill">
+                        <input type="radio" name="tipoRel" value="detalhado" style="display:none;">
+                        Detalhado
+                    </label>
+                    <label class="radio-pill">
+                        <input type="radio" name="tipoRel" value="administrativo" style="display:none;">
+                        Administrativo
+                    </label>
+                </div>
+
+                <div id="admDateRange" style="display:none;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);margin-bottom:var(--sp-5);">
+                        <div>
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-2);">Data Inicial</div>
+                            <input type="date" id="relDataIni" style="width:100%;padding:8px 10px;border:none;border-bottom:2px solid var(--surface-container);border-radius:var(--r-md);background:var(--surface-low);font-family:var(--font-body);font-size:0.875rem;color:var(--on-surface);outline:none;" value="${umMesAtras}">
+                        </div>
+                        <div>
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-2);">Data Final</div>
+                            <input type="date" id="relDataFim" style="width:100%;padding:8px 10px;border:none;border-bottom:2px solid var(--surface-container);border-radius:var(--r-md);background:var(--surface-low);font-family:var(--font-body);font-size:0.875rem;color:var(--on-surface);outline:none;" value="${hoje}">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="modalRelatorioCancelar">Cancelar</button>
+                <button class="btn btn-primary" id="modalRelatorioGerar">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Gerar PDF
+                </button>
+            </div>
+        </div>`;
+
+    document.body.appendChild(modal);
+    requestAnimationFrame(() => modal.classList.add('active'));
+
+    // Fechar modal
+    const fechar = () => {
+        modal.classList.remove('active');
+        setTimeout(() => modal.remove(), 200);
+    };
+    document.getElementById('modalRelatorioClose').addEventListener('click', fechar);
+    document.getElementById('modalRelatorioCancelar').addEventListener('click', fechar);
+    modal.addEventListener('click', (e) => { if (e.target === modal) fechar(); });
+
+    // Toggle pills
+    modal.querySelectorAll('input[name="tipoRel"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            modal.querySelectorAll('.radio-pill').forEach(p => p.classList.remove('active'));
+            radio.parentElement.classList.add('active');
+            document.getElementById('admDateRange').style.display =
+                radio.value === 'administrativo' ? 'block' : 'none';
+        });
+    });
+
+    // Gerar
+    document.getElementById('modalRelatorioGerar').addEventListener('click', () => {
+        const tipo = modal.querySelector('input[name="tipoRel"]:checked').value;
+        let url = `http://localhost:8000/api/relatorio/pdf?obra=${encodeURIComponent(obraNome)}&tipo=${tipo}`;
+
+        if (tipo === 'administrativo') {
+            const ini = document.getElementById('relDataIni').value;
+            const fim = document.getElementById('relDataFim').value;
+            if (!ini || !fim) { toast.warning('Informe o período para o relatório administrativo.'); return; }
+            url += `&data_ini=${ini}&data_fim=${fim}`;
+        }
+
+        fechar();
+        toast.info('Gerando PDF…');
+        baixarPdf(url, `relatorio_${obraNome.replace(/\s+/g,'_')}_${tipo}.pdf`);
     });
 }
 
-function renderizarGraficoRosca() {
-    const ctx = document.getElementById('roscaChart').getContext('2d');
-
-    // Agrupar GASTO REALIZADO por etapa
-    const agrupado = {};
-    filteredData.forEach(item => {
-        const val = Number(item.GASTO_REALIZADO);
-        if (val > 0) {
-            agrupado[item.ETAPA] = (agrupado[item.ETAPA] || 0) + val;
-        }
-    });
-
-    const labels = Object.keys(agrupado);
-    const data = labels.map(l => agrupado[l]);
-
-    // Paleta azul/roxa
-    const colors = ['#2563EB', '#60A5FA', '#8B5CF6', '#C4B5FD', '#10B981', '#34D399'];
-
-    if (roscaChartInstance) roscaChartInstance.destroy();
-
-    roscaChartInstance = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: colors.slice(0, labels.length),
-                borderWidth: 0,
-                hoverOffset: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: '70%',
-            plugins: {
-                legend: { position: 'right' },
-                tooltip: {
-                    callbacks: {
-                        label: function (context) {
-                            return ' ' + formatCurrency(context.raw);
-                        }
-                    }
-                }
-            }
-        }
-    });
+// --- TABELA ---
+function renderizarTabelaVazia() {
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="5" style="text-align:center;padding:48px 20px;color:var(--on-surface-muted);font-size:0.875rem;">
+                Selecione uma ou mais obras no filtro lateral para visualizar os dados.
+            </td>
+        </tr>`;
 }
-
-function renderizarGraficoRanking() {
-    const ctx = document.getElementById('rankingChart').getContext('2d');
-
-    // Agrupar por Obra ou Etapa dependendo do filtro
-    const agrupado = {};
-    const labelKey = currentObraFilters.length === 1 ? 'ETAPA' : 'OBRA';
-
-    filteredData.forEach(item => {
-        if (!agrupado[item[labelKey]]) {
-            agrupado[item[labelKey]] = { previsto: 0, realizado: 0, saldo: 0 };
-        }
-        agrupado[item[labelKey]].previsto += Number(item.ORÇAMENTO_ESTIMADO);
-        agrupado[item[labelKey]].realizado += Number(item.GASTO_REALIZADO);
-        agrupado[item[labelKey]].saldo += Number(item.SALDO_ETAPA);
-    });
-
-    // Ordenar pelo maior orçamento para fazer mais sentido visualmente na comparação
-    const ordenado = Object.entries(agrupado).sort((a, b) => b[1].previsto - a[1].previsto);
-
-    const labels = ordenado.map(i => i[0]);
-    const previstoData = ordenado.map(i => i[1].previsto);
-    const realizadoData = ordenado.map(i => i[1].realizado);
-    const saldoData = ordenado.map(i => i[1].saldo);
-
-    // Cores condicionais
-    const saldoColors = saldoData.map(val => val < 0 ? 'rgba(239, 68, 68, 0.8)' : 'rgba(16, 185, 129, 0.8)');
-
-    if (rankingChartInstance) rankingChartInstance.destroy();
-
-    rankingChartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: 'Orçamento Estimado',
-                    data: previstoData,
-                    backgroundColor: getThemeColors().barBg,
-                    borderRadius: 4
-                },
-                {
-                    label: 'Gasto Realizado',
-                    data: realizadoData,
-                    backgroundColor: '#8B5CF6', // Roxo vibrante para contrastar
-                    borderRadius: 4
-                },
-                {
-                    label: 'Saldo Financeiro',
-                    data: saldoData,
-                    backgroundColor: saldoColors, // Vermelho se negativo, verde se positivo
-                    borderRadius: 4
-                }
-            ]
-        },
-        options: {
-            indexAxis: 'y', // Barras horizontais agrupadas
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top'
-                },
-                datalabels: {
-                    display: false // Desligado para não poluir esse gráfico novo
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function (context) {
-                            return ' ' + context.dataset.label + ': ' + formatCurrency(context.raw);
-                        }
-                    }
-                }
-            },
-            layout: {
-                padding: { right: 20 }
-            },
-            scales: {
-                x: {
-                    display: true,
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function (value) {
-                            return value >= 1000 ? 'R$ ' + (value / 1000) + 'k' : 'R$ ' + value;
-                        }
-                    }
-                },
-                y: { grid: { display: false } }
-            }
-        }
-    });
-}
-
-// --- MATRIZ FINANCEIRA (TABELA) ---
 
 function renderizarTabela() {
     const tbody = document.getElementById('tableBody');
     tbody.innerHTML = '';
 
-    // Precisamos construir a árvore: Obra -> Etapas
-    // Mas se o filtro for apenas uma obra, focar apenas nela.
+    if (filteredData.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" style="text-align:center;padding:40px 20px;color:var(--on-surface-muted);font-size:0.875rem;">
+                    Nenhum dado encontrado para a seleção atual.
+                </td>
+            </tr>`;
+        return;
+    }
 
     const obrasAgrupadas = {};
     filteredData.forEach(item => {
         if (!obrasAgrupadas[item.OBRA]) {
-            obrasAgrupadas[item.OBRA] = {
-                previsto_total: 0,
-                realizado_total: 0,
-                etapas: []
-            };
+            obrasAgrupadas[item.OBRA] = { previsto_total: 0, realizado_total: 0, etapas: [] };
         }
-
-        obrasAgrupadas[item.OBRA].previsto_total += Number(item.ORÇAMENTO_ESTIMADO);
+        obrasAgrupadas[item.OBRA].previsto_total  += Number(item.ORÇAMENTO_ESTIMADO);
         obrasAgrupadas[item.OBRA].realizado_total += Number(item.GASTO_REALIZADO);
         obrasAgrupadas[item.OBRA].etapas.push(item);
     });
 
     Object.keys(obrasAgrupadas).forEach((obraName, index) => {
-        const obraData = obrasAgrupadas[obraName];
-        const saldoTotal = obraData.previsto_total - obraData.realizado_total;
-        const consPerc = obraData.previsto_total > 0 ? (obraData.realizado_total / obraData.previsto_total) * 100 : 0;
+        const obra    = obrasAgrupadas[obraName];
+        const saldo   = obra.previsto_total - obra.realizado_total;
+        const pct     = obra.previsto_total > 0 ? (obra.realizado_total / obra.previsto_total) * 100 : 0;
 
-        // Formatação Condicional do Saldo
-        let saldoClass = saldoTotal < 0 ? 'bg-danger-light' : 'bg-success-light';
-        let consPercClass = consPerc > 100 ? 'text-red' : '';
+        const statusClass = saldo >= 0 ? 'status-ok' : 'status-over';
+        const saldoClass  = saldo  < 0 ? 'text-error' : 'text-success';
+        const pctClass    = pct   > 100 ? 'text-error' : '';
 
-        // Linha Principal (Nível Obra)
+        const totalEtapasDaObra = [...new Set(rawData.filter(i => i.OBRA === obraName).map(i => i.ETAPA))].filter(Boolean).length;
+        const autoExpand = currentEtapaFilters.length < totalEtapasDaObra || currentObraFilters.length === 1;
+
         const trObra = document.createElement('tr');
-        trObra.className = 'row-obra';
+        trObra.className = `row-obra ${statusClass} ${autoExpand ? 'expanded' : ''}`;
         trObra.dataset.obraId = index;
         trObra.innerHTML = `
-            <td><span class="expand-icon">▶</span> ${obraName}</td>
-            <td class="text-right"><strong>${formatCurrency(obraData.previsto_total)}</strong></td>
-            <td class="text-right"><strong>${formatCurrency(obraData.realizado_total)}</strong></td>
-            <td class="text-right ${saldoClass}">${formatCurrency(saldoTotal)}</td>
-            <td class="text-center ${consPercClass}"><strong>${consPerc.toFixed(1)}%</strong></td>
-        `;
+            <td><span class="expand-icon">▶</span>${obraName}</td>
+            <td class="text-right fin-num"><strong>${formatCurrency(obra.previsto_total)}</strong></td>
+            <td class="text-right fin-num"><strong>${formatCurrency(obra.realizado_total)}</strong></td>
+            <td class="text-right fin-num ${saldoClass}"><strong>${formatCurrency(saldo)}</strong></td>
+            <td class="text-center">
+                <div class="mini-bar-wrap">
+                    <span class="${pctClass} fin-num">${pct.toFixed(1)}%</span>
+                    <div class="mini-bar">
+                        <div class="mini-bar-fill ${pct > 100 ? 'over' : ''}" style="width:${Math.min(pct, 100)}%"></div>
+                    </div>
+                </div>
+            </td>`;
 
-        // Total de etapas disponíveis para a obra atual
-        const totalEtapasDaObra = [...new Set(rawData.filter(i => i.OBRA === obraName).map(i => i.ETAPA))].filter(Boolean).length;
-        const totalObrasDisponiveis = [...new Set(rawData.map(i => i.OBRA))].filter(Boolean).length;
-
-        // Expande automático se houver um filtro específico focado nas etapas ou poucas obras
-        if (currentEtapaFilters.length < totalEtapasDaObra || currentObraFilters.length === 1) {
-            trObra.classList.add('expanded');
-        } else {
-            // Adiciona evento de clique para expandir/colapsar
+        if (!autoExpand) {
             trObra.addEventListener('click', function () {
                 this.classList.toggle('expanded');
-                const etapas = document.querySelectorAll(`.etapa-of-${index}`);
-                const isExpanded = this.classList.contains('expanded');
-
-                etapas.forEach(el => {
-                    el.style.display = isExpanded ? 'table-row' : 'none';
+                const isExp = this.classList.contains('expanded');
+                document.querySelectorAll(`.etapa-of-${index}`).forEach(el => {
+                    el.style.display = isExp ? 'table-row' : 'none';
                 });
             });
         }
 
         tbody.appendChild(trObra);
 
-        // Linhas de Detalhe (Nível Etapa)
-        obraData.etapas.forEach(etapa => {
-            const trEtapa = document.createElement('tr');
-            trEtapa.className = `row-etapa etapa-of-${index}`;
+        obra.etapas.forEach(etapa => {
+            const trEt = document.createElement('tr');
+            trEt.className = `row-etapa etapa-of-${index}`;
+            if (autoExpand) trEt.style.display = 'table-row';
 
-            // Se filtrado especificamente, abre as etapas por padrão
-            if (currentEtapaFilters.length < totalEtapasDaObra || currentObraFilters.length === 1) {
-                trEtapa.style.display = 'table-row';
-            }
+            const saldoEt    = Number(etapa.SALDO_ETAPA);
+            const pctEt      = Number(etapa.ORÇAMENTO_ESTIMADO) > 0
+                ? (Number(etapa.GASTO_REALIZADO) / Number(etapa.ORÇAMENTO_ESTIMADO)) * 100 : 0;
+            const saldoEtCls = saldoEt < 0 ? 'text-error' : 'text-success';
 
-            const saldoEt = Number(etapa.SALDO_ETAPA);
-            let corSaldoEt = saldoEt < 0 ? 'text-red' : 'text-green';
-            let consPercEt = Number(etapa.ORÇAMENTO_ESTIMADO) > 0 ? (Number(etapa.GASTO_REALIZADO) / Number(etapa.ORÇAMENTO_ESTIMADO)) * 100 : 0;
+            trEt.innerHTML = `
+                <td>${etapa.ETAPA} <span style="opacity:0.55;font-size:0.8em;">(${etapa.TIPO_CUSTO || 'Geral'})</span></td>
+                <td class="text-right fin-num">${formatCurrency(etapa.ORÇAMENTO_ESTIMADO)}</td>
+                <td class="text-right fin-num">${formatCurrency(etapa.GASTO_REALIZADO)}</td>
+                <td class="text-right fin-num ${saldoEtCls}">${formatCurrency(saldoEt)}</td>
+                <td class="text-center fin-num">${pctEt.toFixed(1)}%</td>`;
 
-            trEtapa.innerHTML = `
-                <td>${etapa.ETAPA} <span style="opacity: 0.7; font-size: 0.85em;">(${etapa.TIPO_CUSTO || 'Geral'})</span></td>
-                <td class="text-right">${formatCurrency(etapa.ORÇAMENTO_ESTIMADO)}</td>
-                <td class="text-right">${formatCurrency(etapa.GASTO_REALIZADO)}</td>
-                <td class="text-right ${corSaldoEt}"><strong>${formatCurrency(saldoEt)}</strong></td>
-                <td class="text-center">${consPercEt.toFixed(1)}%</td>
-            `;
-
-            tbody.appendChild(trEtapa);
+            tbody.appendChild(trEt);
         });
     });
 }

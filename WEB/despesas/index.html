@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Despesas — Industrial Architect</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+    <script src="../env.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+<div class="app-shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <div class="sidebar-brand-text">
+                <span class="sidebar-brand-name">Industrial Architect</span>
+                <span class="sidebar-brand-sub">Finance Suite</span>
+            </div>
+        </div>
+        <div class="sidebar-nav-wrap" id="main-nav"></div>
+        <div class="sidebar-footer">
+            <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
+        </div>
+    </aside>
+
+    <!-- CONTENT -->
+    <div class="content-shell">
+
+        <header class="topbar">
+            <div class="topbar-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" placeholder="Pesquisar..." disabled>
+            </div>
+            <div class="topbar-actions">
+                <div class="topbar-avatar" title="Usuário">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+
+            <!-- Hero -->
+            <div class="page-hero">
+                <div>
+                    <h1>Cadastro de Despesas</h1>
+                    <p class="page-hero-sub">Registre despesas individuais ou em lote com extração por IA.</p>
+                </div>
+            </div>
+
+            <!-- Mode Tabs -->
+            <div class="matrix-section" style="margin-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0;">
+                <div style="padding: var(--sp-4) var(--sp-6); display:flex; gap:var(--sp-3);">
+                    <button class="tab-btn active" id="tabIndividual" onclick="setModo('individual')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                        </svg>
+                        Individual
+                    </button>
+                    <button class="tab-btn" id="tabLote" onclick="setModo('lote')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                        </svg>
+                        Lote com IA
+                    </button>
+                </div>
+            </div>
+
+            <!-- MODO INDIVIDUAL -->
+            <div id="modoIndividual" class="matrix-section" style="border-top-left-radius:0;border-top-right-radius:0;">
+                <div style="padding: var(--sp-5) var(--sp-6);">
+
+                    <!-- Upload NF + IA -->
+                    <div style="display:grid;grid-template-columns:1fr auto;gap:var(--sp-4);align-items:end;margin-bottom:var(--sp-5);">
+                        <div>
+                            <div class="form-label">Nota Fiscal (opcional)</div>
+                            <label class="upload-zone" id="uploadZone" for="inputNF">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                                <span id="uploadZoneText">Arraste ou clique para anexar NF (PDF, JPG, PNG)</span>
+                                <input type="file" id="inputNF" accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+                            </label>
+                        </div>
+                        <button class="btn btn-secondary" id="btnExtrairIA" disabled>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                            Extrair com IA
+                        </button>
+                    </div>
+
+                    <div id="iaBanner" class="info-banner" style="display:none;">
+                        Campos pré-preenchidos pela IA — revise antes de cadastrar.
+                    </div>
+
+                    <!-- Form individual -->
+                    <div class="form-grid-3" style="margin-bottom:var(--sp-5);">
+                        <div>
+                            <label class="form-label">Obra *</label>
+                            <select class="form-select" id="fObra"></select>
+                        </div>
+                        <div>
+                            <label class="form-label">Etapa *</label>
+                            <select class="form-select" id="fEtapa"></select>
+                        </div>
+                        <div>
+                            <label class="form-label">Tipo *</label>
+                            <select class="form-select" id="fTipo"></select>
+                        </div>
+                    </div>
+
+                    <div class="form-grid-3" style="margin-bottom:var(--sp-5);">
+                        <div>
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                                <label class="form-label" style="margin-bottom:0;">Fornecedor *</label>
+                                <label style="display:flex;align-items:center;gap:5px;font-size:0.8rem;cursor:pointer;color:var(--on-surface-muted);">
+                                    <input type="checkbox" id="fNovoFornecedorCheck" style="cursor:pointer;"> Novo
+                                </label>
+                            </div>
+                            <select class="form-select" id="fFornecedor"></select>
+                            <input type="text" class="form-input" id="fNovoFornecedor" placeholder="Nome do fornecedor..." style="display:none;">
+                        </div>
+                        <div>
+                            <label class="form-label">Valor Total (R$) *</label>
+                            <input type="number" class="form-input" id="fValor" min="0" step="0.01" placeholder="0,00">
+                        </div>
+                        <div>
+                            <label class="form-label">Data *</label>
+                            <input type="date" class="form-input" id="fData">
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom:var(--sp-5);">
+                        <label class="form-label">Descrição *</label>
+                        <textarea class="form-input" id="fDescricao" rows="3" placeholder="Descrição detalhada da despesa..." style="resize:vertical;"></textarea>
+                    </div>
+
+                    <div class="form-grid-3" style="margin-bottom:var(--sp-6);">
+                        <div>
+                            <label class="form-label">Categoria</label>
+                            <select class="form-select" id="fDespesa"></select>
+                        </div>
+                        <div>
+                            <label class="form-label">Forma de Pagamento</label>
+                            <select class="form-select" id="fForma"></select>
+                        </div>
+                        <div>
+                            <label class="form-label">Banco</label>
+                            <input type="text" class="form-input" id="fBanco" placeholder="Banco do pagamento...">
+                        </div>
+                    </div>
+
+                    <div style="display:flex;justify-content:flex-end;">
+                        <button class="btn btn-primary" id="btnCadastrar" style="min-width:180px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                            Cadastrar Despesa
+                        </button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- MODO LOTE -->
+            <div id="modoLote" class="matrix-section" style="display:none;border-top-left-radius:0;border-top-right-radius:0;">
+                <div style="padding: var(--sp-5) var(--sp-6);">
+
+                    <div style="margin-bottom:var(--sp-5);max-width:320px;">
+                        <label class="form-label">Obra (todo o lote) *</label>
+                        <select class="form-select" id="lObra"></select>
+                    </div>
+
+                    <div style="margin-bottom:var(--sp-5);">
+                        <div class="form-label">Notas Fiscais (múltiplos arquivos)</div>
+                        <label class="upload-zone" id="loteUploadZone" for="inputLoteNFs">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <span id="loteUploadText">Arraste ou clique para selecionar NFs</span>
+                            <input type="file" id="inputLoteNFs" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none;">
+                        </label>
+                    </div>
+
+                    <div style="display:flex;gap:var(--sp-3);margin-bottom:var(--sp-5);">
+                        <button class="btn btn-secondary" id="btnExtrairLote" disabled>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                            Extrair todas com IA
+                        </button>
+                        <div id="loteProgresso" style="display:none;align-items:center;gap:var(--sp-3);font-size:0.8125rem;color:var(--on-surface-muted);">
+                            <div class="spinner"></div>
+                            <span id="loteProgressoText">Extraindo…</span>
+                        </div>
+                    </div>
+
+                    <!-- Tabela de revisão -->
+                    <div id="loteRevisaoWrap" style="display:none;">
+                        <div class="matrix-header" style="padding:0 0 var(--sp-4) 0;">
+                            <span class="matrix-title">Revisão do lote — edite antes de cadastrar</span>
+                        </div>
+                        <div class="table-wrapper" style="margin-bottom:var(--sp-5);">
+                            <table class="styled-table" id="loteTable">
+                                <thead>
+                                    <tr>
+                                        <th>Arquivo</th>
+                                        <th>Fornecedor</th>
+                                        <th>Descrição</th>
+                                        <th>Tipo</th>
+                                        <th>Etapa</th>
+                                        <th>Data</th>
+                                        <th class="text-right">Valor (R$)</th>
+                                        <th>Forma</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="loteTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);">
+                            <button class="btn btn-outline" id="btnLoteLimpar">Limpar</button>
+                            <button class="btn btn-primary" id="btnLoteSalvar">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                                Cadastrar todas
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+</div>
+
+<script src="../components/toast.js"></script>
+<script src="../components/nav.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -4,193 +4,217 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Financeiro Gerencial</title>
-    <!-- Fonte Inter -->
+    <title>Industrial Architect — Finance Suite</title>
+    <!-- Manrope (display) + Inter (body) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Folha de estilos padronizada -->
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Design System -->
     <link rel="stylesheet" href="style.css">
-    <!-- Variáveis de Ambiente -->
+    <!-- Env vars -->
     <script src="env.js"></script>
-    <!-- Chart.js para os gráficos -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Plugin DataLabels para números nos gráficos -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
-    <!-- Supabase JS Client -->
+    <!-- Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 
 <body>
-    <div class="dashboard-container">
-        <!-- Sidebar lateral -->
-        <aside class="sidebar glass-panel">
-            <div class="brand">
-                <div class="logo"></div>
-                <h2>Financeiro Obras</h2>
+<div class="app-shell">
+
+    <!-- ===================== SIDEBAR ===================== -->
+    <aside class="sidebar">
+
+        <!-- Brand -->
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <div class="sidebar-brand-text">
+                <span class="sidebar-brand-name">Industrial Architect</span>
+                <span class="sidebar-brand-sub">Finance Suite</span>
+            </div>
+        </div>
+
+        <!-- Navigation (injected by nav.js) -->
+        <div class="sidebar-nav-wrap" id="main-nav"></div>
+
+        <!-- Project Filters -->
+        <div class="sidebar-filters">
+            <div class="filters-section-label">Project Filter</div>
+
+            <!-- Obras -->
+            <div class="filter-group dropdown-container">
+                <label class="filter-group-label">Obras / Works</label>
+                <div class="dropdown-header" id="obraDropdownHeader">
+                    <span class="dropdown-header-text" id="obraDropdownText">Todas as Obras</span>
+                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+                <div class="checkbox-list dropdown-list" id="obraCheckboxes"></div>
             </div>
 
-            <!-- Navegação injetada por nav.js -->
-            <div id="main-nav"></div>
-
-            <div class="filters-section">
-                <h3>Filtros</h3>
-                <div class="filter-group dropdown-container">
-                    <label>Selecionar Obra(s)</label>
-                    <div class="dropdown-header" id="obraDropdownHeader">
-                        <span class="dropdown-header-text" id="obraDropdownText">Todas as Obras</span>
-                        <svg class="dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2">
-                            <polyline points="6 9 12 15 18 9"></polyline>
-                        </svg>
-                    </div>
-                    <div class="checkbox-list dropdown-list" id="obraCheckboxes">
-                        <!-- Checkboxes injetados via JS -->
-                    </div>
+            <!-- Etapas -->
+            <div class="filter-group dropdown-container">
+                <label class="filter-group-label">Etapas / Stages</label>
+                <div class="dropdown-header" id="etapaDropdownHeader">
+                    <span class="dropdown-header-text" id="etapaDropdownText">Todas as Etapas</span>
+                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
                 </div>
-
-                <div class="filter-group mt-3 dropdown-container">
-                    <label>Selecionar Etapa(s)</label>
-                    <div class="dropdown-header" id="etapaDropdownHeader">
-                        <span class="dropdown-header-text" id="etapaDropdownText">Todas as Etapas</span>
-                        <svg class="dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2">
-                            <polyline points="6 9 12 15 18 9"></polyline>
-                        </svg>
-                    </div>
-                    <div class="checkbox-list dropdown-list" id="etapaCheckboxes">
-                        <!-- Checkboxes injetados via JS -->
-                    </div>
-                </div>
-
-                <div class="filter-group mt-3 dropdown-container">
-                    <label>Selecionar Tipo(s) de Custo</label>
-                    <div class="dropdown-header" id="tipoDropdownHeader">
-                        <span class="dropdown-header-text" id="tipoDropdownText">Todos os Tipos</span>
-                        <svg class="dropdown-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                            stroke="currentColor" stroke-width="2">
-                            <polyline points="6 9 12 15 18 9"></polyline>
-                        </svg>
-                    </div>
-                    <div class="checkbox-list dropdown-list" id="tipoCheckboxes">
-                        <!-- Checkboxes injetados via JS -->
-                    </div>
-                </div>
+                <div class="checkbox-list dropdown-list" id="etapaCheckboxes"></div>
             </div>
 
-            <div class="last-update">
-                <p>Status: <span id="connectionStatus" class="status-indicator online">Online</span></p>
-                <p>Modo: <span id="dataMode">Mock Data</span></p>
+            <!-- Tipos -->
+            <div class="filter-group dropdown-container">
+                <label class="filter-group-label">Tipo de Custo</label>
+                <div class="dropdown-header" id="tipoDropdownHeader">
+                    <span class="dropdown-header-text" id="tipoDropdownText">Todos os Tipos</span>
+                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+                <div class="checkbox-list dropdown-list" id="tipoCheckboxes"></div>
             </div>
-        </aside>
 
-        <!-- Área de conteúdo principal -->
+            <button class="btn-filters-apply" id="applyFiltersBtn">Aplicar Filtros</button>
+        </div>
+
+        <!-- Footer -->
+        <div class="sidebar-footer">
+            <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
+        </div>
+
+    </aside>
+    <!-- ==================== /SIDEBAR ==================== -->
+
+    <!-- ================== CONTENT SHELL ================= -->
+    <div class="content-shell">
+
+        <!-- Topbar -->
+        <header class="topbar">
+            <div class="topbar-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" placeholder="Pesquisar projetos..." disabled>
+            </div>
+            <div class="topbar-actions">
+                <button class="topbar-icon-btn" title="Notificações" style="position:relative">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                    <span class="topbar-notif-badge"></span>
+                </button>
+                <button class="topbar-icon-btn" title="Ajuda">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </button>
+                <div class="topbar-avatar" title="Usuário">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main -->
         <main class="main-content">
-            <header class="top-header">
+
+            <!-- Page Hero -->
+            <div class="page-hero">
                 <div>
-                    <h1 id="dashboardTitle">Visão Geral do Portfólio</h1>
-                    <p class="subtitle">Acompanhamento consolidado de custos vs orçamentos</p>
+                    <h1 id="dashboardTitle">Visão Geral</h1>
+                    <p class="page-hero-sub">Status financeiro consolidado do portfólio.</p>
                 </div>
-                <div class="actions" style="display: flex; gap: 12px; align-items: center;">
-                    <button id="themeToggleBtn" class="btn btn-secondary" title="Alternar Tema">
-                        <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                <div class="page-hero-actions">
+                    <button id="exportPdfBtn" class="btn btn-outline">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
+                        Export PDF
                     </button>
                     <button id="refreshBtn" class="btn btn-primary">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="23 4 23 10 17 10"></polyline>
                             <polyline points="1 20 1 14 7 14"></polyline>
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                         </svg>
-                        Atualizar Dados
+                        Atualizar
                     </button>
                 </div>
-            </header>
+            </div>
 
-            <!-- KPIs -->
+            <!-- KPI Grid -->
             <section class="kpi-grid">
-                <div class="kpi-card glass-panel">
-                    <div class="kpi-title">Orçamento Total (Estimado)</div>
-                    <div class="kpi-value" id="kpiOrcamento">R$ 0,00</div>
-                    <div class="kpi-icon blue-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-                            <path d="M7 15h0M2 9h20"></path>
-                        </svg>
-                    </div>
+
+                <div class="kpi-card">
+                    <div class="kpi-title">Orçamento Total Estimado</div>
+                    <div class="kpi-value fin-num" id="kpiOrcamento">R$ —</div>
+                    <div class="kpi-subtitle">Soma de todos os orçamentos</div>
                 </div>
 
-                <div class="kpi-card glass-panel">
+                <div class="kpi-card">
                     <div class="kpi-title">Custo Realizado</div>
-                    <div class="kpi-value" id="kpiRealizado">R$ 0,00</div>
-                    <div class="kpi-icon purple-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2">
-                            <line x1="12" y1="2" x2="12" y2="22"></line>
-                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-                        </svg>
-                    </div>
+                    <div class="kpi-value fin-num" id="kpiRealizado">R$ —</div>
+                    <div class="kpi-subtitle">Total despesas lançadas</div>
                 </div>
 
-                <div class="kpi-card glass-panel" id="cardSaldo">
-                    <div class="kpi-title">Saldo Financeiro da Etapa</div>
-                    <div class="kpi-value" id="kpiSaldo">R$ 0,00</div>
-                    <div class="kpi-subtitle" id="kpiSaldoSubtitle">Dentro do orçamento</div>
-                </div>
-
-                <div class="kpi-card glass-panel">
+                <div class="kpi-card">
                     <div class="kpi-title">% de Consumo</div>
-                    <div class="kpi-value" id="kpiConsumo">0%</div>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar" id="kpiConsumoBar"></div>
+                    <div class="kpi-value fin-num" id="kpiConsumo">—%</div>
+                    <div class="kpi-progress">
+                        <div class="progress-track">
+                            <div class="progress-fill" id="kpiConsumoBar"></div>
+                        </div>
+                        <div class="kpi-progress-label">
+                            <span id="kpiConsumoMin">0%</span>
+                            <span>100%</span>
+                        </div>
                     </div>
                 </div>
+
+                <div class="kpi-card kpi-dark">
+                    <div class="kpi-title">% de Realização</div>
+                    <div class="kpi-value fin-num" id="kpiRealizacao">—%</div>
+                    <div class="kpi-progress">
+                        <div class="progress-track">
+                            <div class="progress-fill" id="kpiRealizacaoBar"></div>
+                        </div>
+                        <div class="kpi-progress-label">
+                            <span id="kpiRealizacaoMin">0%</span>
+                            <span>100%</span>
+                        </div>
+                    </div>
+                </div>
+
             </section>
 
-            <!-- Gráficos -->
-            <section class="charts-grid">
-                <div class="chart-card glass-panel chart-span-2">
-                    <div class="chart-header">
-                        <h3>Previsto vs. Realizado (Por Etapa estrutural)</h3>
+            <!-- Matrix Table -->
+            <section class="matrix-section">
+                <div class="matrix-header">
+                    <span class="matrix-title">Matriz Financeira por Obra</span>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span style="font-size:0.75rem; color:var(--on-surface-muted);">Clique na obra para expandir etapas</span>
                     </div>
-                    <div class="chart-body">
-                        <canvas id="barrasAgrupadasChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="chart-card glass-panel">
-                    <div class="chart-header">
-                        <h3>Distribuição de Custos (Realizado)</h3>
-                    </div>
-                    <div class="chart-body">
-                        <canvas id="roscaChart"></canvas>
-                    </div>
-                </div>
-
-                <div class="chart-card glass-panel chart-span-full">
-                    <div class="chart-header">
-                        <h3 id="rankingTitle">Comparativo (Orçamento vs Gasto vs Saldo)</h3>
-                    </div>
-                    <div class="chart-body" style="height: 450px;">
-                        <canvas id="rankingChart"></canvas>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Matriz Financeira (Tabela) -->
-            <section class="table-section glass-panel">
-                <div class="table-header">
-                    <h3>Detalhamento Financeiro (Matriz)</h3>
                 </div>
                 <div class="table-wrapper">
                     <table class="styled-table" id="financeTable">
                         <thead>
                             <tr>
-                                <th>Projeto / Etapa</th>
+                                <th>Obra / Etapa</th>
                                 <th class="text-right">Orçamento Estimado</th>
                                 <th class="text-right">Gasto Realizado</th>
                                 <th class="text-right">Saldo</th>
@@ -203,14 +227,52 @@
                     </table>
                 </div>
             </section>
+
+            <!-- Fluxo de Caixa -->
+            <section class="matrix-section" id="fluxoSection" style="display:none;">
+                <div class="matrix-header">
+                    <span class="matrix-title">Fluxo de Caixa</span>
+                </div>
+                <div style="display:grid; grid-template-columns: repeat(5,1fr); gap:var(--sp-5); padding:var(--sp-5) var(--sp-6);">
+
+                    <div>
+                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Recebido</div>
+                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--success);" id="fluxoRecebido">R$ —</div>
+                    </div>
+
+                    <div>
+                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Gasto</div>
+                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--error);" id="fluxoGasto">R$ —</div>
+                    </div>
+
+                    <div>
+                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">A Pagar</div>
+                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--warning);" id="fluxoAPagar">R$ —</div>
+                    </div>
+
+                    <div>
+                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Saldo Atual</div>
+                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;" id="fluxoSaldoAtual">R$ —</div>
+                    </div>
+
+                    <div>
+                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Saldo Projetado</div>
+                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;" id="fluxoSaldoProjetado">R$ —</div>
+                    </div>
+
+                </div>
+            </section>
+
         </main>
     </div>
+    <!-- ================= /CONTENT SHELL ================ -->
 
-    <!-- Componentes compartilhados -->
-    <script src="components/toast.js"></script>
-    <script src="components/nav.js"></script>
-    <!-- Scripts da aplicação -->
-    <script src="app.js"></script>
+</div>
+
+<!-- Componentes compartilhados -->
+<script src="components/toast.js"></script>
+<script src="components/nav.js"></script>
+<!-- Lógica do dashboard -->
+<script src="app.js"></script>
 </body>
-
 </html>
