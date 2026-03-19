@@ -107,18 +107,26 @@ body {
    SIDEBAR — Dark system
    ============================================================ */
 .sidebar {
-    width: 240px;
-    min-width: 240px;
+    width: 4px;
     background: var(--sidebar-bg);
     display: flex;
     flex-direction: column;
-    position: sticky;
+    position: fixed;
+    left: 0;
     top: 0;
     height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
+    z-index: 500;
+    overflow: hidden;
     scrollbar-width: thin;
     scrollbar-color: rgba(255,255,255,0.1) transparent;
+    transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.22s ease;
+}
+
+.sidebar:hover,
+.sidebar.is-open {
+    width: 240px;
+    box-shadow: 4px 0 32px rgba(0,0,0,0.35);
 }
 
 .sidebar::-webkit-scrollbar { width: 3px; }
@@ -129,9 +137,10 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 22px 18px 18px;
+    padding: 22px 13px 18px;
     border-bottom: 1px solid rgba(255,255,255,0.06);
     flex-shrink: 0;
+    min-width: 240px;
 }
 
 .sidebar-logo {
@@ -151,6 +160,14 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.sidebar:hover .sidebar-brand-text,
+.sidebar.is-open .sidebar-brand-text {
+    opacity: 1;
+    transition-delay: 0.1s;
 }
 
 .sidebar-brand-name {
@@ -177,6 +194,7 @@ body {
 .sidebar-nav-wrap {
     padding: 14px 10px 8px;
     flex-shrink: 0;
+    min-width: 240px;
 }
 
 /* nav.js injected styles */
@@ -189,6 +207,14 @@ body {
     padding: 0 8px;
     margin-bottom: 5px;
     margin-top: 2px;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.sidebar:hover .nav-section-label,
+.sidebar.is-open .nav-section-label {
+    opacity: 1;
+    transition-delay: 0.1s;
 }
 
 .nav-links {
@@ -228,7 +254,17 @@ body {
 
 .nav-coming-soon { opacity: 0.4; cursor: default; }
 .nav-icon { font-size: 0.9rem; flex-shrink: 0; width: 18px; text-align: center; }
-.nav-label { flex: 1; }
+.nav-label {
+    flex: 1;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.sidebar:hover .nav-label,
+.sidebar.is-open .nav-label {
+    opacity: 1;
+    transition-delay: 0.1s;
+}
 
 .nav-badge {
     font-size: 0.58rem;
@@ -239,6 +275,14 @@ body {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+.sidebar:hover .nav-badge,
+.sidebar.is-open .nav-badge {
+    opacity: 1;
+    transition-delay: 0.1s;
 }
 
 /* Filter Section */
@@ -359,14 +403,12 @@ body {
 
 .dropdown-list {
     display: none;
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0; right: 0;
+    position: fixed;
     background: #1c2d45;
     border: 1px solid rgba(255,255,255,0.12);
     border-radius: var(--r-lg);
     padding: 5px;
-    z-index: 200;
+    z-index: 9999;
     box-shadow: var(--shadow-lg);
     max-height: 200px;
     overflow-y: auto;
@@ -375,6 +417,54 @@ body {
 }
 
 .dropdown-list.show { display: flex; }
+
+/* ============================================================
+   FILTER BAR — Light mode overrides (top of content area)
+   ============================================================ */
+
+/* Override overflow:hidden do matrix-section para dropdowns não serem cortados */
+.filter-bar {
+    overflow: visible;
+    position: relative;
+    z-index: 20;
+}
+
+.filter-bar .dropdown-header {
+    background: var(--surface-card);
+    border-color: var(--outline-ghost);
+    color: var(--on-surface);
+}
+
+.filter-bar .dropdown-header:hover { border-color: var(--outline-solid); }
+.filter-bar .dropdown-header.active { border-color: var(--secondary); }
+.filter-bar .dropdown-header-text { color: var(--on-surface-variant); }
+.filter-bar .dropdown-icon { opacity: 0.35; }
+
+.filter-dropdown {
+    background: var(--surface-card);
+    border-color: var(--outline-ghost);
+    box-shadow: var(--shadow-lg);
+    z-index: 9999;
+}
+
+.filter-dropdown .checkbox-item { color: var(--on-surface-variant); }
+.filter-dropdown .checkbox-item:hover { background: var(--surface-low); color: var(--on-surface); }
+
+.filter-dropdown .checkbox-item input[type="checkbox"] {
+    border-color: var(--outline-solid);
+    background: transparent;
+}
+
+.filter-dropdown .checkbox-item input[type="checkbox"]:checked {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.filter-dropdown .checkbox-item input[type="checkbox"]:checked::after {
+    border-color: white;
+}
+
+.filter-bar .filter-group-label { color: var(--on-surface-muted); }
 
 /* Apply Filters Button */
 .btn-filters-apply {
@@ -400,12 +490,13 @@ body {
 /* Sidebar Footer */
 .sidebar-footer {
     margin-top: auto;
-    padding: 14px 18px;
+    padding: 14px 13px;
     border-top: 1px solid rgba(255,255,255,0.06);
     display: flex;
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+    min-width: 240px;
 }
 
 .status-dot {
@@ -432,6 +523,11 @@ body {
 
 .status-dot.offline::before { background: var(--error); }
 
+/* Status dot na topbar (fundo claro) */
+.topbar .status-dot {
+    color: var(--on-surface-muted);
+}
+
 /* ============================================================
    CONTENT SHELL
    ============================================================ */
@@ -441,6 +537,8 @@ body {
     flex-direction: column;
     min-width: 0;
     background: var(--surface);
+    margin-left: 0;
+    overflow-y: auto;
 }
 
 /* Topbar */
@@ -530,7 +628,6 @@ body {
 .main-content {
     flex: 1;
     padding: var(--sp-8);
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: var(--sp-6);

@@ -34,6 +34,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregarEnv();
     await carregarDados();
 
+    // Move dropdown lists to body so position:fixed works correctly
+    ['obraCheckboxes', 'etapaCheckboxes', 'tipoCheckboxes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) document.body.appendChild(el);
+    });
+
     configurarFiltrosMultiplos('obraCheckboxes',  'obraDropdownText',  'obra');
     configurarFiltrosMultiplos('etapaCheckboxes', 'etapaDropdownText', 'etapa');
     configurarFiltrosMultiplos('tipoCheckboxes',  'tipoDropdownText',  'tipo');
@@ -67,6 +73,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // --- DROPDOWN SETUP ---
+function positionDropdown(header, list) {
+    const rect = header.getBoundingClientRect();
+    list.style.top   = (rect.bottom + 4) + 'px';
+    list.style.left  = rect.left + 'px';
+    list.style.width = rect.width + 'px';
+}
+
 function setupDropdown(headerId, listId) {
     const header = document.getElementById(headerId);
     const list   = document.getElementById(listId);
@@ -80,8 +93,10 @@ function setupDropdown(headerId, listId) {
                 if (h) h.classList.remove('active');
             }
         });
+        const opening = !list.classList.contains('show');
         list.classList.toggle('show');
         header.classList.toggle('active');
+        if (opening) positionDropdown(header, list);
     });
 
     document.addEventListener('click', (e) => {
@@ -107,6 +122,7 @@ function configurarFiltrosMultiplos(containerId, textId, filterType) {
         if (filterType === 'obra') {
             currentObraFilters = values;
             povoarFiltroEtapas();
+            povoarFiltroTipos();
         } else if (filterType === 'etapa') {
             currentEtapaFilters = values;
         } else if (filterType === 'tipo') {
@@ -177,6 +193,7 @@ async function carregarDados() {
             currentTipoFilters  = [];
             povoarFiltroObras();
         }
+        povoarFiltroTipos();
 
         atualizarDashboard();
 
@@ -226,13 +243,10 @@ function povoarFiltroTipos() {
     const container = document.getElementById('tipoCheckboxes');
     container.innerHTML = '';
 
-    if (currentObraFilters.length === 0) {
-        currentTipoFilters = [];
-        document.getElementById('tipoDropdownText').textContent = 'Todos os Tipos';
-        return;
-    }
-
-    const tipos      = [...new Set(rawData.map(i => i.TIPO_CUSTO))].filter(Boolean).sort();
+    const fonte  = currentObraFilters.length > 0
+        ? rawData.filter(i => currentObraFilters.includes(i.OBRA))
+        : rawData;
+    const tipos      = [...new Set(fonte.map(i => i.TIPO_CUSTO))].filter(Boolean).sort();
     const stillValid = currentTipoFilters.filter(e => tipos.includes(e));
     currentTipoFilters = stillValid.length === 0 ? [...tipos] : stillValid;
 
@@ -543,7 +557,7 @@ function renderizarTabelaVazia() {
     tbody.innerHTML = `
         <tr>
             <td colspan="5" style="text-align:center;padding:48px 20px;color:var(--on-surface-muted);font-size:0.875rem;">
-                Selecione uma ou mais obras no filtro lateral para visualizar os dados.
+                Selecione uma ou mais obras no filtro acima para visualizar os dados.
             </td>
         </tr>`;
 }

@@ -41,49 +41,6 @@
         <!-- Navigation (injected by nav.js) -->
         <div class="sidebar-nav-wrap" id="main-nav"></div>
 
-        <!-- Project Filters -->
-        <div class="sidebar-filters">
-            <div class="filters-section-label">Project Filter</div>
-
-            <!-- Obras -->
-            <div class="filter-group dropdown-container">
-                <label class="filter-group-label">Obras / Works</label>
-                <div class="dropdown-header" id="obraDropdownHeader">
-                    <span class="dropdown-header-text" id="obraDropdownText">Todas as Obras</span>
-                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                </div>
-                <div class="checkbox-list dropdown-list" id="obraCheckboxes"></div>
-            </div>
-
-            <!-- Etapas -->
-            <div class="filter-group dropdown-container">
-                <label class="filter-group-label">Etapas / Stages</label>
-                <div class="dropdown-header" id="etapaDropdownHeader">
-                    <span class="dropdown-header-text" id="etapaDropdownText">Todas as Etapas</span>
-                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                </div>
-                <div class="checkbox-list dropdown-list" id="etapaCheckboxes"></div>
-            </div>
-
-            <!-- Tipos -->
-            <div class="filter-group dropdown-container">
-                <label class="filter-group-label">Tipo de Custo</label>
-                <div class="dropdown-header" id="tipoDropdownHeader">
-                    <span class="dropdown-header-text" id="tipoDropdownText">Todos os Tipos</span>
-                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                </div>
-                <div class="checkbox-list dropdown-list" id="tipoCheckboxes"></div>
-            </div>
-
-            <button class="btn-filters-apply" id="applyFiltersBtn">Aplicar Filtros</button>
-        </div>
-
         <!-- Footer -->
         <div class="sidebar-footer">
             <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
@@ -105,6 +62,7 @@
                 <input type="text" placeholder="Pesquisar projetos..." disabled>
             </div>
             <div class="topbar-actions">
+                <span class="status-dot online" id="connectionStatus" style="color:var(--on-surface-muted);font-size:0.72rem;font-weight:500;">Sistema Sincronizado</span>
                 <button class="topbar-icon-btn" title="Notificações" style="position:relative">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -154,6 +112,43 @@
                         </svg>
                         Atualizar
                     </button>
+                </div>
+            </div>
+
+            <!-- Filter Bar -->
+            <div class="matrix-section filter-bar" style="padding: var(--sp-4) var(--sp-6);">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:var(--sp-4);align-items:end;">
+                    <div>
+                        <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Obras</label>
+                        <div class="dropdown-container">
+                            <div class="dropdown-header" id="obraDropdownHeader">
+                                <span class="dropdown-header-text" id="obraDropdownText">Selecionar Obras</span>
+                                <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </div>
+                            <div class="checkbox-list dropdown-list filter-dropdown" id="obraCheckboxes"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Etapas</label>
+                        <div class="dropdown-container">
+                            <div class="dropdown-header" id="etapaDropdownHeader">
+                                <span class="dropdown-header-text" id="etapaDropdownText">Todas as Etapas</span>
+                                <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </div>
+                            <div class="checkbox-list dropdown-list filter-dropdown" id="etapaCheckboxes"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Tipo de Custo</label>
+                        <div class="dropdown-container">
+                            <div class="dropdown-header" id="tipoDropdownHeader">
+                                <span class="dropdown-header-text" id="tipoDropdownText">Todos os Tipos</span>
+                                <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                            </div>
+                            <div class="checkbox-list dropdown-list filter-dropdown" id="tipoCheckboxes"></div>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" id="applyFiltersBtn" style="white-space:nowrap;">Aplicar Filtros</button>
                 </div>
             </div>
 

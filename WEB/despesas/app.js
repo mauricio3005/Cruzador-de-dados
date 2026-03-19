@@ -396,6 +396,12 @@ function renderizarTabeLote() {
                     ${etapas.map(e => `<option value="${e}" ${(d.ETAPA||loteEtapa)===e?'selected':''}>${e}</option>`).join('')}
                 </select>
             </td>
+            <td>
+                <select class="form-select form-select-sm" data-idx="${idx}" data-field="DESPESA">
+                    <option value="">—</option>
+                    ${categorias.map(c => `<option value="${c}" ${d.DESPESA===c?'selected':''}>${c}</option>`).join('')}
+                </select>
+            </td>
             <td><input type="date" class="form-input form-input-sm" data-idx="${idx}" data-field="DATA" value="${d.DATA || ''}"></td>
             <td><input type="number" class="form-input form-input-sm text-right" data-idx="${idx}" data-field="VALOR_TOTAL" value="${d.VALOR_TOTAL || ''}" step="0.01" min="0"></td>
             <td>
