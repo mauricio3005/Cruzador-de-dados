@@ -1633,3 +1633,42 @@ body {
 }
 .btn-secondary:hover:not(:disabled) { border-color: var(--secondary); color: var(--secondary); }
 .btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ============================================================
+   FOLHA — Tabela editável inline
+   ============================================================ */
+.tbl-input,
+.tbl-select {
+    width: 100%;
+    padding: 5px 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    font-family: var(--font-body);
+    font-size: 0.8125rem;
+    color: var(--on-surface);
+    outline: none;
+    transition: border-color 0.15s, background 0.15s;
+    min-width: 90px;
+}
+.tbl-input:hover, .tbl-select:hover { border-color: var(--outline-ghost); background: var(--surface-low); }
+.tbl-input:focus, .tbl-select:focus { border-color: var(--secondary); background: var(--surface-container); }
+.tbl-input:disabled, .tbl-select:disabled { opacity: 0.55; cursor: not-allowed; }
+.tbl-input.text-right { text-align: right; }
+.tbl-select { cursor: pointer; }
+
+.btn-row-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    background: none;
+    border: none;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    color: var(--on-surface-muted);
+    transition: background 0.15s, color 0.15s;
+    padding: 0;
+}
+.btn-row-delete:hover { background: var(--error-bg); color: var(--error); }

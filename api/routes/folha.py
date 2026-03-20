@@ -47,9 +47,9 @@ def fechar_folha(req: FolhaFecharRequest):
         raise HTTPException(status_code=400, detail="Folha sem funcionários")
 
     # 2. Agrupa por etapa
-    por_etapa: dict[str, float] = {}
+    por_etapa: dict[str | None, float] = {}
     for f in funcionarios:
-        etapa = f.get("etapa") or "Sem Etapa"
+        etapa = f.get("etapa") or None
         por_etapa[etapa] = por_etapa.get(etapa, 0.0) + float(f.get("valor") or 0)
 
     # 3. Insere uma despesa por etapa em c_despesas
