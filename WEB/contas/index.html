@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contas a Pagar — Industrial Architect</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+    <script src="../env.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+<div class="app-shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <div class="sidebar-brand-text">
+                <span class="sidebar-brand-name">Industrial Architect</span>
+                <span class="sidebar-brand-sub">Finance Suite</span>
+            </div>
+        </div>
+        <div class="sidebar-nav-wrap" id="main-nav"></div>
+        <div class="sidebar-footer">
+            <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
+        </div>
+    </aside>
+
+    <!-- CONTENT -->
+    <div class="content-shell">
+
+        <header class="topbar">
+            <div class="topbar-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="buscaTexto" placeholder="Buscar por fornecedor ou descrição...">
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-outline" id="btnExportarCSV" style="font-size:0.8125rem;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Exportar CSV
+                </button>
+                <div class="topbar-avatar" title="Usuário">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+
+            <!-- Hero -->
+            <div class="page-hero">
+                <div>
+                    <h1>Contas a Pagar</h1>
+                    <p class="page-hero-sub">Controle de vencimentos, pagamentos e fluxo de caixa.</p>
+                </div>
+                <div class="page-hero-actions">
+                    <button class="btn btn-primary" id="btnNovaConta">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Nova Conta
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filtros -->
+            <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                <div style="padding: var(--sp-4) var(--sp-6);">
+                    <div style="display:grid;grid-template-columns:140px 140px 1fr 1fr 160px auto;gap:var(--sp-4);align-items:end;">
+                        <div>
+                            <label class="form-label">Vencimento de</label>
+                            <input type="date" class="form-input" id="filtroDataIni">
+                        </div>
+                        <div>
+                            <label class="form-label">Até</label>
+                            <input type="date" class="form-input" id="filtroDataFim">
+                        </div>
+                        <div>
+                            <label class="form-label">Obra</label>
+                            <select class="form-select" id="filtroObra"></select>
+                        </div>
+                        <div>
+                            <label class="form-label">Fornecedor</label>
+                            <select class="form-select" id="filtroFornecedor"></select>
+                        </div>
+                        <div>
+                            <label class="form-label">Status</label>
+                            <select class="form-select" id="filtroStatus">
+                                <option value="">Todos</option>
+                                <option value="pendente">Pendente</option>
+                                <option value="vencido">Vencido</option>
+                                <option value="pago">Pago</option>
+                                <option value="cancelado">Cancelado</option>
+                            </select>
+                        </div>
+                        <div style="display:flex;gap:var(--sp-3);align-items:flex-end;">
+                            <button class="btn btn-primary" id="btnFiltrar">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                Filtrar
+                            </button>
+                            <button class="btn btn-outline" id="btnLimparFiltro" title="Limpar filtros">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPIs -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:var(--sp-4);margin-bottom:var(--sp-5);">
+                <div class="kpi-card">
+                    <div class="kpi-label">A Pagar (Pendentes)</div>
+                    <div class="kpi-value" id="kpiPendente">—</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Vencidas</div>
+                    <div class="kpi-value" style="color:var(--error);" id="kpiVencido">—</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">A vencer em 7 dias</div>
+                    <div class="kpi-value" style="color:var(--warning);" id="kpiProximo">—</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-label">Pagas (mês atual)</div>
+                    <div class="kpi-value" style="color:var(--success);" id="kpiPago">—</div>
+                </div>
+            </div>
+
+            <!-- Tabela -->
+            <div class="matrix-section">
+                <div class="matrix-header">
+                    <span class="matrix-title">Contas</span>
+                    <div id="tabelaLoading" style="display:none;align-items:center;gap:var(--sp-3);font-size:0.8125rem;color:var(--on-surface-muted);">
+                        <div class="spinner"></div> Carregando…
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="styled-table" id="tabelaContas">
+                        <thead>
+                            <tr>
+                                <th>Vencimento</th>
+                                <th>Obra</th>
+                                <th>Fornecedor</th>
+                                <th>Descrição</th>
+                                <th>Tipo</th>
+                                <th>Categoria</th>
+                                <th class="text-right">Valor (R$)</th>
+                                <th style="text-align:center;">Status</th>
+                                <th style="text-align:center;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaBody">
+                            <tr><td colspan="9" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Use os filtros acima e clique em Filtrar.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="paginacaoWrap" style="display:none;padding:var(--sp-4) var(--sp-6);display:flex;align-items:center;gap:var(--sp-3);font-size:0.8125rem;color:var(--on-surface-muted);">
+                    <span id="paginacaoInfo"></span>
+                    <div style="margin-left:auto;display:flex;gap:var(--sp-2);">
+                        <button class="btn btn-outline" id="btnPagAnterior" style="padding:4px 12px;font-size:0.8rem;">← Anterior</button>
+                        <button class="btn btn-outline" id="btnPagProxima"  style="padding:4px 12px;font-size:0.8rem;">Próxima →</button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+</div>
+
+<!-- MODAL NOVA/EDITAR CONTA -->
+<div id="modalConta" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(580px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,0.4);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
+            <h2 id="modalContaTitulo" style="font-size:1.125rem;font-weight:700;color:var(--on-surface);">Nova Conta a Pagar</h2>
+            <button onclick="fecharModalConta()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;border-radius:4px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);">
+            <div>
+                <label class="form-label">Fornecedor *</label>
+                <select class="form-select" id="cFornecedor"></select>
+            </div>
+            <div>
+                <label class="form-label">Valor (R$) *</label>
+                <input type="number" class="form-input" id="cValor" placeholder="0,00" step="0.01" min="0">
+            </div>
+            <div>
+                <label class="form-label">Vencimento *</label>
+                <input type="date" class="form-input" id="cVencimento">
+            </div>
+            <div>
+                <label class="form-label">Obra</label>
+                <select class="form-select" id="cObra"></select>
+            </div>
+            <div>
+                <label class="form-label">Etapa</label>
+                <select class="form-select" id="cEtapa"></select>
+            </div>
+            <div>
+                <label class="form-label">Tipo</label>
+                <select class="form-select" id="cTipo"></select>
+            </div>
+            <div style="grid-column:1/-1;">
+                <label class="form-label">Categoria / Despesa</label>
+                <select class="form-select" id="cDespesa"></select>
+            </div>
+            <div style="grid-column:1/-1;">
+                <label class="form-label">Descrição</label>
+                <input type="text" class="form-input" id="cDescricao" placeholder="Descrição da conta...">
+            </div>
+            <div style="grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) 0;">
+                <input type="checkbox" id="cPaga" style="width:16px;height:16px;cursor:pointer;accent-color:var(--success);">
+                <label for="cPaga" style="font-size:0.875rem;font-weight:500;color:var(--on-surface);cursor:pointer;">Marcar como paga</label>
+            </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);margin-top:var(--sp-5);">
+            <button class="btn btn-outline" onclick="fecharModalConta()">Cancelar</button>
+            <button class="btn btn-primary" id="btnSalvarConta" style="min-width:120px;">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL REGISTRAR PAGAMENTO -->
+<div id="modalPagar" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(420px,95vw);box-shadow:0 24px 64px rgba(0,0,0,0.4);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
+            <h2 style="font-size:1.125rem;font-weight:700;color:var(--on-surface);">Registrar Pagamento</h2>
+            <button onclick="fecharModalPagar()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;border-radius:4px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <div id="modalPagarInfo" style="background:var(--surface-low);border:1px solid var(--outline-ghost);border-radius:var(--radius-md);padding:var(--sp-4);margin-bottom:var(--sp-5);font-size:0.875rem;line-height:1.7;color:var(--on-surface);"></div>
+
+        <div style="display:grid;gap:var(--sp-4);">
+            <div>
+                <label class="form-label">Data do Pagamento *</label>
+                <input type="date" class="form-input" id="pDataPagamento">
+            </div>
+            <div>
+                <label class="form-label">Nota Fiscal (opcional)</label>
+                <div id="uploadZonePagar" style="border:1.5px dashed var(--outline-ghost);border-radius:var(--radius-md);padding:var(--sp-4);text-align:center;cursor:pointer;font-size:0.8125rem;color:var(--on-surface-muted);transition:border-color 0.15s,background 0.15s;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:4px;display:block;margin-inline:auto;">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <span id="uploadZonePagarText">Clique ou arraste (PDF, JPG, PNG)</span>
+                </div>
+                <input type="file" id="inputNFPagar" accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+            </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);margin-top:var(--sp-5);">
+            <button class="btn btn-outline" onclick="fecharModalPagar()">Cancelar</button>
+            <button class="btn btn-primary" id="btnConfirmarPagar" style="min-width:140px;">Confirmar Pagamento</button>
+        </div>
+    </div>
+</div>
+
+<script src="../components/toast.js"></script>
+<script src="../components/nav.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -138,6 +138,7 @@ async function carregarHistorico() {
         let q = dbClient
             .from('c_despesas')
             .select('id,data,obra,etapa,tipo,fornecedor,descricao,despesa,forma,banco,valor_total,tem_nota_fiscal,comprovante_url')
+            .or('vencimento.is.null,paga.eq.true')   // exclui contas a pagar não pagas
             .order('data', { ascending: false })
             .order('id',   { ascending: false });
 
