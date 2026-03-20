@@ -709,10 +709,11 @@ async function enviarComprovantes() {
 
     try {
         // Precisa de despesas vinculadas
-        const { data: despesas } = await dbClient.from('c_despesas').select('id').eq('folha_id', folhaAtual.id);
+        const { data: despesas, error: errDespesas } = await dbClient.from('c_despesas').select('id').eq('folha_id', folhaAtual.id);
+        if (errDespesas) throw new Error(`Erro ao buscar despesas: ${errDespesas.message}`);
         const ids = (despesas || []).map(d => d.id);
         if (ids.length === 0) {
-            toast.warning('Feche a folha primeiro para gerar os lançamentos antes de anexar comprovantes.');
+            toast.warning('Nenhuma despesa vinculada a esta folha. Verifique se a coluna folha_id existe em c_despesas.');
             return;
         }
 
@@ -726,6 +727,10 @@ async function enviarComprovantes() {
             for (const did of ids) {
                 await dbClient.from('comprovantes_despesa').insert({ despesa_id: did, url, nome_arquivo: nome });
             }
+        }
+        // Atualiza tem_nota_fiscal em todas as despesas desta folha
+        for (const did of ids) {
+            await dbClient.from('c_despesas').update({ tem_nota_fiscal: true }).eq('id', did);
         }
         input.value = '';
         toast.success(`${input.files?.length || 0} comprovante(s) enviado(s)!`);
