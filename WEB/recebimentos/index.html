@@ -16,7 +16,6 @@
 <body>
 <div class="app-shell">
 
-    <!-- SIDEBAR -->
     <aside class="sidebar">
         <div class="sidebar-brand">
             <div class="sidebar-logo">
@@ -37,7 +36,6 @@
         </div>
     </aside>
 
-    <!-- CONTENT -->
     <div class="content-shell">
 
         <header class="topbar">
@@ -46,7 +44,7 @@
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 </svg>
-                <input type="text" id="buscaTexto" placeholder="Buscar por cliente ou descrição...">
+                <input type="text" id="buscaTexto" placeholder="Buscar por fornecedor ou descrição...">
             </div>
             <div class="topbar-actions">
                 <button class="btn btn-outline" id="btnExportarCSV" style="font-size:0.8125rem;">
@@ -68,11 +66,10 @@
 
         <main class="main-content">
 
-            <!-- Hero -->
             <div class="page-hero">
                 <div>
                     <h1>Recebimentos</h1>
-                    <p class="page-hero-sub">Controle de receitas, previsão de recebimentos e fluxo de caixa.</p>
+                    <p class="page-hero-sub">Controle de receitas, medições e fluxo de caixa.</p>
                 </div>
                 <div class="page-hero-actions">
                     <button class="btn btn-primary" id="btnNovoRecebimento">
@@ -90,7 +87,7 @@
                 <div style="padding: var(--sp-4) var(--sp-6);">
                     <div style="display:grid;grid-template-columns:140px 140px 1fr 1fr 160px auto;gap:var(--sp-4);align-items:end;">
                         <div>
-                            <label class="form-label">Vencimento de</label>
+                            <label class="form-label">Data de</label>
                             <input type="date" class="form-input" id="filtroDataIni">
                         </div>
                         <div>
@@ -102,8 +99,8 @@
                             <select class="form-select" id="filtroObra"></select>
                         </div>
                         <div>
-                            <label class="form-label">Cliente</label>
-                            <input type="text" class="form-input" id="filtroCliente" placeholder="Todos os clientes">
+                            <label class="form-label">Fornecedor / Cliente</label>
+                            <input type="text" class="form-input" id="filtroFornecedor" placeholder="Todos">
                         </div>
                         <div>
                             <label class="form-label">Status</label>
@@ -165,14 +162,13 @@
                     <table class="styled-table" id="tabelaRecebimentos">
                         <thead>
                             <tr>
-                                <th>Vencimento</th>
+                                <th>Data</th>
                                 <th>Obra</th>
-                                <th>Cliente</th>
+                                <th>Fornecedor / Cliente</th>
                                 <th>Descrição</th>
-                                <th>Etapa</th>
                                 <th class="text-right">Valor (R$)</th>
                                 <th style="text-align:center;">Status</th>
-                                <th style="text-align:center;">NF</th>
+                                <th style="text-align:center;">Comprovante</th>
                                 <th style="text-align:center;">Ações</th>
                             </tr>
                         </thead>
@@ -197,10 +193,10 @@
 
 <!-- MODAL NOVO/EDITAR RECEBIMENTO -->
 <div id="modalRecebimento" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
-    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(600px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,0.4);">
+    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(620px,95vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,0.4);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
             <h2 id="modalRecTitulo" style="font-size:1.125rem;font-weight:700;color:var(--on-surface);">Novo Recebimento</h2>
-            <button onclick="fecharModalRec()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;border-radius:4px;">
+            <button onclick="fecharModalRec()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
@@ -209,42 +205,60 @@
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);">
             <div>
-                <label class="form-label">Cliente *</label>
-                <input type="text" class="form-input" id="rCliente" placeholder="Nome do cliente ou contratante...">
+                <label class="form-label">Fornecedor / Cliente *</label>
+                <input type="text" class="form-input" id="rFornecedor" placeholder="Nome do cliente ou contratante...">
             </div>
             <div>
                 <label class="form-label">Valor (R$) *</label>
                 <input type="number" class="form-input" id="rValor" placeholder="0,00" step="0.01" min="0">
             </div>
             <div>
-                <label class="form-label">Vencimento *</label>
-                <input type="date" class="form-input" id="rVencimento">
+                <label class="form-label">Data Prevista *</label>
+                <input type="date" class="form-input" id="rData">
             </div>
             <div>
                 <label class="form-label">Obra</label>
                 <select class="form-select" id="rObra"></select>
             </div>
             <div>
-                <label class="form-label">Etapa</label>
-                <select class="form-select" id="rEtapa"></select>
-            </div>
-            <div>
                 <label class="form-label">Forma de Recebimento</label>
                 <select class="form-select" id="rForma"></select>
             </div>
             <div>
-                <label class="form-label">Banco</label>
-                <input type="text" class="form-input" id="rBanco" placeholder="Banco ou conta destino...">
-            </div>
-            <div>
-                <label class="form-label"> </label>
-                <!-- spacer -->
+                <label class="form-label">Banco / Conta destino</label>
+                <input type="text" class="form-input" id="rBanco" placeholder="Ex: Bradesco PJ">
             </div>
             <div style="grid-column:1/-1;">
                 <label class="form-label">Descrição</label>
                 <input type="text" class="form-input" id="rDescricao" placeholder="Ex: Medição 01 — Casa Busca Vida">
             </div>
-            <div style="grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3) 0;">
+            <div style="grid-column:1/-1;">
+                <label class="form-label">Observação</label>
+                <input type="text" class="form-input" id="rObservacao" placeholder="Informação complementar...">
+            </div>
+
+            <!-- Toggle parcelas -->
+            <div style="grid-column:1/-1;border-top:1px solid var(--outline-ghost);padding-top:var(--sp-4);">
+                <label style="display:flex;align-items:center;gap:var(--sp-3);cursor:pointer;font-size:0.875rem;font-weight:500;color:var(--on-surface);">
+                    <input type="checkbox" id="rUsarParcelas" style="width:16px;height:16px;cursor:pointer;accent-color:var(--accent);">
+                    Criar em parcelas (medições mensais)
+                </label>
+            </div>
+            <div id="parcelasConfig" style="display:none;grid-column:1/-1;grid-template-columns:1fr 1fr;gap:var(--sp-4);background:var(--surface-low);border-radius:var(--radius-md);padding:var(--sp-4);">
+                <div>
+                    <label class="form-label">Número de parcelas</label>
+                    <input type="number" class="form-input" id="rTotalParcelas" value="2" min="2" max="60">
+                </div>
+                <div>
+                    <label class="form-label">Intervalo (meses)</label>
+                    <input type="number" class="form-input" id="rIntervaloMeses" value="1" min="1" max="12">
+                </div>
+                <div style="grid-column:1/-1;font-size:0.8rem;color:var(--on-surface-muted);">
+                    O valor informado será repetido em cada parcela. A data da 1ª parcela é a data prevista acima.
+                </div>
+            </div>
+
+            <div style="grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) 0;">
                 <input type="checkbox" id="rRecebido" style="width:16px;height:16px;cursor:pointer;accent-color:var(--success);">
                 <label for="rRecebido" style="font-size:0.875rem;font-weight:500;color:var(--on-surface);cursor:pointer;">Marcar como recebido</label>
             </div>
@@ -257,12 +271,12 @@
     </div>
 </div>
 
-<!-- MODAL REGISTRAR RECEBIMENTO -->
+<!-- MODAL CONFIRMAR RECEBIMENTO -->
 <div id="modalReceberPag" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
     <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(420px,95vw);box-shadow:0 24px 64px rgba(0,0,0,0.4);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
             <h2 style="font-size:1.125rem;font-weight:700;color:var(--on-surface);">Confirmar Recebimento</h2>
-            <button onclick="fecharModalReceber()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;border-radius:4px;">
+            <button onclick="fecharModalReceber()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
@@ -278,7 +292,7 @@
             </div>
             <div>
                 <label class="form-label">Comprovante (opcional)</label>
-                <div id="uploadZoneReceber" style="border:1.5px dashed var(--outline-ghost);border-radius:var(--radius-md);padding:var(--sp-4);text-align:center;cursor:pointer;font-size:0.8125rem;color:var(--on-surface-muted);transition:border-color 0.15s,background 0.15s;">
+                <div id="uploadZoneReceber" style="border:1.5px dashed var(--outline-ghost);border-radius:var(--radius-md);padding:var(--sp-4);text-align:center;cursor:pointer;font-size:0.8125rem;color:var(--on-surface-muted);transition:border-color 0.15s;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom:4px;display:block;margin-inline:auto;">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="17 8 12 3 7 8"></polyline>

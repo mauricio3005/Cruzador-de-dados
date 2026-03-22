@@ -1,7 +1,10 @@
 /**
  * INDUSTRIAL ARCHITECT — Finance Suite
  * Recebimentos (app.js)
- * Fonte de dados: tabela `recebimentos`
+ * Tabela: recebimentos
+ * Colunas: id, obra, fornecedor, descricao, valor, data, forma, banco,
+ *          comprovante_url, observacao, parcela_num, total_parcelas, grupo_id,
+ *          recebido, data_recebimento, tem_comprovante, created_at
  */
 
 // --- SUPABASE ---
@@ -17,7 +20,6 @@ function carregarEnv() {
 
 // --- ESTADO ---
 let obras  = [];
-let etapas = [];
 let formas = [];
 
 let todosRegistros = [];
@@ -31,44 +33,40 @@ let recebendoId = null;
 function esc(s) {
     return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
 function formatarData(d) {
     if (!d) return '—';
     const [y, m, dia] = d.split('-');
     return `${dia}/${m}/${y}`;
 }
-
 function formatarValor(v) {
     return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
-function hoje() {
-    return new Date().toISOString().split('T')[0];
-}
-
+function hoje() { return new Date().toISOString().split('T')[0]; }
 function addDias(d, n) {
     const dt = new Date(d + 'T00:00:00');
     dt.setDate(dt.getDate() + n);
     return dt.toISOString().split('T')[0];
 }
+function addMeses(d, n) {
+    const dt = new Date(d + 'T00:00:00');
+    dt.setMonth(dt.getMonth() + n);
+    return dt.toISOString().split('T')[0];
+}
 
 function statusVisual(r) {
     if (r.recebido) return 'recebido';
-    if (r.vencimento && r.vencimento < hoje()) return 'vencido';
+    if (r.data && r.data < hoje()) return 'vencido';
     return 'pendente';
 }
-
 function badgeStatus(sv) {
     const cfg = {
-        recebido: { cor: 'var(--success)', bg: 'rgba(46,125,50,0.1)',   label: 'Recebido' },
-        vencido:  { cor: 'var(--error)',   bg: 'rgba(186,26,26,0.1)',   label: 'Vencido'  },
-        pendente: { cor: 'var(--warning)', bg: 'rgba(180,83,9,0.1)',    label: 'Pendente' },
+        recebido: { cor: 'var(--success)', bg: 'rgba(46,125,50,0.1)',  label: 'Recebido' },
+        vencido:  { cor: 'var(--error)',   bg: 'rgba(186,26,26,0.1)', label: 'Vencido'  },
+        pendente: { cor: 'var(--warning)', bg: 'rgba(180,83,9,0.1)',  label: 'Pendente' },
     };
     const c = cfg[sv] || cfg.pendente;
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.7rem;font-weight:700;
-            color:${c.cor};background:${c.bg};">${c.label}</span>`;
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.7rem;font-weight:700;color:${c.cor};background:${c.bg};">${c.label}</span>`;
 }
-
 function setStatus(estado, texto) {
     const el = document.getElementById('connectionStatus');
     if (!el) return;
@@ -98,6 +96,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('modalRecebimento').addEventListener('click', e => { if (e.target === e.currentTarget) fecharModalRec(); });
     document.getElementById('modalReceberPag').addEventListener('click',  e => { if (e.target === e.currentTarget) fecharModalReceber(); });
 
+    // Toggle parcelas
+    document.getElementById('rUsarParcelas').addEventListener('change', e => {
+        document.getElementById('parcelasConfig').style.display = e.target.checked ? 'grid' : 'none';
+    });
+
     // Upload zone
     const zone  = document.getElementById('uploadZoneReceber');
     const input = document.getElementById('inputNFReceber');
@@ -120,20 +123,18 @@ async function carregarReferencias() {
     const safe = async (query, campo = 'nome') => {
         try {
             const { data, error } = await query;
-            if (error) { console.warn('[recebimentos] ref warning:', error.message); return []; }
+            if (error) { console.warn('[recebimentos] ref:', error.message); return []; }
             return (data || []).map(r => r[campo]);
-        } catch (e) { console.warn('[recebimentos] ref error:', e.message); return []; }
+        } catch (e) { console.warn('[recebimentos] ref:', e.message); return []; }
     };
 
-    [obras, etapas, formas] = await Promise.all([
+    [obras, formas] = await Promise.all([
         safe(dbClient.from('obras').select('nome').order('nome')),
-        safe(dbClient.from('etapas').select('nome').order('nome')),
         safe(dbClient.from('formas_pagamento').select('nome').order('nome')),
     ]);
 
     popularSelect('filtroObra', obras, 'Todas as obras');
     popularSelect('rObra',  obras,  '—');
-    popularSelect('rEtapa', etapas, '—');
     popularSelect('rForma', formas, '—');
 
     setStatus('online', 'Sistema Sincronizado');
@@ -145,14 +146,11 @@ function popularSelect(id, opcoes, placeholder) {
     sel.innerHTML = `<option value="">${placeholder}</option>` +
         opcoes.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
 }
-
 function setSelectValue(id, value) {
     const sel = document.getElementById(id);
     if (!sel || !value) { if (sel) sel.value = ''; return; }
     if (!Array.from(sel.options).some(o => o.value === value)) {
-        const opt = document.createElement('option');
-        opt.value = opt.textContent = value;
-        sel.appendChild(opt);
+        const opt = document.createElement('option'); opt.value = opt.textContent = value; sel.appendChild(opt);
     }
     sel.value = value;
 }
@@ -163,30 +161,29 @@ async function carregarRecebimentos() {
     document.getElementById('tabelaLoading').style.display = 'flex';
 
     try {
-        const dataIni = document.getElementById('filtroDataIni').value;
-        const dataFim = document.getElementById('filtroDataFim').value;
-        const obra    = document.getElementById('filtroObra').value;
-        const cliente = document.getElementById('filtroCliente').value.trim();
-        const status  = document.getElementById('filtroStatus').value;
+        const dataIni    = document.getElementById('filtroDataIni').value;
+        const dataFim    = document.getElementById('filtroDataFim').value;
+        const obra       = document.getElementById('filtroObra').value;
+        const fornecedor = document.getElementById('filtroFornecedor').value.trim();
+        const status     = document.getElementById('filtroStatus').value;
 
-        // Recebidos saem da view 7 dias após o recebimento
         const limiteRecente = addDias(hoje(), -7);
 
         let q = dbClient
             .from('recebimentos')
             .select('*')
             .or(`recebido.eq.false,data_recebimento.gte.${limiteRecente}`)
-            .order('vencimento', { ascending: true })
-            .order('id',         { ascending: false });
+            .order('data', { ascending: true })
+            .order('id',   { ascending: false });
 
-        if (dataIni) q = q.gte('vencimento', dataIni);
-        if (dataFim) q = q.lte('vencimento', dataFim);
-        if (obra)    q = q.eq('obra', obra);
-        if (cliente) q = q.ilike('cliente', `%${cliente}%`);
+        if (dataIni)    q = q.gte('data', dataIni);
+        if (dataFim)    q = q.lte('data', dataFim);
+        if (obra)       q = q.eq('obra', obra);
+        if (fornecedor) q = q.ilike('fornecedor', `%${fornecedor}%`);
 
         if (status === 'recebido') q = q.eq('recebido', true);
-        if (status === 'pendente') q = q.eq('recebido', false).gte('vencimento', hoje());
-        if (status === 'vencido')  q = q.eq('recebido', false).lt('vencimento', hoje());
+        if (status === 'pendente') q = q.eq('recebido', false).gte('data', hoje());
+        if (status === 'vencido')  q = q.eq('recebido', false).lt('data', hoje());
 
         const { data, error } = await q;
         if (error) throw error;
@@ -197,7 +194,7 @@ async function carregarRecebimentos() {
         atualizarKPIs();
     } catch (e) {
         console.error('[recebimentos] carregar:', e);
-        toast.error('Erro ao carregar recebimentos: ' + e.message);
+        toast.error('Erro ao carregar: ' + e.message);
     } finally {
         document.getElementById('tabelaLoading').style.display = 'none';
     }
@@ -208,8 +205,9 @@ function filtrarRegistros() {
     const busca = document.getElementById('buscaTexto').value.trim().toLowerCase();
     if (!busca) return todosRegistros;
     return todosRegistros.filter(r =>
-        (r.cliente   || '').toLowerCase().includes(busca) ||
-        (r.descricao || '').toLowerCase().includes(busca)
+        (r.fornecedor || '').toLowerCase().includes(busca) ||
+        (r.descricao  || '').toLowerCase().includes(busca) ||
+        (r.observacao || '').toLowerCase().includes(busca)
     );
 }
 
@@ -231,15 +229,19 @@ function renderizarTabela() {
     tbody.innerHTML = pagina.map(r => {
         const sv    = statusVisual(r);
         const valor = r.valor != null ? formatarValor(r.valor) : '—';
-        const venc  = formatarData(r.vencimento);
+        const data  = formatarData(r.data);
+
+        // Badge de parcela
+        const parcelaBadge = r.total_parcelas > 1
+            ? `<span style="font-size:0.7rem;background:var(--surface-low);border:1px solid var(--outline-ghost);border-radius:4px;padding:1px 5px;margin-left:4px;color:var(--on-surface-muted);">${r.parcela_num}/${r.total_parcelas}</span>`
+            : '';
 
         const nfIcon = r.tem_comprovante && r.comprovante_url
             ? `<a href="${r.comprovante_url}" target="_blank" title="Ver comprovante" style="color:var(--secondary);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
-                </svg>
-               </a>`
+                </svg></a>`
             : '—';
 
         let acoes = '';
@@ -248,8 +250,7 @@ function renderizarTabela() {
                         style="font-size:0.72rem;padding:3px 8px;white-space:nowrap;background:var(--success);border-color:var(--success);">
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                               <polyline points="20 6 9 17 4 12"></polyline>
-                          </svg>
-                          Receber
+                          </svg> Receber
                       </button> `;
         }
         acoes += `<button class="btn btn-outline" onclick="abrirModalRec(${r.id})"
@@ -257,22 +258,21 @@ function renderizarTabela() {
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                           <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                      </svg>
-                  </button> `;
+                      </svg></button> `;
         acoes += `<button class="btn btn-outline" onclick="excluirRecebimento(${r.id})"
                     style="font-size:0.72rem;padding:3px 8px;color:var(--error);border-color:var(--error);" title="Excluir">
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                           <polyline points="3 6 5 6 21 6"></polyline>
                           <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
-                      </svg>
-                  </button>`;
+                      </svg></button>`;
 
         return `<tr>
-            <td style="white-space:nowrap;font-weight:600;">${venc}</td>
+            <td style="white-space:nowrap;font-weight:600;">${data}</td>
             <td>${esc(r.obra || '—')}</td>
-            <td>${esc(r.cliente || '—')}</td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.descricao)}">${esc(r.descricao || '—')}</td>
-            <td>${esc(r.etapa || '—')}</td>
+            <td>${esc(r.fornecedor || '—')}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.descricao)}">
+                ${esc(r.descricao || '—')}${parcelaBadge}
+            </td>
             <td class="text-right" style="font-weight:600;">R$ ${valor}</td>
             <td style="text-align:center;">${badgeStatus(sv)}</td>
             <td style="text-align:center;">${nfIcon}</td>
@@ -305,25 +305,23 @@ function atualizarKPIs() {
         const v  = Number(r.valor || 0);
         if (sv === 'pendente') {
             totalPendente += v;
-            if (r.vencimento >= hj && r.vencimento <= em7) { totalProximo += v; countProximo++; }
+            if (r.data >= hj && r.data <= em7) { totalProximo += v; countProximo++; }
         }
         if (sv === 'vencido') { totalVencido += v; countVencido++; }
         if (sv === 'recebido' && (r.data_recebimento || '').startsWith(mes)) totalRecebido += v;
     }
 
-    document.getElementById('kpiPendente').textContent  = `R$ ${formatarValor(totalPendente)}`;
-    document.getElementById('kpiVencido').textContent   = countVencido > 0 ? `${countVencido} · R$ ${formatarValor(totalVencido)}` : '—';
-    document.getElementById('kpiProximo').textContent   = countProximo > 0 ? `${countProximo} · R$ ${formatarValor(totalProximo)}` : '—';
-    document.getElementById('kpiRecebido').textContent  = totalRecebido > 0 ? `R$ ${formatarValor(totalRecebido)}` : '—';
+    document.getElementById('kpiPendente').textContent = `R$ ${formatarValor(totalPendente)}`;
+    document.getElementById('kpiVencido').textContent  = countVencido > 0 ? `${countVencido} · R$ ${formatarValor(totalVencido)}` : '—';
+    document.getElementById('kpiProximo').textContent  = countProximo > 0 ? `${countProximo} · R$ ${formatarValor(totalProximo)}` : '—';
+    document.getElementById('kpiRecebido').textContent = totalRecebido > 0 ? `R$ ${formatarValor(totalRecebido)}` : '—';
 }
 
 // --- LIMPAR FILTROS ---
 function limparFiltros() {
-    ['filtroDataIni','filtroDataFim','filtroObra','filtroStatus'].forEach(id => {
-        document.getElementById(id).value = '';
-    });
-    document.getElementById('filtroCliente').value = '';
-    document.getElementById('buscaTexto').value    = '';
+    ['filtroDataIni','filtroDataFim','filtroObra','filtroStatus'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('filtroFornecedor').value = '';
+    document.getElementById('buscaTexto').value = '';
     paginaAtual = 1;
     carregarRecebimentos();
 }
@@ -333,25 +331,28 @@ function abrirModalRec(id) {
     editandoId = id;
     document.getElementById('modalRecTitulo').textContent = id ? 'Editar Recebimento' : 'Novo Recebimento';
 
-    document.getElementById('rCliente').value    = '';
+    // Limpa campos
+    ['rFornecedor','rDescricao','rObservacao','rBanco'].forEach(i => document.getElementById(i).value = '');
     document.getElementById('rValor').value      = '';
-    document.getElementById('rVencimento').value = '';
-    document.getElementById('rDescricao').value  = '';
-    document.getElementById('rBanco').value      = '';
+    document.getElementById('rData').value       = '';
     document.getElementById('rRecebido').checked = false;
-    ['rObra','rEtapa','rForma'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('rUsarParcelas').checked = false;
+    document.getElementById('parcelasConfig').style.display = 'none';
+    document.getElementById('rTotalParcelas').value = '2';
+    document.getElementById('rIntervaloMeses').value = '1';
+    ['rObra','rForma'].forEach(i => document.getElementById(i).value = '');
 
     if (id) {
         const r = todosRegistros.find(x => x.id === id);
         if (r) {
-            document.getElementById('rCliente').value    = r.cliente    || '';
-            document.getElementById('rValor').value      = r.valor      || '';
-            document.getElementById('rVencimento').value = r.vencimento || '';
-            document.getElementById('rDescricao').value  = r.descricao  || '';
-            document.getElementById('rBanco').value      = r.banco      || '';
-            document.getElementById('rRecebido').checked = !!r.recebido;
+            document.getElementById('rFornecedor').value  = r.fornecedor || '';
+            document.getElementById('rDescricao').value   = r.descricao  || '';
+            document.getElementById('rObservacao').value  = r.observacao || '';
+            document.getElementById('rBanco').value       = r.banco      || '';
+            document.getElementById('rValor').value       = r.valor      || '';
+            document.getElementById('rData').value        = r.data       || '';
+            document.getElementById('rRecebido').checked  = !!r.recebido;
             setSelectValue('rObra',  r.obra);
-            setSelectValue('rEtapa', r.etapa);
             setSelectValue('rForma', r.forma);
         }
     }
@@ -365,48 +366,60 @@ function fecharModalRec() {
 }
 
 async function salvarRecebimento() {
-    const cliente    = document.getElementById('rCliente').value.trim();
+    const fornecedor = document.getElementById('rFornecedor').value.trim();
     const valor      = parseFloat(document.getElementById('rValor').value);
-    const vencimento = document.getElementById('rVencimento').value;
+    const data       = document.getElementById('rData').value;
 
-    if (!cliente)               { toast.warning('Informe o cliente.'); return; }
-    if (isNaN(valor) || valor <= 0) { toast.warning('Informe um valor válido.'); return; }
-    if (!vencimento)            { toast.warning('Informe a data de vencimento.'); return; }
+    if (!fornecedor)               { toast.warning('Informe o fornecedor/cliente.'); return; }
+    if (isNaN(valor) || valor <= 0){ toast.warning('Informe um valor válido.'); return; }
+    if (!data)                     { toast.warning('Informe a data prevista.'); return; }
 
-    const recebido = document.getElementById('rRecebido').checked;
+    const recebido     = document.getElementById('rRecebido').checked;
+    const usarParcelas = document.getElementById('rUsarParcelas').checked && !editandoId;
+    const totalParc    = usarParcelas ? parseInt(document.getElementById('rTotalParcelas').value) || 1 : 1;
+    const intervalo    = usarParcelas ? parseInt(document.getElementById('rIntervaloMeses').value) || 1 : 1;
 
-    const payload = {
-        cliente,
+    const base = {
+        fornecedor,
         valor:      Math.round(valor * 100) / 100,
-        vencimento,
         obra:       document.getElementById('rObra').value    || null,
-        etapa:      document.getElementById('rEtapa').value   || null,
         forma:      document.getElementById('rForma').value   || null,
-        banco:      document.getElementById('rBanco').value.trim() || null,
-        descricao:  document.getElementById('rDescricao').value.trim() || null,
+        banco:      document.getElementById('rBanco').value.trim()      || null,
+        descricao:  document.getElementById('rDescricao').value.trim()  || null,
+        observacao: document.getElementById('rObservacao').value.trim() || null,
         recebido,
     };
-
-    if (recebido) {
-        const r = editandoId ? todosRegistros.find(x => x.id === editandoId) : null;
-        if (!r || !r.data_recebimento) payload.data_recebimento = hoje();
-    }
+    if (recebido) base.data_recebimento = hoje();
 
     const btn = document.getElementById('btnSalvarRec');
     btn.disabled = true; btn.textContent = 'Salvando…';
 
     try {
-        let result;
         if (editandoId) {
-            result = await dbClient.from('recebimentos').update(payload).eq('id', editandoId).select().single();
+            const { error } = await dbClient.from('recebimentos').update({ ...base, data }).eq('id', editandoId);
+            if (error) throw error;
+            toast.success('Recebimento atualizado.');
+        } else if (totalParc > 1) {
+            // Cria grupo de parcelas
+            const grupoId = Date.now();
+            const rows = Array.from({ length: totalParc }, (_, i) => ({
+                ...base,
+                data:          addMeses(data, i * intervalo),
+                parcela_num:   i + 1,
+                total_parcelas: totalParc,
+                grupo_id:      grupoId,
+            }));
+            const { error } = await dbClient.from('recebimentos').insert(rows);
+            if (error) throw error;
+            toast.success(`${totalParc} parcelas criadas!`);
         } else {
-            result = await dbClient.from('recebimentos').insert(payload).select().single();
+            const { error } = await dbClient.from('recebimentos').insert({ ...base, data, parcela_num: 1, total_parcelas: 1 });
+            if (error) throw error;
+            toast.success('Recebimento cadastrado.');
         }
-        if (result.error) throw result.error;
 
         fecharModalRec();
         await carregarRecebimentos();
-        toast.success(editandoId ? 'Recebimento atualizado.' : 'Recebimento cadastrado.');
     } catch (e) {
         toast.error('Erro ao salvar: ' + e.message);
     } finally {
@@ -421,8 +434,7 @@ async function uploadComprovante(file) {
         const nome = `rec_${crypto.randomUUID().replace(/-/g,'').slice(0,12)}.${ext}`;
         const { error } = await dbClient.storage.from('comprovantes').upload(nome, file, { contentType: file.type });
         if (error) throw error;
-        const base = window.ENV.SUPABASE_URL.replace(/\/$/, '');
-        const url  = `${base}/storage/v1/object/public/comprovantes/${nome}`;
+        const url = `${window.ENV.SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/comprovantes/${nome}`;
         return { url, nome };
     } catch (e) {
         toast.warning(`Comprovante não pôde ser salvo: ${e.message}`);
@@ -442,9 +454,10 @@ function abrirModalReceber(id) {
     const r = todosRegistros.find(x => x.id === id);
     if (!r) return;
 
+    const parc = r.total_parcelas > 1 ? ` (Parcela ${r.parcela_num}/${r.total_parcelas})` : '';
     document.getElementById('modalReceberInfo').innerHTML =
-        `<strong>${esc(r.cliente)}</strong><br>
-         Vencimento: ${formatarData(r.vencimento)}<br>
+        `<strong>${esc(r.fornecedor)}</strong>${parc}<br>
+         Data prevista: ${formatarData(r.data)}<br>
          Valor: <strong>R$ ${formatarValor(r.valor)}</strong>
          ${r.descricao ? `<br>Descrição: ${esc(r.descricao)}` : ''}`;
 
@@ -478,12 +491,9 @@ async function confirmarRecebimento() {
 
         const file = document.getElementById('inputNFReceber')._file;
         if (file) {
-            const resultado = await uploadComprovante(file);
-            if (resultado) {
-                await dbClient.from('recebimentos').update({
-                    comprovante_url: resultado.url,
-                    tem_comprovante: true,
-                }).eq('id', recebendoId);
+            const res = await uploadComprovante(file);
+            if (res) {
+                await dbClient.from('recebimentos').update({ comprovante_url: res.url, tem_comprovante: true }).eq('id', recebendoId);
             }
         }
 
@@ -501,19 +511,26 @@ async function confirmarRecebimento() {
 async function excluirRecebimento(id) {
     const r = todosRegistros.find(x => x.id === id);
     if (!r) return;
-    const desc = r.cliente + (r.descricao ? ` — ${r.descricao}` : '');
-    if (!confirm(`Excluir "${desc}"? Esta ação não pode ser desfeita.`)) return;
+    const temGrupo = r.total_parcelas > 1 && r.grupo_id;
+    const msg = temGrupo
+        ? `Excluir só esta parcela (${r.parcela_num}/${r.total_parcelas}) ou todo o grupo?`
+        : `Excluir "${r.fornecedor + (r.descricao ? ' — ' + r.descricao : '')}"?`;
 
-    try {
+    if (temGrupo) {
+        const opcao = confirm(msg + '\n\nOK = só esta parcela | Cancelar = cancelar operação');
+        if (!opcao) return;
         const { error } = await dbClient.from('recebimentos').delete().eq('id', id);
-        if (error) throw error;
-        todosRegistros = todosRegistros.filter(x => x.id !== id);
-        renderizarTabela();
-        atualizarKPIs();
-        toast.success('Recebimento excluído.');
-    } catch (e) {
-        toast.error('Erro ao excluir: ' + e.message);
+        if (error) { toast.error('Erro: ' + error.message); return; }
+    } else {
+        if (!confirm(msg)) return;
+        const { error } = await dbClient.from('recebimentos').delete().eq('id', id);
+        if (error) { toast.error('Erro: ' + error.message); return; }
     }
+
+    todosRegistros = todosRegistros.filter(x => x.id !== id);
+    renderizarTabela();
+    atualizarKPIs();
+    toast.success('Excluído.');
 }
 
 // --- EXPORT CSV ---
@@ -521,18 +538,18 @@ function exportarCSV() {
     const dados = filtrarRegistros();
     if (!dados.length) { toast.warning('Nenhum dado para exportar.'); return; }
 
-    const cab  = ['Vencimento','Recebimento','Obra','Etapa','Cliente','Descrição','Valor','Forma','Status'];
+    const cab  = ['Data Prevista','Data Recebimento','Obra','Fornecedor','Descrição','Valor','Forma','Parcela','Status'];
     const rows = dados.map(r => [
-        r.vencimento        || '',
+        r.data              || '',
         r.data_recebimento  || '',
         r.obra              || '',
-        r.etapa             || '',
-        r.cliente           || '',
+        r.fornecedor        || '',
         r.descricao         || '',
         r.valor             || 0,
         r.forma             || '',
+        r.total_parcelas > 1 ? `${r.parcela_num}/${r.total_parcelas}` : '',
         statusVisual(r),
-    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+    ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
 
     const csv  = [cab.join(','), ...rows].join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
