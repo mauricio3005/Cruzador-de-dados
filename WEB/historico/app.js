@@ -27,6 +27,7 @@ let fornecedores = [];
 
 let todosRegistros = [];   // resultado completo do filtro atual
 let paginaAtual    = 1;
+let selecionados   = new Set(); // IDs selecionados para vincular comprovante
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -183,23 +184,25 @@ function renderizarTabela() {
     const tbody = document.getElementById('tabelaBody');
 
     if (pagina.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum registro encontrado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum registro encontrado.</td></tr>`;
         document.getElementById('paginacaoWrap').style.display = 'none';
+        atualizarBarraSelecao();
         return;
     }
 
     tbody.innerHTML = pagina.map(r => {
         const data       = r.data ? formatarData(r.data) : '—';
         const valor      = r.valor_total != null ? formatarValor(r.valor_total) : '—';
+        const sel        = selecionados.has(r.id);
         const nfIcon     = r.tem_nota_fiscal && r.comprovante_url
-            ? `<a href="${r.comprovante_url}" target="_blank" title="Ver comprovante" style="color:var(--accent);">
+            ? `<a href="${r.comprovante_url}" target="_blank" title="Ver comprovante" style="color:var(--secondary);">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                 </svg>
                </a>`
             : r.tem_nota_fiscal
-                ? `<span title="NF sem link" style="color:var(--on-surface-muted);">
+                ? `<span title="NF sem link direto" style="color:var(--on-surface-muted);">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                         <polyline points="14 2 14 8 20 8"></polyline>
@@ -207,7 +210,11 @@ function renderizarTabela() {
                    </span>`
                 : '—';
 
-        return `<tr>
+        return `<tr class="${sel ? 'row-selecionada' : ''}">
+            <td style="text-align:center;width:36px;">
+                <input type="checkbox" class="chk-selecao" data-id="${r.id}" ${sel ? 'checked' : ''}
+                    onchange="toggleSelecao(${r.id})" style="cursor:pointer;width:14px;height:14px;">
+            </td>
             <td style="white-space:nowrap;">${data}</td>
             <td>${esc(r.obra)}</td>
             <td>${esc(r.etapa)}</td>
@@ -228,6 +235,8 @@ function renderizarTabela() {
             </td>
         </tr>`;
     }).join('');
+
+    atualizarBarraSelecao();
 
     // Paginação
     const totalPaginas = Math.ceil(totalFiltrado / PAGE_SIZE);
@@ -443,4 +452,91 @@ function setStatus(type, text) {
     if (!el) return;
     el.textContent = text;
     el.className   = `status-dot ${type}`;
+}
+
+// ── SELEÇÃO E VINCULAR COMPROVANTE ──────────────────────────────────────────
+
+function toggleSelecao(id) {
+    if (selecionados.has(id)) selecionados.delete(id);
+    else selecionados.add(id);
+    // atualiza visual da linha sem re-renderizar toda a tabela
+    const chk = document.querySelector(`.chk-selecao[data-id="${id}"]`);
+    if (chk) chk.closest('tr').classList.toggle('row-selecionada', selecionados.has(id));
+    atualizarBarraSelecao();
+}
+
+function atualizarBarraSelecao() {
+    const barra = document.getElementById('barraSelecao');
+    const n = selecionados.size;
+    if (n === 0) { barra.style.display = 'none'; return; }
+    barra.style.display = 'flex';
+    document.getElementById('barraSelecaoInfo').textContent =
+        `${n} despesa${n > 1 ? 's' : ''} selecionada${n > 1 ? 's' : ''}`;
+}
+
+function limparSelecao() {
+    selecionados.clear();
+    document.querySelectorAll('.chk-selecao').forEach(c => c.checked = false);
+    document.querySelectorAll('.row-selecionada').forEach(r => r.classList.remove('row-selecionada'));
+    atualizarBarraSelecao();
+}
+
+function abrirVincularComprovante() {
+    if (selecionados.size === 0) return;
+    const lista = document.getElementById('vincularLista');
+    lista.innerHTML = [...selecionados].map(id => {
+        const r = todosRegistros.find(x => x.id === id);
+        if (!r) return '';
+        return `<div class="file-chip" style="max-width:100%;border-radius:var(--r-md);">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span>${esc(r.fornecedor)} — ${esc(r.descricao)} (${r.data ? formatarData(r.data) : '—'})</span>
+        </div>`;
+    }).join('');
+    document.getElementById('vincularFileInput').value = '';
+    document.getElementById('vincularFileChip').style.display = 'none';
+    document.getElementById('modalVincular').style.display = 'flex';
+}
+
+function fecharModalVincular() {
+    document.getElementById('modalVincular').style.display = 'none';
+}
+
+async function confirmarVincularComprovante() {
+    const input = document.getElementById('vincularFileInput');
+    const file  = input.files[0];
+    if (!file) { toast.warning('Selecione um arquivo.'); return; }
+
+    const btn = document.getElementById('btnConfirmarVincular');
+    btn.disabled = true; btn.textContent = 'Vinculando…';
+
+    try {
+        // Upload único
+        const ext  = file.name.split('.').pop().toLowerCase();
+        const nome = `nf_${crypto.randomUUID().replace(/-/g,'').slice(0,12)}.${ext}`;
+        const { error: upErr } = await dbClient.storage.from('comprovantes').upload(nome, file, { contentType: file.type });
+        if (upErr) throw upErr;
+        const base = window.ENV.SUPABASE_URL.replace(/\/$/, '');
+        const url  = `${base}/storage/v1/object/public/comprovantes/${nome}`;
+
+        // Vincula a todas as despesas selecionadas
+        const ids = [...selecionados];
+        for (const id of ids) {
+            await dbClient.from('comprovantes_despesa').insert({ despesa_id: id, url, nome_arquivo: nome });
+            await dbClient.from('c_despesas').update({ tem_nota_fiscal: true, comprovante_url: url }).eq('id', id);
+            const idx = todosRegistros.findIndex(x => x.id === id);
+            if (idx !== -1) { todosRegistros[idx].tem_nota_fiscal = true; todosRegistros[idx].comprovante_url = url; }
+        }
+
+        fecharModalVincular();
+        limparSelecao();
+        renderizarTabela();
+        toast.success(`Comprovante vinculado a ${ids.length} despesa(s)!`);
+    } catch (e) {
+        toast.error(`Erro: ${e.message}`);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Vincular';
+    }
 }

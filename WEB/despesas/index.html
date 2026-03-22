@@ -86,6 +86,15 @@
                         </svg>
                         Lote com IA
                     </button>
+                    <button class="tab-btn" id="tabTexto" onclick="setModo('texto')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="17" y1="10" x2="3" y2="10"></line>
+                            <line x1="21" y1="6" x2="3" y2="6"></line>
+                            <line x1="21" y1="14" x2="3" y2="14"></line>
+                            <line x1="17" y1="18" x2="3" y2="18"></line>
+                        </svg>
+                        Por Texto
+                    </button>
                 </div>
             </div>
 
@@ -103,8 +112,8 @@
                                     <polyline points="17 8 12 3 7 8"></polyline>
                                     <line x1="12" y1="3" x2="12" y2="15"></line>
                                 </svg>
-                                <span id="uploadZoneText">Arraste ou clique para anexar NF (PDF, JPG, PNG)</span>
-                                <input type="file" id="inputNF" accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+                                <span id="uploadZoneText">Arraste ou clique para anexar NF(s) (PDF, JPG, PNG)</span>
+                                <input type="file" id="inputNF" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none;">
                             </label>
                         </div>
                         <button class="btn btn-secondary" id="btnExtrairIA" disabled>
@@ -194,11 +203,6 @@
             <div id="modoLote" class="matrix-section" style="display:none;border-top-left-radius:0;border-top-right-radius:0;">
                 <div style="padding: var(--sp-5) var(--sp-6);">
 
-                    <div style="margin-bottom:var(--sp-5);max-width:320px;">
-                        <label class="form-label">Obra (todo o lote) *</label>
-                        <select class="form-select" id="lObra"></select>
-                    </div>
-
                     <div style="margin-bottom:var(--sp-5);">
                         <div class="form-label">Notas Fiscais (múltiplos arquivos)</div>
                         <label class="upload-zone" id="loteUploadZone" for="inputLoteNFs">
@@ -231,12 +235,16 @@
                     <div id="loteRevisaoWrap" style="display:none;">
                         <div class="matrix-header" style="padding:0 0 var(--sp-4) 0;">
                             <span class="matrix-title">Revisão do lote — edite antes de cadastrar</span>
+                            <select class="form-select" id="lObraGlobal" style="max-width:220px;" onchange="aplicarObraLoteGlobal(this.value)">
+                                <option value="">Aplicar obra a todas…</option>
+                            </select>
                         </div>
                         <div class="table-wrapper" style="margin-bottom:var(--sp-5);">
                             <table class="styled-table" id="loteTable">
                                 <thead>
                                     <tr>
                                         <th>Arquivo</th>
+                                        <th>Obra</th>
                                         <th>Fornecedor</th>
                                         <th>Descrição</th>
                                         <th>Tipo</th>
@@ -262,6 +270,122 @@
                         </div>
                     </div>
 
+                    <!-- Chat de revisão IA — Lote -->
+                    <div id="chatLoteWrap" class="chat-wrap" style="display:none;">
+                        <div class="matrix-title">Conversar com a IA sobre esse lote</div>
+                        <div id="chatLoteMensagens" class="chat-msgs"></div>
+                        <div class="chat-input-row">
+                            <input type="text" id="chatLoteInput" class="form-input" placeholder="Pergunte ou peça uma correção…"
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviarMensagemChatLote();}">
+                            <button class="btn btn-primary" id="btnChatLoteEnviar" onclick="enviarMensagemChatLote()">Enviar</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- MODO TEXTO -->
+            <div id="modoTexto" class="matrix-section" style="display:none;border-top-left-radius:0;border-top-right-radius:0;">
+                <div style="padding: var(--sp-5) var(--sp-6);">
+                    <p style="font-size:0.85rem;color:var(--on-surface-muted);margin-bottom:var(--sp-4);">
+                        Descreva uma ou mais despesas. A IA identifica fornecedor, valor, data, tipo e categoria.
+                        Anexe as NFs opcionalmente — elas serão atribuídas na mesma ordem das despesas detectadas.
+                    </p>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);margin-bottom:var(--sp-4);">
+                        <!-- Texto -->
+                        <div>
+                            <div class="form-label" style="margin-bottom:var(--sp-2);">Descrição</div>
+                            <textarea id="textoIA"
+                                placeholder="Ex: Paguei R$ 850 de cimento na Loja Silva em 10/03. Também comprei vergalhão na Ferragem Neto por R$ 1.200 no mesmo dia."
+                                style="width:100%;min-height:160px;resize:vertical;padding:var(--sp-3) var(--sp-4);
+                                       border-radius:var(--radius);border:1px solid var(--border);
+                                       background:var(--surface-2);color:var(--on-surface);
+                                       font-family:inherit;font-size:0.9rem;line-height:1.5;box-sizing:border-box;">
+                            </textarea>
+                        </div>
+                        <!-- NFs -->
+                        <div>
+                            <div class="form-label" style="margin-bottom:var(--sp-2);">Notas Fiscais (opcional, em ordem)</div>
+                            <label class="upload-zone" id="uploadZoneTexto" for="inputNFTexto" style="min-height:80px;cursor:pointer;">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                                <span id="uploadZoneTextoText">Clique ou arraste as NFs aqui (PDF, JPG, PNG)</span>
+                                <input type="file" id="inputNFTexto" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none;">
+                            </label>
+                            <div id="nfsTextoChips" style="display:none;margin-top:var(--sp-2);display:flex;flex-wrap:wrap;gap:var(--sp-2);"></div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;">
+                        <button class="btn btn-outline" id="btnVoz" onclick="toggleVoz()" title="Ditar para preencher o texto">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                <line x1="12" y1="19" x2="12" y2="23"></line>
+                                <line x1="8" y1="23" x2="16" y2="23"></line>
+                            </svg>
+                            <span id="btnVozLabel">Falar</span>
+                        </button>
+                        <button class="btn btn-primary" id="btnExtrairTexto" onclick="extrairIATexto()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                            Extrair com IA
+                        </button>
+                        <span id="textoIAStatus" style="font-size:0.8rem;color:var(--on-surface-muted);"></span>
+                    </div>
+
+                    <!-- Revisão de múltiplas despesas -->
+                    <div id="textoRevisaoWrap" style="display:none;margin-top:var(--sp-5);">
+                        <div class="matrix-header" style="padding:0 0 var(--sp-3) 0;">
+                            <span class="matrix-title" id="textoRevisaoTitulo">Despesas detectadas — revise antes de cadastrar</span>
+                        </div>
+                        <div class="table-wrapper" style="margin-bottom:var(--sp-4);">
+                            <table class="styled-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Obra</th>
+                                        <th>Fornecedor</th>
+                                        <th>Descrição</th>
+                                        <th>Tipo</th>
+                                        <th>Etapa</th>
+                                        <th>Categoria</th>
+                                        <th>Valor</th>
+                                        <th>Data</th>
+                                        <th>NF</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="textoRevisaoBody"></tbody>
+                            </table>
+                        </div>
+                        <div style="display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;">
+                            <select class="form-select" id="textoObraGlobal" style="max-width:220px;" onchange="aplicarObraGlobal(this.value)">
+                                <option value="">Aplicar obra a todas…</option>
+                            </select>
+                            <button class="btn btn-primary" id="btnSalvarTodasTexto" onclick="salvarTodasDoTexto()">
+                                Cadastrar todas
+                            </button>
+                            <button class="btn btn-outline" onclick="document.getElementById('textoRevisaoWrap').style.display='none';document.getElementById('chatRevisaoWrap').style.display='none';">Cancelar</button>
+                        </div>
+                    </div>
+
+                    <!-- Chat de revisão IA -->
+                    <div id="chatRevisaoWrap" class="chat-wrap" style="display:none;">
+                        <div class="matrix-title">Conversar com a IA sobre essas despesas</div>
+                        <div id="chatMensagens" class="chat-msgs"></div>
+                        <div class="chat-input-row">
+                            <input type="text" id="chatInput" class="form-input" placeholder="Pergunte ou peça uma correção…"
+                                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();enviarMensagemChat();}">
+                            <button class="btn btn-primary" id="btnChatEnviar" onclick="enviarMensagemChat()">Enviar</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 

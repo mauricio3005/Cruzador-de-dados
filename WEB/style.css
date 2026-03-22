@@ -1672,3 +1672,182 @@ body {
     padding: 0;
 }
 .btn-row-delete:hover { background: var(--error-bg); color: var(--error); }
+
+/* ============================================================
+   CHAT DE REVISÃO IA
+   ============================================================ */
+.chat-wrap {
+    margin-top: var(--sp-5);
+    border-radius: var(--r-xl);
+    background: var(--surface-low);
+    box-shadow: var(--shadow-sm);
+    padding: var(--sp-5) var(--sp-5) var(--sp-4);
+}
+
+.chat-wrap .matrix-title {
+    font-family: var(--font-display);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--on-surface-muted);
+    margin-bottom: var(--sp-4);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+
+.chat-wrap .matrix-title::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--secondary);
+    flex-shrink: 0;
+}
+
+.chat-msgs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    min-height: 100px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: var(--sp-4);
+    background: var(--surface-card);
+    border-radius: var(--r-lg);
+    box-shadow: inset 0 1px 4px rgba(25,28,30,0.05);
+    margin-bottom: var(--sp-4);
+    scrollbar-width: thin;
+    scrollbar-color: var(--outline-ghost) transparent;
+}
+
+.chat-msgs::-webkit-scrollbar { width: 4px; }
+.chat-msgs::-webkit-scrollbar-thumb { background: var(--outline-ghost); border-radius: 4px; }
+
+.chat-bubble {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-width: 78%;
+}
+
+.chat-bubble-ia { align-self: flex-start; }
+.chat-bubble-user { align-self: flex-end; }
+
+.chat-bubble-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--on-surface-muted);
+    padding: 0 var(--sp-1);
+}
+
+.chat-bubble-user .chat-bubble-label {
+    text-align: right;
+}
+
+.chat-bubble-body {
+    padding: 10px 14px;
+    border-radius: var(--r-lg);
+    line-height: 1.55;
+    font-size: 0.875rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-body);
+}
+
+.chat-bubble-ia .chat-bubble-body {
+    background: var(--surface-container);
+    color: var(--on-surface);
+    border-radius: var(--r-sm) var(--r-lg) var(--r-lg) var(--r-lg);
+    box-shadow: var(--shadow-sm);
+}
+
+.chat-bubble-user .chat-bubble-body {
+    background: var(--primary-gradient);
+    color: #ffffff;
+    border-radius: var(--r-lg) var(--r-sm) var(--r-lg) var(--r-lg);
+}
+
+.chat-bubble-system .chat-bubble-body {
+    background: none;
+    color: var(--on-surface-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+    text-align: center;
+    padding: 4px 0;
+    align-self: center;
+    max-width: 100%;
+}
+
+.chat-input-row {
+    display: flex;
+    gap: var(--sp-2);
+    align-items: center;
+}
+
+.chat-input-row .form-input {
+    flex: 1;
+    background: var(--surface-card);
+    border: none;
+    border-bottom: 2px solid var(--outline-ghost);
+    border-radius: var(--r-md) var(--r-md) 0 0;
+    transition: border-color 0.18s;
+    font-size: 0.875rem;
+}
+
+.chat-input-row .form-input:focus {
+    outline: none;
+    border-bottom-color: var(--secondary);
+    background: var(--surface-card);
+}
+
+/* ── File chips (NF attachments) ── */
+.file-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 8px;
+    background: var(--surface-container);
+    border-radius: var(--r-full);
+    font-size: 0.8125rem;
+    color: var(--on-surface-variant);
+    max-width: 220px;
+    box-shadow: var(--shadow-sm);
+}
+
+.file-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-chip-remove {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-radius: 50%;
+    color: var(--on-surface-muted);
+    transition: background 0.15s, color 0.15s;
+    padding: 0;
+    line-height: 1;
+}
+
+.file-chip-remove:hover {
+    background: var(--error-bg);
+    color: var(--error);
+}
+
+/* ── Row selection highlight ── */
+tr.row-selecionada td {
+    background: rgba(71, 96, 126, 0.07);
+}

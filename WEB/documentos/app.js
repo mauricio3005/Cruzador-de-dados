@@ -199,9 +199,7 @@ function renderizarTabela() {
                          ${iconePaperclip} Gerenciar NFs
                      </button>`;
         } else {
-            nfBadge = r.tem_nota_fiscal
-                ? `<span style="font-size:0.75rem;color:var(--on-surface-muted);">NF sem link</span>`
-                : `<span style="font-size:0.75rem;color:var(--on-surface-muted);">—</span>`;
+            nfBadge = `<span style="font-size:0.75rem;color:var(--on-surface-muted);">—</span>`;
             acoes = `<button class="btn btn-outline" onclick="abrirModalAnexar(${r.id})"
                              style="font-size:0.75rem;padding:3px 10px;white-space:nowrap;">
                          ${iconePaperclip} Anexar NF
@@ -325,13 +323,7 @@ function fecharModalAnexar() {
 function selecionarArquivos(files) {
     arquivosAnexar = Array.from(files);
     const n = arquivosAnexar.length;
-    if (n < 2) {
-        document.getElementById('uploadZoneAnexarText').textContent = 'Selecione ao menos 2 arquivos (comprovante + nota fiscal).';
-        document.getElementById('uploadZoneAnexar').style.borderColor = 'var(--error, #e55)';
-        document.getElementById('btnConfirmarAnexar').disabled = true;
-        return;
-    }
-    document.getElementById('uploadZoneAnexarText').textContent = `${n} arquivos selecionados`;
+    document.getElementById('uploadZoneAnexarText').textContent = n === 1 ? `📎 ${arquivosAnexar[0].name}` : `📎 ${n} arquivos selecionados`;
     document.getElementById('uploadZoneAnexar').style.borderColor = 'var(--accent)';
     document.getElementById('btnConfirmarAnexar').disabled = false;
 }

@@ -155,6 +155,11 @@
                     <table class="styled-table" id="tabelaHistorico">
                         <thead>
                             <tr>
+                                <th style="width:36px;text-align:center;">
+                                    <input type="checkbox" id="chkTodos" title="Selecionar/limpar todos da página"
+                                        onchange="if(this.checked){document.querySelectorAll('.chk-selecao').forEach(c=>{selecionados.add(parseInt(c.dataset.id));c.checked=true;c.closest('tr').classList.add('row-selecionada')});}else{limparSelecao();}atualizarBarraSelecao();"
+                                        style="cursor:pointer;width:14px;height:14px;">
+                                </th>
                                 <th>Data</th>
                                 <th>Obra</th>
                                 <th>Etapa</th>
@@ -169,7 +174,7 @@
                             </tr>
                         </thead>
                         <tbody id="tabelaBody">
-                            <tr><td colspan="11" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Use os filtros acima e clique em Filtrar.</td></tr>
+                            <tr><td colspan="12" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Use os filtros acima e clique em Filtrar.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -185,6 +190,79 @@
         </main>
     </div>
 
+</div>
+
+<!-- BARRA FLUTUANTE DE SELEÇÃO -->
+<div id="barraSelecao" style="
+    display:none;
+    position:fixed;
+    bottom:var(--sp-6);
+    left:50%;
+    transform:translateX(-50%);
+    z-index:900;
+    background:var(--primary-container);
+    color:var(--primary-fixed);
+    border-radius:var(--r-full);
+    padding:10px 20px;
+    gap:var(--sp-4);
+    align-items:center;
+    box-shadow:var(--shadow-float);
+    font-size:0.875rem;
+    font-weight:500;
+    white-space:nowrap;
+">
+    <span id="barraSelecaoInfo"></span>
+    <button class="btn btn-primary" style="border-radius:var(--r-full);padding:6px 18px;font-size:0.8125rem;"
+        onclick="abrirVincularComprovante()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+        </svg>
+        Vincular comprovante
+    </button>
+    <button onclick="limparSelecao()" style="background:none;border:none;cursor:pointer;color:var(--primary-fixed);opacity:0.7;font-size:1rem;line-height:1;padding:0 4px;" title="Limpar seleção">✕</button>
+</div>
+
+<!-- MODAL VINCULAR COMPROVANTE -->
+<div id="modalVincular" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.45);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface-card);border-radius:var(--r-xl);padding:var(--sp-6);width:min(520px,95vw);max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-float);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
+            <h2 style="font-size:1.125rem;font-weight:700;font-family:var(--font-display);">Vincular Comprovante</h2>
+            <button onclick="fecharModalVincular()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <p style="font-size:0.875rem;color:var(--on-surface-muted);margin-bottom:var(--sp-4);">
+            O arquivo será enviado uma única vez e vinculado a todas as despesas abaixo.
+        </p>
+
+        <div id="vincularLista" style="display:flex;flex-direction:column;gap:var(--sp-2);margin-bottom:var(--sp-5);"></div>
+
+        <div style="margin-bottom:var(--sp-5);">
+            <label class="form-label" style="margin-bottom:var(--sp-2);">Arquivo do comprovante (PDF, JPG, PNG)</label>
+            <label class="upload-zone" for="vincularFileInput" style="min-height:80px;cursor:pointer;"
+                ondragover="event.preventDefault();this.style.borderColor='var(--secondary)';"
+                ondragleave="this.style.borderColor='';"
+                ondrop="event.preventDefault();this.style.borderColor='';if(event.dataTransfer.files[0]){document.getElementById('vincularFileInput').files=event.dataTransfer.files;const f=event.dataTransfer.files[0];const c=document.getElementById('vincularFileChip');c.textContent='📎 '+f.name;c.style.display='block';}">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span>Clique ou arraste o comprovante aqui</span>
+                <input type="file" id="vincularFileInput" accept=".pdf,.jpg,.jpeg,.png" style="display:none;"
+                    onchange="const f=this.files[0];if(f){const c=document.getElementById('vincularFileChip');c.textContent='📎 '+f.name;c.style.display='block';}">
+            </label>
+            <div id="vincularFileChip" style="display:none;margin-top:var(--sp-2);font-size:0.8125rem;color:var(--on-surface-variant);"></div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);">
+            <button class="btn btn-outline" onclick="fecharModalVincular()">Cancelar</button>
+            <button class="btn btn-primary" id="btnConfirmarVincular" onclick="confirmarVincularComprovante()" style="min-width:120px;">Vincular</button>
+        </div>
+    </div>
 </div>
 
 <!-- MODAL EDITAR -->
