@@ -11,7 +11,6 @@ const NAV_ITEMS = [
     { icon: "📄", label: "Documentos",       path: "/documentos/",       done: true  },
     { icon: "💳", label: "Contas a Pagar",   path: "/contas/",           done: true  },
     { icon: "💰", label: "Recebimentos",     path: "/recebimentos/",     done: true  },
-    { icon: "📝", label: "Contratos",        path: "/contratos/",        done: true  },
     { icon: "⚙️", label: "Configurações",    path: "/configuracoes/",    done: true  },
 ];
 

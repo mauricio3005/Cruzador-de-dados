@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurações — Industrial Architect</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+    <script src="../env.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+<div class="app-shell">
+
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <div class="sidebar-brand-text">
+                <span class="sidebar-brand-name">Industrial Architect</span>
+                <span class="sidebar-brand-sub">Finance Suite</span>
+            </div>
+        </div>
+        <div class="sidebar-nav-wrap" id="main-nav"></div>
+        <div class="sidebar-footer">
+            <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
+        </div>
+    </aside>
+
+    <div class="content-shell">
+
+        <header class="topbar">
+            <div class="topbar-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="buscaTexto" placeholder="Buscar...">
+            </div>
+            <div class="topbar-actions">
+                <div class="topbar-avatar" title="Usuário">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+
+            <div class="page-hero">
+                <div>
+                    <h1>Configurações</h1>
+                    <p class="page-hero-sub">Gerencie obras, etapas, orçamentos e tabelas de referência.</p>
+                </div>
+            </div>
+
+            <!-- TABS -->
+            <div class="sub-tabs" id="configTabs">
+                <button class="sub-tab-btn active" data-tab="obras">Obras</button>
+                <button class="sub-tab-btn" data-tab="etapas">Etapas</button>
+                <button class="sub-tab-btn" data-tab="orcamentos">Orçamentos</button>
+                <button class="sub-tab-btn" data-tab="taxa">Taxa de Conclusão</button>
+                <button class="sub-tab-btn" data-tab="formas">Formas de Pagamento</button>
+                <button class="sub-tab-btn" data-tab="categorias">Categorias de Despesa</button>
+                <button class="sub-tab-btn" data-tab="regras">Regras de Serviço</button>
+            </div>
+
+            <!-- ── TAB: OBRAS ──────────────────────────────────────────────── -->
+            <div class="sub-tab-pane active" id="pane-obras">
+                <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Obras cadastradas</span>
+                        <button class="btn btn-primary" id="btnNovaObra" style="font-size:0.8125rem;">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Nova Obra
+                        </button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="styled-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th>Descrição</th>
+                                    <th>Contrato</th>
+                                    <th>ART</th>
+                                    <th style="text-align:center;">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaObras">
+                                <tr><td colspan="5" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Carregando…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TAB: ETAPAS ─────────────────────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-etapas">
+                <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Etapas</span>
+                        <button class="btn btn-primary" id="btnNovaEtapa" style="font-size:0.8125rem;">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Nova Etapa
+                        </button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="styled-table">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th>
+                                    <th style="width:120px;">Ordem</th>
+                                    <th style="text-align:center;">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaEtapas">
+                                <tr><td colspan="3" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Carregando…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="padding:var(--sp-4) var(--sp-6);border-top:1px solid var(--outline-ghost);">
+                        <button class="btn btn-primary" id="btnSalvarOrdemEtapas" style="font-size:0.8125rem;">Salvar Ordem</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TAB: ORÇAMENTOS ─────────────────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-orcamentos">
+                <div style="display:flex;align-items:center;gap:var(--sp-4);margin-bottom:var(--sp-5);">
+                    <div style="width:260px;">
+                        <label class="form-label">Obra</label>
+                        <select class="form-select" id="obraOrcamento"></select>
+                    </div>
+                </div>
+                <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Orçamento por Etapa e Tipo de Custo</span>
+                        <button class="btn btn-primary" id="btnSalvarOrcamentos" style="font-size:0.8125rem;">Salvar Orçamentos</button>
+                    </div>
+                    <div class="table-wrapper" id="tabelaOrcamentosWrap">
+                        <p style="padding:var(--sp-6);color:var(--on-surface-muted);">Selecione uma obra para editar os orçamentos.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TAB: TAXA DE CONCLUSÃO ──────────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-taxa">
+                <div style="display:flex;align-items:center;gap:var(--sp-4);margin-bottom:var(--sp-5);">
+                    <div style="width:260px;">
+                        <label class="form-label">Obra</label>
+                        <select class="form-select" id="obraTaxa"></select>
+                    </div>
+                </div>
+                <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Taxa de Conclusão por Etapa (%)</span>
+                        <button class="btn btn-primary" id="btnSalvarTaxa" style="font-size:0.8125rem;">Salvar Taxas</button>
+                    </div>
+                    <div class="table-wrapper" id="tabelaTaxaWrap">
+                        <p style="padding:var(--sp-6);color:var(--on-surface-muted);">Selecione uma obra para editar as taxas.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TAB: FORMAS DE PAGAMENTO ────────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-formas">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-6);align-items:start;">
+                    <div class="matrix-section">
+                        <div class="matrix-header">
+                            <span class="matrix-title">Formas cadastradas</span>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="styled-table">
+                                <thead><tr><th>Nome</th><th style="text-align:center;">Ações</th></tr></thead>
+                                <tbody id="tabelaFormas">
+                                    <tr><td colspan="2" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Carregando…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="matrix-section" style="padding:var(--sp-6);">
+                        <h3 style="font-size:0.9375rem;font-weight:600;margin-bottom:var(--sp-4);">Nova Forma</h3>
+                        <div style="display:flex;gap:var(--sp-3);">
+                            <input type="text" class="form-input" id="inputNovaForma" placeholder="Ex: Cheque" style="flex:1;">
+                            <button class="btn btn-primary" id="btnAdicionarForma">Adicionar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TAB: CATEGORIAS DE DESPESA ──────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-categorias">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-6);align-items:start;">
+                    <div class="matrix-section">
+                        <div class="matrix-header">
+                            <span class="matrix-title">Categorias cadastradas</span>
+                            <span id="totalCategorias" style="font-size:0.8125rem;color:var(--on-surface-muted);"></span>
+                        </div>
+                        <div style="padding:var(--sp-3) var(--sp-6);">
+                            <input type="text" class="form-input" id="buscaCategoria" placeholder="Buscar categoria...">
+                        </div>
+                        <div class="table-wrapper" style="max-height:420px;overflow-y:auto;">
+                            <table class="styled-table">
+                                <thead><tr><th>Nome</th><th style="text-align:center;">Ações</th></tr></thead>
+                                <tbody id="tabelaCategorias">
+                                    <tr><td colspan="2" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Carregando…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="matrix-section" style="padding:var(--sp-6);">
+                        <h3 style="font-size:0.9375rem;font-weight:600;margin-bottom:var(--sp-4);">Nova Categoria</h3>
+                        <div style="display:flex;gap:var(--sp-3);">
+                            <input type="text" class="form-input" id="inputNovaCategoria" placeholder="Ex: FERRAMENTAS" style="flex:1;">
+                            <button class="btn btn-primary" id="btnAdicionarCategoria">Adicionar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TAB: REGRAS DE SERVIÇO ──────────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-regras">
+                <div style="display:flex;align-items:center;gap:var(--sp-4);margin-bottom:var(--sp-5);">
+                    <div style="width:260px;">
+                        <label class="form-label">Obra</label>
+                        <select class="form-select" id="obraRegras"></select>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-6);align-items:start;">
+                    <div class="matrix-section">
+                        <div class="matrix-header">
+                            <span class="matrix-title">Regras cadastradas</span>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="styled-table">
+                                <thead>
+                                    <tr>
+                                        <th>Serviço</th>
+                                        <th>Tipo</th>
+                                        <th class="text-right">Valor (R$)</th>
+                                        <th style="text-align:center;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tabelaRegras">
+                                    <tr><td colspan="4" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Selecione uma obra.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="matrix-section" style="padding:var(--sp-6);">
+                        <h3 style="font-size:0.9375rem;font-weight:600;margin-bottom:var(--sp-4);">Nova Regra</h3>
+                        <div style="display:grid;gap:var(--sp-3);">
+                            <div>
+                                <label class="form-label">Serviço *</label>
+                                <input type="text" class="form-input" id="inputNovoServico" placeholder="Ex: Pedreiro">
+                            </div>
+                            <div>
+                                <label class="form-label">Tipo</label>
+                                <select class="form-select" id="selectNovoTipoRegra">
+                                    <option value="diaria">Diária</option>
+                                    <option value="m2">M²</option>
+                                    <option value="fixo">Fixo</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label">Valor (R$)</label>
+                                <input type="number" class="form-input" id="inputNovoValorRegra" placeholder="0,00" min="0" step="0.01">
+                            </div>
+                            <button class="btn btn-primary" id="btnAdicionarRegra">Adicionar Regra</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+</div>
+
+<!-- MODAL OBRA (add / edit) -->
+<div id="modalObra" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(560px,95vw);box-shadow:0 24px 64px rgba(0,0,0,0.4);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
+            <h2 id="modalObraTitulo" style="font-size:1.125rem;font-weight:700;color:var(--on-surface);">Nova Obra</h2>
+            <button onclick="fecharModalObra()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);">
+            <div style="grid-column:1/-1;">
+                <label class="form-label">Nome *</label>
+                <input type="text" class="form-input" id="oNome" placeholder="Ex: Casa Busca Vida">
+                <input type="hidden" id="oNomeOriginal">
+            </div>
+            <div>
+                <label class="form-label">Descrição</label>
+                <input type="text" class="form-input" id="oDescricao" placeholder="Descrição breve">
+            </div>
+            <div>
+                <label class="form-label">Contrato</label>
+                <input type="text" class="form-input" id="oContrato" placeholder="Nº do contrato">
+            </div>
+            <div style="grid-column:1/-1;">
+                <label class="form-label">ART</label>
+                <input type="text" class="form-input" id="oArt" placeholder="Nº da ART">
+            </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);margin-top:var(--sp-5);">
+            <button class="btn btn-outline" onclick="fecharModalObra()">Cancelar</button>
+            <button class="btn btn-primary" id="btnSalvarObra" style="min-width:100px;">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL ETAPA (add / edit) -->
+<div id="modalEtapa" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(420px,95vw);box-shadow:0 24px 64px rgba(0,0,0,0.4);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
+            <h2 id="modalEtapaTitulo" style="font-size:1.125rem;font-weight:700;color:var(--on-surface);">Nova Etapa</h2>
+            <button onclick="fecharModalEtapa()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 100px;gap:var(--sp-4);">
+            <div>
+                <label class="form-label">Nome *</label>
+                <input type="text" class="form-input" id="etNome" placeholder="Ex: Fundação">
+                <input type="hidden" id="etNomeOriginal">
+            </div>
+            <div>
+                <label class="form-label">Ordem</label>
+                <input type="number" class="form-input" id="etOrdem" value="999" min="0" step="1">
+            </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);margin-top:var(--sp-5);">
+            <button class="btn btn-outline" onclick="fecharModalEtapa()">Cancelar</button>
+            <button class="btn btn-primary" id="btnSalvarEtapa" style="min-width:100px;">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<script src="../components/toast.js"></script>
+<script src="../components/nav.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

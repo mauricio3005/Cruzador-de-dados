@@ -287,7 +287,7 @@ function abrirModal(id) {
     editandoId = id;
     document.getElementById('modalRecTitulo').textContent = id ? 'Editar Recebimento' : 'Novo Recebimento';
 
-    ['rFornecedor','rDescricao','rObservacao','rBanco'].forEach(i => document.getElementById(i).value = '');
+    ['rFornecedor','rDescricao','rBanco'].forEach(i => document.getElementById(i).value = '');
     document.getElementById('rValor').value = '';
     document.getElementById('rData').value  = hoje();
     document.getElementById('rUsarParcelas').checked = false;
@@ -305,7 +305,6 @@ function abrirModal(id) {
         if (r) {
             document.getElementById('rFornecedor').value = r.fornecedor || '';
             document.getElementById('rDescricao').value  = r.descricao  || '';
-            document.getElementById('rObservacao').value = r.observacao || '';
             document.getElementById('rBanco').value      = r.banco      || '';
             document.getElementById('rValor').value      = r.valor      || '';
             document.getElementById('rData').value       = r.data       || '';
@@ -367,7 +366,6 @@ async function salvarRecebimento() {
         forma:      document.getElementById('rForma').value   || null,
         banco:      document.getElementById('rBanco').value.trim()      || null,
         descricao:  document.getElementById('rDescricao').value.trim()  || null,
-        observacao: document.getElementById('rObservacao').value.trim() || null,
     };
 
     const btn = document.getElementById('btnSalvarRec');

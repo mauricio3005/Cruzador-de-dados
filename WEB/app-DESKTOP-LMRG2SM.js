@@ -363,7 +363,7 @@ async function atualizarFluxoCaixa(gastoTotal) {
     if (!dbClient) { section.style.display = 'none'; return; }
 
     try {
-        const [resRec, resCap, resCtr] = await Promise.all([
+        const [resRec, resCap] = await Promise.all([
             dbClient.from('recebimentos')
                 .select('valor')
                 .in('obra', currentObraFilters),
@@ -371,29 +371,10 @@ async function atualizarFluxoCaixa(gastoTotal) {
                 .select('valor')
                 .in('obra', currentObraFilters)
                 .in('status', ['pendente', 'vencido']),
-            dbClient.from('contratos')
-                .select('id, valor_total')
-                .in('obra', currentObraFilters),
         ]);
 
         const recebido    = (resRec.data  || []).reduce((s, r) => s + Number(r.valor || 0), 0);
         const aPagar      = (resCap.data  || []).reduce((s, r) => s + Number(r.valor || 0), 0);
-
-        // Contratos — busca pagamentos dos contratos encontrados
-        const ctrTotal = (resCtr.data || []).reduce((s, c) => s + Number(c.valor_total || 0), 0);
-        let ctrPago = 0;
-        const ctrIds = (resCtr.data || []).map(c => c.id);
-        if (ctrIds.length > 0) {
-            const { data: pagData } = await dbClient
-                .from('contratos_pagamentos')
-                .select('valor')
-                .in('contrato_id', ctrIds);
-            ctrPago = (pagData || []).reduce((s, p) => s + Number(p.valor || 0), 0);
-        }
-
-        document.getElementById('fluxoContratosTotal').textContent     = formatCurrency(ctrTotal);
-        document.getElementById('fluxoContratosPago').textContent      = formatCurrency(ctrPago);
-        document.getElementById('fluxoContratosRestante').textContent  = formatCurrency(ctrTotal - ctrPago);
         const saldoAtual  = recebido - gastoTotal;
         const saldoProj   = recebido - gastoTotal - aPagar;
 
@@ -432,12 +413,6 @@ function resetarKPIs() {
     document.getElementById('kpiRealizacao').textContent  = '—%';
     document.getElementById('kpiRealizacaoMin').textContent = '0%';
     document.getElementById('kpiRealizacaoBar').style.width = '0%';
-    const ctrTotalEl    = document.getElementById('fluxoContratosTotal');
-    const ctrPagoEl     = document.getElementById('fluxoContratosPago');
-    const ctrRestanteEl = document.getElementById('fluxoContratosRestante');
-    if (ctrTotalEl)    ctrTotalEl.textContent    = 'R$ —';
-    if (ctrPagoEl)     ctrPagoEl.textContent     = 'R$ —';
-    if (ctrRestanteEl) ctrRestanteEl.textContent = 'R$ —';
 }
 
 function setStatus(type, text) {
