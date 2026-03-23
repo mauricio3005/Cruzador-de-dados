@@ -218,8 +218,11 @@
                 <input type="date" class="form-input" id="cDataAssinatura">
             </div>
             <div style="grid-column:1/-1;">
-                <label class="form-label">Etapas * <span style="font-weight:400;color:var(--on-surface-muted);">(selecione uma ou mais)</span></label>
-                <div id="cEtapasContainer" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:var(--sp-2);background:var(--surface-low);border-radius:var(--radius-md);padding:var(--sp-3);max-height:160px;overflow-y:auto;border:1px solid var(--outline-ghost);">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-2);">
+                    <label class="form-label" style="margin-bottom:0;">Etapas * <span style="font-weight:400;color:var(--on-surface-muted);">(selecione uma ou mais)</span></label>
+                    <button type="button" onclick="selecionarTodasEtapas()" style="font-size:0.72rem;padding:3px 10px;border-radius:20px;border:1px solid var(--outline-ghost);background:var(--surface-low);color:var(--on-surface-muted);cursor:pointer;font-weight:600;letter-spacing:0.04em;transition:all 0.15s;" id="btnTodasEtapas">TODOS</button>
+                </div>
+                <div id="cEtapasContainer" style="display:flex;flex-wrap:wrap;gap:6px;background:var(--surface-low);border-radius:var(--radius-md);padding:var(--sp-3);max-height:160px;overflow-y:auto;border:1px solid var(--outline-ghost);">
                     <span style="color:var(--on-surface-muted);font-size:0.8rem;">Carregando etapas…</span>
                 </div>
             </div>

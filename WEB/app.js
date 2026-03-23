@@ -367,17 +367,18 @@ async function atualizarFluxoCaixa(gastoTotal) {
             dbClient.from('recebimentos')
                 .select('valor')
                 .in('obra', currentObraFilters),
-            dbClient.from('contas_a_pagar')
-                .select('valor')
+            dbClient.from('c_despesas')
+                .select('valor_total')
                 .in('obra', currentObraFilters)
-                .in('status', ['pendente', 'vencido']),
+                .not('vencimento', 'is', null)
+                .eq('paga', false),
             dbClient.from('contratos')
                 .select('id, valor_total')
                 .in('obra', currentObraFilters),
         ]);
 
         const recebido    = (resRec.data  || []).reduce((s, r) => s + Number(r.valor || 0), 0);
-        const aPagar      = (resCap.data  || []).reduce((s, r) => s + Number(r.valor || 0), 0);
+        const aPagar      = (resCap.data  || []).reduce((s, r) => s + Number(r.valor_total || 0), 0);
 
         // Contratos — busca pagamentos dos contratos encontrados
         const ctrTotal = (resCtr.data || []).reduce((s, c) => s + Number(c.valor_total || 0), 0);
@@ -509,6 +510,13 @@ function abrirModalRelatorio(obraNome) {
                     </label>
                 </div>
 
+                <div id="porEtapaWrap" style="display:none;margin-bottom:var(--sp-5);">
+                    <label style="display:flex;align-items:center;gap:var(--sp-3);cursor:pointer;font-size:0.875rem;color:var(--on-surface);">
+                        <input type="checkbox" id="relPorEtapa" style="width:16px;height:16px;cursor:pointer;accent-color:var(--primary);">
+                        Detalhar por etapa
+                    </label>
+                </div>
+
                 <div id="admDateRange" style="display:none;">
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);margin-bottom:var(--sp-5);">
                         <div>
@@ -552,21 +560,30 @@ function abrirModalRelatorio(obraNome) {
         radio.addEventListener('change', () => {
             modal.querySelectorAll('.radio-pill').forEach(p => p.classList.remove('active'));
             radio.parentElement.classList.add('active');
-            document.getElementById('admDateRange').style.display =
-                radio.value === 'administrativo' ? 'block' : 'none';
+            const isAdm = radio.value === 'administrativo';
+            const isDetalhado = radio.value === 'detalhado';
+            document.getElementById('admDateRange').style.display = isAdm ? 'block' : 'none';
+            document.getElementById('porEtapaWrap').style.display = (isAdm || isDetalhado) ? 'block' : 'none';
+            // detalhado: por etapa marcado por padrão; administrativo: desmarcado
+            document.getElementById('relPorEtapa').checked = isDetalhado;
         });
     });
 
     // Gerar
     document.getElementById('modalRelatorioGerar').addEventListener('click', () => {
         const tipo = modal.querySelector('input[name="tipoRel"]:checked').value;
-        let url = `http://localhost:8000/api/relatorio/pdf?obra=${encodeURIComponent(obraNome)}&tipo=${tipo}`;
+        const porEtapa = document.getElementById('relPorEtapa').checked;
+        let url = `http://${location.hostname}:8000/api/relatorio/pdf?obra=${encodeURIComponent(obraNome)}&tipo=${tipo}`;
 
         if (tipo === 'administrativo') {
             const ini = document.getElementById('relDataIni').value;
             const fim = document.getElementById('relDataFim').value;
             if (!ini || !fim) { toast.warning('Informe o período para o relatório administrativo.'); return; }
             url += `&data_ini=${ini}&data_fim=${fim}`;
+        }
+
+        if (tipo === 'detalhado' || tipo === 'administrativo') {
+            url += `&por_etapa=${porEtapa}`;
         }
 
         fechar();

@@ -94,11 +94,13 @@ function popularSelect(id, opcoes, placeholder) {
 async function carregarDocs() {
     if (!dbClient) return;
 
-    const dataIni = document.getElementById('filtroDataIni').value;
-    const dataFim = document.getElementById('filtroDataFim').value;
-    const obra    = document.getElementById('filtroObra').value;
-    const etapa   = document.getElementById('filtroEtapa').value;
-    const nf      = document.getElementById('filtroNF').value;
+    const dataIni    = document.getElementById('filtroDataIni').value;
+    const dataFim    = document.getElementById('filtroDataFim').value;
+    const obra       = document.getElementById('filtroObra').value;
+    const etapa      = document.getElementById('filtroEtapa').value;
+    const nf         = document.getElementById('filtroNF').value;
+    const fornecedor = document.getElementById('filtroFornecedor').value.trim();
+    const descricao  = document.getElementById('filtroDescricao').value.trim();
 
     document.getElementById('tabelaLoading').style.display = 'flex';
 
@@ -113,8 +115,10 @@ async function carregarDocs() {
         if (dataFim) q = q.lte('data', dataFim);
         if (obra)    q = q.eq('obra', obra);
         if (etapa)   q = q.eq('etapa', etapa);
-        if (nf === 'com') q = q.eq('tem_nota_fiscal', true);
-        if (nf === 'sem') q = q.eq('tem_nota_fiscal', false);
+        if (nf === 'com')   q = q.eq('tem_nota_fiscal', true);
+        if (nf === 'sem')   q = q.eq('tem_nota_fiscal', false);
+        if (fornecedor)     q = q.ilike('fornecedor', `%${fornecedor}%`);
+        if (descricao)      q = q.ilike('descricao',  `%${descricao}%`);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -254,8 +258,10 @@ function limparFiltros() {
     document.getElementById('filtroDataFim').value = hoje.toISOString().split('T')[0];
     document.getElementById('filtroObra').value    = '';
     document.getElementById('filtroEtapa').value   = '';
-    document.getElementById('filtroNF').value      = '';
-    document.getElementById('buscaTexto').value    = '';
+    document.getElementById('filtroNF').value          = '';
+    document.getElementById('filtroFornecedor').value  = '';
+    document.getElementById('filtroDescricao').value   = '';
+    document.getElementById('buscaTexto').value        = '';
     paginaAtual = 1;
     carregarDocs();
 }
@@ -388,7 +394,7 @@ async function removerNFItem(nfId, despesaId) {
 
     try {
         // Deleta via backend (service key tem permissão no bucket)
-        const res = await fetch(`http://localhost:8000/api/documentos/nf/${nfId}`, { method: 'DELETE' });
+        const res = await fetch(`http://${location.hostname}:8000/api/documentos/nf/${nfId}`, { method: 'DELETE' });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || `HTTP ${res.status}`);

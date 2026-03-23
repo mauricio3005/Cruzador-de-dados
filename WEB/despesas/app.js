@@ -3,7 +3,7 @@
  * Despesas (app.js)
  */
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = `http://${location.hostname}:8000`;
 
 // --- SUPABASE ---
 let dbClient;

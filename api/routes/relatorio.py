@@ -35,6 +35,7 @@ def gerar_pdf(
     tipo: str = Query("simples", description="simples | detalhado | administrativo"),
     data_ini: str = Query(None, description="Data inicial YYYY-MM-DD (só administrativo)"),
     data_fim: str = Query(None, description="Data final YYYY-MM-DD (só administrativo)"),
+    por_etapa: bool = Query(True, description="Detalhamento por etapa (detalhado/administrativo)"),
 ):
     """Gera relatório PDF da obra e retorna como download."""
     sb  = _get_supabase()
@@ -57,6 +58,17 @@ def gerar_pdf(
         # ── Despesas (todas) ─────────────────────────────────────────────────
         res_desp = sb.table("c_despesas").select("obra, etapa, tipo, valor_total, data, fornecedor, descricao").eq("obra", obra).execute()
         df_desp  = pd.DataFrame(res_desp.data or [])
+
+        # ── Recebimentos ────────────────────────────────────────────────────
+        res_receb = sb.table("recebimentos").select("data, valor, fornecedor, descricao, forma, parcela_num, total_parcelas").eq("obra", obra).execute()
+        df_receb  = pd.DataFrame(res_receb.data or [])
+        if not df_receb.empty:
+            df_receb = df_receb.rename(columns={
+                "data": "DATA", "valor": "VALOR", "fornecedor": "FORNECEDOR",
+                "descricao": "DESCRICAO", "forma": "FORMA",
+                "parcela_num": "PARCELA_NUM", "total_parcelas": "TOTAL_PARCELAS",
+            })
+            df_receb["VALOR"] = pd.to_numeric(df_receb["VALOR"], errors="coerce").fillna(0)
 
         # ── Montar df_raw (formato esperado por relatorio.py) ─────────────────
         if not df_orc.empty:
@@ -85,12 +97,17 @@ def gerar_pdf(
         )
 
         if not df_orc.empty and not gastos.empty:
-            df_raw = pd.merge(df_orc, gastos, on=["OBRA", "ETAPA", "TIPO_CUSTO"], how="left")
+            df_raw = pd.merge(df_orc, gastos, on=["OBRA", "ETAPA", "TIPO_CUSTO"], how="outer")
+            df_raw["ORÇAMENTO_ESTIMADO"] = df_raw["ORÇAMENTO_ESTIMADO"].fillna(0)
+            df_raw["OBRA"] = df_raw["OBRA"].fillna(obra)
         elif not df_orc.empty:
             df_raw = df_orc.copy()
             df_raw["GASTO_REALIZADO"] = 0
+        elif not gastos.empty:
+            df_raw = gastos.copy()
+            df_raw["ORÇAMENTO_ESTIMADO"] = 0
         else:
-            raise HTTPException(status_code=404, detail=f"Obra '{obra}' não encontrada ou sem orçamentos")
+            raise HTTPException(status_code=404, detail=f"Obra '{obra}' não encontrada ou sem dados")
 
         df_raw["GASTO_REALIZADO"] = df_raw["GASTO_REALIZADO"].fillna(0)
 
@@ -109,16 +126,25 @@ def gerar_pdf(
         df_semana = df_desp[df_desp["DATA"] >= sete_dias_atras].copy() if not df_desp.empty else pd.DataFrame()
 
         # ── Chamar função de relatório ────────────────────────────────────────
+        df_receb_param = df_receb if not df_receb.empty else None
+
         if tipo == "detalhado":
-            pdf_bytes = rel.gerar_relatorio_detalhado(df_raw, obra, df_semana if not df_semana.empty else None, obra_info)
+            pdf_bytes = rel.gerar_relatorio_detalhado(
+                df_raw, obra,
+                df_semana if not df_semana.empty else None,
+                obra_info,
+                por_etapa=por_etapa,
+                df_despesas_todas=df_desp if not df_desp.empty else None,
+                df_recebimentos=df_receb_param,
+            )
         elif tipo == "administrativo":
             if not data_ini or not data_fim:
                 raise HTTPException(status_code=422, detail="data_ini e data_fim obrigatórios para relatório administrativo")
             dt_ini = datetime.strptime(data_ini, "%Y-%m-%d")
             dt_fim = datetime.strptime(data_fim, "%Y-%m-%d")
-            pdf_bytes = rel.gerar_relatorio_administrativo(df_desp, obra, dt_ini, dt_fim, obra_info)
+            pdf_bytes = rel.gerar_relatorio_administrativo(df_desp, obra, dt_ini, dt_fim, obra_info, por_etapa=por_etapa, df_recebimentos=df_receb_param)
         else:
-            pdf_bytes = rel.gerar_relatorio_simples(df_raw, obra, df_semana if not df_semana.empty else None, obra_info)
+            pdf_bytes = rel.gerar_relatorio_simples(df_raw, obra, df_semana if not df_semana.empty else None, obra_info, df_recebimentos=df_receb_param)
 
         nome_arquivo = f"relatorio_{obra.replace(' ', '_')}_{tipo}.pdf"
         return StreamingResponse(

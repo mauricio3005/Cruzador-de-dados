@@ -3,7 +3,7 @@
  * Histórico de Despesas (app.js)
  */
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = `http://${location.hostname}:8000`;
 const PAGE_SIZE = 50;
 
 // --- SUPABASE ---
@@ -34,10 +34,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     carregarEnv();
     await carregarReferencias();
 
-    // Datas padrão: últimos 90 dias
+    // Datas padrão: início de 2025 até hoje
     const hoje = new Date();
-    const ini  = new Date(hoje);
-    ini.setDate(ini.getDate() - 90);
+    const ini  = new Date('2025-01-01');
     document.getElementById('filtroDataIni').value = ini.toISOString().split('T')[0];
     document.getElementById('filtroDataFim').value = hoje.toISOString().split('T')[0];
 
@@ -126,12 +125,14 @@ function popularFornecedorModal() {
 async function carregarHistorico() {
     if (!dbClient) return;
 
-    const dataIni   = document.getElementById('filtroDataIni').value;
-    const dataFim   = document.getElementById('filtroDataFim').value;
-    const obra      = document.getElementById('filtroObra').value;
-    const etapa     = document.getElementById('filtroEtapa').value;
-    const tipo      = document.getElementById('filtroTipo').value;
-    const categoria = document.getElementById('filtroCategoria').value;
+    const dataIni    = document.getElementById('filtroDataIni').value;
+    const dataFim    = document.getElementById('filtroDataFim').value;
+    const obra       = document.getElementById('filtroObra').value;
+    const etapa      = document.getElementById('filtroEtapa').value;
+    const tipo       = document.getElementById('filtroTipo').value;
+    const categoria  = document.getElementById('filtroCategoria').value;
+    const fornecedor = document.getElementById('filtroFornecedor').value.trim();
+    const descricao  = document.getElementById('filtroDescricao').value.trim();
 
     document.getElementById('tabelaLoading').style.display = 'flex';
 
@@ -147,8 +148,10 @@ async function carregarHistorico() {
         if (dataFim)   q = q.lte('data', dataFim);
         if (obra)      q = q.eq('obra', obra);
         if (etapa)     q = q.eq('etapa', etapa);
-        if (tipo)      q = q.eq('tipo', tipo);
-        if (categoria) q = q.eq('despesa', categoria);
+        if (tipo)       q = q.eq('tipo', tipo);
+        if (categoria)  q = q.eq('despesa', categoria);
+        if (fornecedor) q = q.ilike('fornecedor', `%${fornecedor}%`);
+        if (descricao)  q = q.ilike('descricao',  `%${descricao}%`);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -275,6 +278,8 @@ function limparFiltros() {
     document.getElementById('filtroEtapa').value      = '';
     document.getElementById('filtroTipo').value       = '';
     document.getElementById('filtroCategoria').value  = '';
+    document.getElementById('filtroFornecedor').value = '';
+    document.getElementById('filtroDescricao').value  = '';
     document.getElementById('buscaTexto').value       = '';
     paginaAtual = 1;
     carregarHistorico();

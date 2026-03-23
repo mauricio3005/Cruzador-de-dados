@@ -79,7 +79,7 @@
             <!-- Filtros -->
             <div class="matrix-section" style="margin-bottom:var(--sp-5);">
                 <div style="padding: var(--sp-4) var(--sp-6);">
-                    <div style="display:grid;grid-template-columns:140px 140px 1fr 1fr 1fr auto;gap:var(--sp-4);align-items:end;">
+                    <div style="display:grid;grid-template-columns:140px 140px 1fr 1fr 1fr auto;gap:var(--sp-4);align-items:end;margin-bottom:var(--sp-3);">
                         <div>
                             <label class="form-label">De</label>
                             <input type="date" class="form-input" id="filtroDataIni">
@@ -118,6 +118,16 @@
                                     <line x1="6" y1="6" x2="18" y2="18"></line>
                                 </svg>
                             </button>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);">
+                        <div>
+                            <label class="form-label">Fornecedor</label>
+                            <input type="text" class="form-input" id="filtroFornecedor" placeholder="Todos">
+                        </div>
+                        <div>
+                            <label class="form-label">Descrição</label>
+                            <input type="text" class="form-input" id="filtroDescricao" placeholder="Todas">
                         </div>
                     </div>
                 </div>

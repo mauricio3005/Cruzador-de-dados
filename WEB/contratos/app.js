@@ -142,7 +142,7 @@ async function carregarReferencias() {
     setStatus('online', 'Sistema Sincronizado');
 }
 
-// --- CHECKBOXES DE ETAPAS ---
+// --- CHIPS DE ETAPAS ---
 function renderizarEtapasCheckboxes(selecionadas = []) {
     const container = document.getElementById('cEtapasContainer');
     if (!etapas.length) {
@@ -150,12 +150,52 @@ function renderizarEtapasCheckboxes(selecionadas = []) {
         return;
     }
     container.innerHTML = etapas.map(e => {
-        const chk = selecionadas.includes(e) ? 'checked' : '';
-        return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.85rem;padding:2px 0;">
-            <input type="checkbox" value="${esc(e)}" ${chk} style="accent-color:var(--accent);width:14px;height:14px;cursor:pointer;">
+        const checked = selecionadas.includes(e);
+        return `<label style="${_chipStyle(checked)}">
+            <input type="checkbox" value="${esc(e)}" ${checked ? 'checked' : ''} onchange="_atualizarChip(this)" style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;">
             ${esc(e)}
         </label>`;
     }).join('');
+    _atualizarBotaoTodos();
+}
+
+function _chipStyle(checked) {
+    return checked
+        ? 'display:inline-flex;align-items:center;cursor:pointer;font-size:0.78rem;padding:4px 12px;border-radius:20px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:600;user-select:none;transition:all 0.15s;white-space:nowrap;'
+        : 'display:inline-flex;align-items:center;cursor:pointer;font-size:0.78rem;padding:4px 12px;border-radius:20px;border:1px solid var(--outline-ghost);background:var(--surface-container);color:var(--on-surface-muted);font-weight:500;user-select:none;transition:all 0.15s;white-space:nowrap;';
+}
+
+function _atualizarChip(cb) {
+    const label = cb.closest('label');
+    label.style.cssText = _chipStyle(cb.checked);
+    _atualizarBotaoTodos();
+}
+
+function _atualizarBotaoTodos() {
+    const container  = document.getElementById('cEtapasContainer');
+    const cbs        = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+    const todasMarcadas = cbs.length > 0 && cbs.every(cb => cb.checked);
+    const btn = document.getElementById('btnTodasEtapas');
+    if (!btn) return;
+    if (todasMarcadas) {
+        btn.style.background    = 'var(--accent)';
+        btn.style.color         = '#fff';
+        btn.style.borderColor   = 'var(--accent)';
+    } else {
+        btn.style.background    = 'var(--surface-low)';
+        btn.style.color         = 'var(--on-surface-muted)';
+        btn.style.borderColor   = 'var(--outline-ghost)';
+    }
+}
+
+function selecionarTodasEtapas() {
+    const container     = document.getElementById('cEtapasContainer');
+    const cbs           = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+    const todasMarcadas = cbs.every(cb => cb.checked);
+    cbs.forEach(cb => {
+        cb.checked = !todasMarcadas;
+        _atualizarChip(cb);
+    });
 }
 
 function getEtapasSelecionadas() {
@@ -413,6 +453,7 @@ async function salvarContrato() {
         fornecedor,
         valor_total:     Math.round(valor * 100) / 100,
         obra,
+        etapa:           etapasSel[0],   // coluna legada NOT NULL; etapas completas em contratos_etapas
         descricao,
         data_assinatura: document.getElementById('cDataAssinatura').value || null,
         observacao:      document.getElementById('cObservacao').value.trim() || null,

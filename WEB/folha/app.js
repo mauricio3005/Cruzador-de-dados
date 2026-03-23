@@ -625,7 +625,7 @@ async function confirmarFecharFolha() {
             compTipos.push(file.type);
         }
 
-        const res = await fetch('http://localhost:8000/api/folha/fechar', {
+        const res = await fetch(`http://${location.hostname}:8000/api/folha/fechar`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({
