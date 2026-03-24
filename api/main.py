@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import ai, documentos, folha, relatorio
+from api.routes import ai, documentos, folha, relatorio, recorrentes
 
 app = FastAPI(title="Dashboard API", version="1.0.0")
 
@@ -16,7 +16,8 @@ app.add_middleware(
 app.include_router(ai.router,        prefix="/api/ai",         tags=["IA"])
 app.include_router(documentos.router,prefix="/api/documentos", tags=["Documentos"])
 app.include_router(folha.router,    prefix="/api/folha",    tags=["Folha"])
-app.include_router(relatorio.router,prefix="/api/relatorio",tags=["Relatório"])
+app.include_router(relatorio.router,   prefix="/api/relatorio",   tags=["Relatório"])
+app.include_router(recorrentes.router, prefix="/api/recorrentes", tags=["Recorrentes"])
 
 
 @app.get("/api/health")

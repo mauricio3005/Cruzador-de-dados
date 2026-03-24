@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Despesas Recorrentes — Industrial Architect</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+    <script src="../env.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+<div class="app-shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <div class="sidebar-brand-text">
+                <span class="sidebar-brand-name">Industrial Architect</span>
+                <span class="sidebar-brand-sub">Finance Suite</span>
+            </div>
+        </div>
+        <div class="sidebar-nav-wrap" id="main-nav"></div>
+        <div class="sidebar-footer">
+            <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
+        </div>
+    </aside>
+
+    <!-- CONTENT -->
+    <div class="content-shell">
+
+        <header class="topbar">
+            <div class="topbar-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" placeholder="Pesquisar..." disabled>
+            </div>
+            <div class="topbar-actions">
+                <div class="topbar-avatar" title="Usuário">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+
+            <!-- Hero -->
+            <div class="page-hero">
+                <div>
+                    <h1>Despesas Recorrentes</h1>
+                    <p class="page-hero-sub">Gerencie despesas fixas que se repetem automaticamente.</p>
+                </div>
+                <div style="display:flex;gap:var(--sp-3);">
+                    <button class="btn btn-outline" id="btnProcessar">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"></polyline>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                        </svg>
+                        Processar Vencidas
+                    </button>
+                    <button class="btn btn-primary" id="btnNova">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Nova Recorrente
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="metrics-grid" id="statsGrid" style="margin-bottom:var(--sp-6);">
+                <div class="metric-card">
+                    <div class="metric-label">Total Ativas</div>
+                    <div class="metric-value" id="statAtivas">—</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Vencendo Hoje / Atrasadas</div>
+                    <div class="metric-value" id="statVencidas" style="color:var(--danger)">—</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Valor Mensal Estimado</div>
+                    <div class="metric-value" id="statMensal">—</div>
+                </div>
+            </div>
+
+            <!-- Tabela -->
+            <div class="matrix-section">
+                <div class="matrix-header">
+                    <span class="matrix-title">Templates de Despesas Recorrentes</span>
+                    <div style="display:flex;gap:var(--sp-2);">
+                        <button class="btn btn-outline btn-sm" id="btnFiltroAtivas" onclick="setFiltro('ativas')" style="font-size:0.78rem;padding:4px 12px;">Ativas</button>
+                        <button class="btn btn-outline btn-sm" id="btnFiltroTodas" onclick="setFiltro('todas')" style="font-size:0.78rem;padding:4px 12px;">Todas</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="styled-table">
+                        <thead>
+                            <tr>
+                                <th>Descrição / Fornecedor</th>
+                                <th>Obra</th>
+                                <th>Tipo</th>
+                                <th>Frequência</th>
+                                <th>Próxima Data</th>
+                                <th class="text-right">Valor (R$)</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaBody">
+                            <tr><td colspan="8" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Carregando…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+</div>
+
+<!-- ── MODAL ──────────────────────────────────────────────────────────── -->
+<div id="modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" onclick="fecharModal(event)">
+    <div class="matrix-section" style="width:680px;max-width:95vw;max-height:90vh;overflow-y:auto;margin:0;" onclick="event.stopPropagation()">
+        <div class="matrix-header" style="padding:var(--sp-5) var(--sp-6) var(--sp-4);">
+            <span class="matrix-title" id="modalTitulo">Nova Despesa Recorrente</span>
+            <button class="btn btn-outline btn-sm" onclick="fecharModal()" style="font-size:0.8rem;padding:4px 12px;">✕ Fechar</button>
+        </div>
+        <div style="padding:0 var(--sp-6) var(--sp-6);">
+
+            <div class="form-grid-3" style="margin-bottom:var(--sp-4);">
+                <div>
+                    <label class="form-label">Obra</label>
+                    <select class="form-select" id="mObra"></select>
+                </div>
+                <div>
+                    <label class="form-label">Etapa</label>
+                    <select class="form-select" id="mEtapa"></select>
+                </div>
+                <div>
+                    <label class="form-label">Tipo</label>
+                    <select class="form-select" id="mTipo"></select>
+                </div>
+            </div>
+
+            <div class="form-grid-3" style="margin-bottom:var(--sp-4);">
+                <div>
+                    <label class="form-label">Fornecedor</label>
+                    <select class="form-select" id="mFornecedor"></select>
+                </div>
+                <div>
+                    <label class="form-label">Categoria</label>
+                    <select class="form-select" id="mDespesa"></select>
+                </div>
+                <div>
+                    <label class="form-label">Forma de Pagamento</label>
+                    <select class="form-select" id="mForma"></select>
+                </div>
+            </div>
+
+            <div class="form-grid-2" style="margin-bottom:var(--sp-4);">
+                <div>
+                    <label class="form-label">Valor Total (R$) *</label>
+                    <input type="number" class="form-input" id="mValor" min="0" step="0.01" placeholder="0,00">
+                </div>
+                <div>
+                    <label class="form-label">Frequência *</label>
+                    <select class="form-select" id="mFrequencia">
+                        <option value="mensal">Mensal</option>
+                        <option value="trimestral">Trimestral</option>
+                        <option value="semestral">Semestral</option>
+                        <option value="anual">Anual</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-grid-3" style="margin-bottom:var(--sp-4);">
+                <div>
+                    <label class="form-label">Primeira / Próxima Data *</label>
+                    <input type="date" class="form-input" id="mProximaData">
+                </div>
+                <div>
+                    <label class="form-label">Data de Encerramento</label>
+                    <input type="date" class="form-input" id="mDataFim" placeholder="Sem encerramento">
+                </div>
+                <div>
+                    <label class="form-label">Banco</label>
+                    <input type="text" class="form-input" id="mBanco" placeholder="Banco...">
+                </div>
+            </div>
+
+            <div style="margin-bottom:var(--sp-5);">
+                <label class="form-label">Descrição *</label>
+                <textarea class="form-input" id="mDescricao" rows="2" placeholder="Descrição da despesa recorrente..." style="resize:vertical;"></textarea>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:var(--sp-3);margin-bottom:var(--sp-5);">
+                <input type="checkbox" id="mAtiva" checked style="width:16px;height:16px;cursor:pointer;">
+                <label for="mAtiva" style="cursor:pointer;font-size:0.875rem;color:var(--on-surface);">Ativa (será processada automaticamente)</label>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);">
+                <button class="btn btn-outline" onclick="fecharModal()">Cancelar</button>
+                <button class="btn btn-primary" id="btnSalvarModal" style="min-width:140px;">Salvar</button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="../components/toast.js"></script>
+<script src="../components/nav.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

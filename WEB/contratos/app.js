@@ -161,7 +161,7 @@ function renderizarEtapasCheckboxes(selecionadas = []) {
 
 function _chipStyle(checked) {
     return checked
-        ? 'display:inline-flex;align-items:center;cursor:pointer;font-size:0.78rem;padding:4px 12px;border-radius:20px;border:1px solid var(--accent);background:var(--accent);color:#fff;font-weight:600;user-select:none;transition:all 0.15s;white-space:nowrap;'
+        ? 'display:inline-flex;align-items:center;cursor:pointer;font-size:0.78rem;padding:4px 12px;border-radius:20px;border:1px solid var(--primary);background:var(--primary);color:#fff;font-weight:600;user-select:none;transition:all 0.15s;white-space:nowrap;'
         : 'display:inline-flex;align-items:center;cursor:pointer;font-size:0.78rem;padding:4px 12px;border-radius:20px;border:1px solid var(--outline-ghost);background:var(--surface-container);color:var(--on-surface-muted);font-weight:500;user-select:none;transition:all 0.15s;white-space:nowrap;';
 }
 
@@ -178,9 +178,9 @@ function _atualizarBotaoTodos() {
     const btn = document.getElementById('btnTodasEtapas');
     if (!btn) return;
     if (todasMarcadas) {
-        btn.style.background    = 'var(--accent)';
+        btn.style.background    = 'var(--primary)';
         btn.style.color         = '#fff';
-        btn.style.borderColor   = 'var(--accent)';
+        btn.style.borderColor   = 'var(--primary)';
     } else {
         btn.style.background    = 'var(--surface-low)';
         btn.style.color         = 'var(--on-surface-muted)';
@@ -313,7 +313,7 @@ function renderizarTabela() {
 
     tbody.innerHTML = pagina.map(c => {
         const pct        = c.pct_execucao || 0;
-        const barColor   = pct >= 100 ? 'var(--success)' : 'var(--accent)';
+        const barColor   = pct >= 100 ? 'var(--success)' : 'var(--primary)';
         const statusBadge = c.status_calc === 'concluido'
             ? `<span style="font-size:0.7rem;padding:2px 7px;background:rgba(34,197,94,0.15);color:var(--success);border-radius:4px;font-weight:600;">Concluído</span>`
             : `<span style="font-size:0.7rem;padding:2px 7px;background:var(--surface-low);color:var(--on-surface-muted);border-radius:4px;font-weight:600;">Em Andamento</span>`;
@@ -321,14 +321,18 @@ function renderizarTabela() {
         // Etapas como badges ou texto
         const etapasBadges = c.etapas_list.length
             ? c.etapas_list.map(e =>
-                `<span style="display:inline-block;font-size:0.68rem;padding:1px 6px;background:var(--surface-low);border:1px solid var(--outline-ghost);border-radius:4px;margin:1px;">${esc(e)}</span>`
+                `<span style="font-size:0.68rem;padding:2px 6px;background:var(--surface-low);border:1px solid var(--outline-ghost);border-radius:4px;white-space:nowrap;">${esc(e)}</span>`
               ).join('')
             : '<span style="color:var(--on-surface-muted);">—</span>';
 
         return `<tr>
             <td style="white-space:nowrap;">${formatarData(c.data_assinatura)}</td>
             <td>${esc(c.obra || '—')}</td>
-            <td style="max-width:200px;">${etapasBadges}</td>
+            <td style="max-width:260px;">
+                <div style="display:flex; flex-wrap:wrap; gap:4px; max-height:60px; overflow-y:auto; align-content:flex-start; scrollbar-width:thin; padding-right:4px;">
+                    ${etapasBadges}
+                </div>
+            </td>
             <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.fornecedor)}">${esc(c.fornecedor || '—')}</td>
             <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.descricao)}">${esc(c.descricao || '—')}</td>
             <td class="text-right fin-num">R$ ${formatarValor(c.valor_total)}</td>
@@ -463,6 +467,9 @@ async function salvarContrato() {
     btn.disabled = true; btn.textContent = 'Salvando…';
 
     try {
+        if (fornecedor) {
+            await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+        }
         let contratoId = editandoContratoId;
 
         if (editandoContratoId) {
@@ -591,7 +598,7 @@ function atualizarResumoPagamentos(contrato) {
     document.getElementById('pagSumRestante').textContent = `R$ ${formatarValor(restante)}`;
     document.getElementById('pagSumExec').textContent     = `${pct.toFixed(1)}%`;
     document.getElementById('pagExecBar').style.width     = `${Math.min(pct, 100)}%`;
-    document.getElementById('pagExecBar').style.background = pct >= 100 ? 'var(--success)' : 'var(--accent)';
+    document.getElementById('pagExecBar').style.background = pct >= 100 ? 'var(--success)' : 'var(--primary)';
 
     // Atualizar row em memória
     const idx = todosContratos.findIndex(x => x.id === contratoAtivoPag);
@@ -670,12 +677,16 @@ async function adicionarPagamento() {
         const etapaDespesa = etapa || (c.etapas_list && c.etapas_list[0]) || null;
         const descDespesa  = descricao ? `${descricao} — ${c.descricao}` : c.descricao;
 
+        if (c.fornecedor) {
+            await dbClient.from('fornecedores').upsert({ nome: c.fornecedor }, { onConflict: 'nome' });
+        }
+
         const despesaPayload = {
             obra:            c.obra,
             etapa:           etapaDespesa,
             fornecedor:      c.fornecedor,
-            tipo:            'Empreitagem',
-            despesa:         'Empreitagem',
+            tipo:            'Mão de Obra',
+            despesa:         'SALÁRIO PESSOAL',
             valor_total:     Math.round(valor * 100) / 100,
             data:            data,
             descricao:       descDespesa,
@@ -768,7 +779,7 @@ async function excluirPagamento(pagId) {
 function definirArquivoPagamento(file) {
     arquivoPagamento = file;
     document.getElementById('uploadZonePagText').textContent = `📎 ${file.name}`;
-    document.getElementById('uploadZonePag').style.borderColor = 'var(--accent)';
+    document.getElementById('uploadZonePag').style.borderColor = 'var(--primary)';
 }
 
 async function uploadComprovante(file) {

@@ -12,6 +12,7 @@ const NAV_ITEMS = [
     { icon: "💳", label: "Contas a Pagar",   path: "/contas/",           done: true  },
     { icon: "💰", label: "Recebimentos",     path: "/recebimentos/",     done: true  },
     { icon: "📝", label: "Contratos",        path: "/contratos/",        done: true  },
+    { icon: "🔁", label: "Recorrentes",      path: "/recorrentes/",      done: true  },
     { icon: "⚙️", label: "Configurações",    path: "/configuracoes/",    done: true  },
 ];
 
@@ -56,7 +57,26 @@ function renderNav() {
     container.innerHTML = html;
 }
 
-document.addEventListener("DOMContentLoaded", renderNav);
+document.addEventListener("DOMContentLoaded", () => {
+    renderNav();
+
+    // Filtro global com tecla Enter
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            const el = document.activeElement;
+            if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT')) {
+                // Ignora se estiver num modal ou se o ID for buscaTexto
+                if (el.closest('[id^="modal"]')) return;
+                
+                const btn = document.getElementById('btnFiltrar');
+                if (btn) {
+                    e.preventDefault();
+                    btn.click();
+                }
+            }
+        }
+    });
+});
 
 // ── Injeta o widget de chat de IA automaticamente ──
 (function () {
