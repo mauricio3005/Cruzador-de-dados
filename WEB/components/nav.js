@@ -57,3 +57,22 @@ function renderNav() {
 }
 
 document.addEventListener("DOMContentLoaded", renderNav);
+
+// ── Injeta o widget de chat de IA automaticamente ──
+(function () {
+    function getAiChatBase() {
+        const scripts = document.querySelectorAll('script[src]');
+        for (const s of scripts) {
+            if (s.src.includes('components/nav.js')) {
+                return new URL('./', s.src).href;
+            }
+        }
+        return '';
+    }
+    const base = getAiChatBase();
+    if (base) {
+        const s = document.createElement('script');
+        s.src = base + 'ai-chat.js';
+        document.head.appendChild(s);
+    }
+})();

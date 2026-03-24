@@ -34,6 +34,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Hoje como padrão
     document.getElementById('fData').value = new Date().toISOString().split('T')[0];
 
+    // Prefill enviado pelo chat de IA (via sessionStorage)
+    const prefillRaw = sessionStorage.getItem('ai_despesa_prefill');
+    if (prefillRaw) {
+        try {
+            const ia = JSON.parse(prefillRaw);
+            sessionStorage.removeItem('ai_despesa_prefill');
+            preencherCampoIA('fTipo',    ia.TIPO,    tipos);
+            preencherCampoIA('fForma',   ia.FORMA,   formas);
+            preencherCampoIA('fDespesa', ia.DESPESA, categorias);
+            preencherCampoIA('fObra',    ia.OBRA,    obras);
+            preencherCampoIA('fEtapa',   ia.ETAPA,   etapas);
+            preencherFornecedorIA(ia.FORNECEDOR);
+            if (ia.VALOR_TOTAL) document.getElementById('fValor').value = parseFloat(ia.VALOR_TOTAL).toFixed(2);
+            if (ia.DATA)        document.getElementById('fData').value  = ia.DATA;
+            if (ia.DESCRICAO)   document.getElementById('fDescricao').value = ia.DESCRICAO;
+            document.getElementById('iaBanner').style.display = '';
+        } catch (_) {}
+    }
+
     // Upload NF individual
     const inputNF   = document.getElementById('inputNF');
     const uploadZone = document.getElementById('uploadZone');
@@ -501,6 +520,11 @@ async function extrairIAIndividual() {
             btn.textContent = files.length > 1 ? `Extraindo ${i + 1}/${files.length}…` : 'Extraindo…';
             const formData = new FormData();
             formData.append('file', files[i]);
+            // Passa referências do banco para melhorar o matching da IA
+            formData.append('fornecedores', JSON.stringify(fornecedores));
+            formData.append('obras',        JSON.stringify(obras));
+            formData.append('etapas',       JSON.stringify(etapas));
+            formData.append('categorias',   JSON.stringify(categorias));
             const res = await fetch(`${API_BASE}/api/ai/extrair`, { method: 'POST', body: formData });
             if (!res.ok) throw new Error(await res.text());
             resultados.push(await res.json());

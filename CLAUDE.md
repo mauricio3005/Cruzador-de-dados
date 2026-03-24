@@ -29,14 +29,17 @@ Acesse em `http://localhost:8080`. O frontend **não funciona via file://** — 
 - **PDF**: ReportLab + Plotly/Kaleido
 
 ### Frontend (WEB/)
-- `WEB/env.js` — credenciais Supabase para o browser (usa `SUPABASE_ANON_KEY`, chave pública)
+- `WEB/env.js` — credenciais Supabase para o browser (usa `SUPABASE_ANON_KEY`, chave pública); expõe `window.ENV`
 - `WEB/style.css` — design system completo via CSS custom properties (não usar inline styles)
-- `WEB/components/nav.js` — sidebar de navegação injetada em todas as páginas
+- `WEB/components/nav.js` — sidebar de navegação injetada em todas as páginas; também injeta automaticamente `ai-chat.js`
+- `WEB/components/ai-chat.js` — widget global de chat IA (fixo, canto inferior direito); comunica com `POST /api/ai/chat`; suporta ação `cadastrar_despesa` que salva prefill em `sessionStorage('ai_despesa_prefill')` e navega para `/despesas/`
 - Cada módulo tem sua própria pasta (`despesas/`, `historico/`, `folha/`, `recebimentos/`, `contratos/`, `configuracoes/`, `contas/`, `documentos/`)
+- `API_BASE` em todos os módulos JS: `` `http://${location.hostname}:8000` `` (não hardcode `localhost`)
 
 ### Backend (api/)
-- `api/main.py` — bootstrap FastAPI, registra os 4 routers: `ai`, `documentos`, `folha`, `relatorio`
-- `api/routes/ai.py` — extração de documentos via GPT-4 Vision e Whisper
+- `api/main.py` — bootstrap FastAPI, registra os 4 routers: `ai`, `documentos`, `folha`, `relatorio`; expõe `/api/health` e endpoints de debug
+- `api/supabase_client.py` — singleton Supabase com `@lru_cache`; use `get_supabase()` em novos routes (preferir sobre criar cliente local)
+- `api/routes/ai.py` — múltiplos endpoints de IA: `POST /extrair` (imagem/PDF), `POST /extrair-texto` (texto livre), `POST /extrair-texto-misto` (texto+arquivos), `POST /transcrever` (Whisper), `POST /chat-despesas` (revisão), `POST /chat` (assistente geral com acesso ao banco), `GET /referencias`
 - `api/routes/folha.py` — fechamento de folha de pagamento (operação atômica: cria despesas + faz upload de comprovantes)
 - `api/routes/relatorio.py` — geração de PDF via `relatorio.py` raiz
 - Backend usa `SUPABASE_SERVICE_KEY` (admin) — nunca expor no frontend
@@ -83,4 +86,8 @@ Descrito em `DESIGN.md`. Princípios-chave:
 
 **Relatórios PDF:** Frontend chama `GET /api/relatorio/pdf?obra=X&tipo=Y&...` → backend busca dados no Supabase com `service_key`, processa com Pandas, renderiza PDF com ReportLab, retorna como `application/pdf`.
 
-**Navegação:** `nav.js` é injetado via `document.getElementById('nav-placeholder')` — todo `index.html` novo deve incluir esse placeholder e importar o script.
+**Navegação:** `nav.js` popula `document.getElementById('main-nav')` — todo `index.html` novo deve incluir `<div id="main-nav"></div>` na sidebar e importar o script. O chat widget é injetado automaticamente via `nav.js`.
+
+**Prefill IA → Despesas:** O chat widget pode navegar para `/despesas/` com dados pré-preenchidos. O `despesas/app.js` lê `sessionStorage('ai_despesa_prefill')` no `DOMContentLoaded` e preenche o formulário.
+
+**Supabase no frontend:** Cada módulo chama `window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY)` após verificar `window.ENV`. Não usar service key no browser.
