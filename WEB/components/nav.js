@@ -13,7 +13,7 @@ const NAV_ITEMS = [
     { icon: "💰", label: "Recebimentos",     path: "/recebimentos/",     done: true  },
     { icon: "📝", label: "Contratos",        path: "/contratos/",        done: true  },
     { icon: "🔁", label: "Recorrentes",      path: "/recorrentes/",      done: true  },
-    { icon: "📈", label: "Relatórios",       path: "/relatorios/",       done: true  },
+    { icon: "📈", label: "Relatórios",       path: "/?tab=relatorio",    done: true  },
     { icon: "⚙️", label: "Configurações",    path: "/configuracoes/",    done: true  },
 ];
 
@@ -34,6 +34,7 @@ function renderNav() {
 
     const BASE    = getAppBase();
     const current = window.location.pathname.replace(/\/index\.html$/, "/");
+    const currentTab = new URLSearchParams(window.location.search).get('tab');
 
     const html = `
         <div class="nav-section-label">Módulos</div>
@@ -41,8 +42,11 @@ function renderNav() {
             ${NAV_ITEMS.map(item => {
                 const href     = BASE + item.path;
                 const basePath = BASE + "/";
-                const isActive = (item.path === "/" && current === basePath)
-                              || (item.path !== "/" && current.startsWith(BASE + item.path));
+                const itemTab  = item.path.includes('?tab=') ? item.path.split('?tab=')[1] : null;
+                const isActive = itemTab
+                    ? (current === basePath && currentTab === itemTab)
+                    : (item.path === "/" && current === basePath && !currentTab)
+                      || (item.path !== "/" && !item.path.includes('?') && current.startsWith(BASE + item.path));
                 const classes = ["nav-link", isActive ? "active" : "", !item.done ? "nav-coming-soon" : ""].filter(Boolean).join(" ");
                 return `
                     <a href="${item.done ? href : "#"}"

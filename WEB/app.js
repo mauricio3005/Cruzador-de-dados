@@ -22,12 +22,52 @@ function carregarEnv() {
     }
 }
 
-// --- ESTADO ---
+// --- ESTADO (dashboard) ---
 let rawData = [];
 let filteredData = [];
-let currentObraFilters  = [];   // vazio = nenhuma obra selecionada
+let currentObraFilters  = [];
 let currentEtapaFilters = [];
 let currentTipoFilters  = [];
+
+// --- ESTADO (relatório) ---
+let relObrasDisponiveis = [];
+let relEtapasOrdem      = {};
+let relatorioInitialized = false;
+
+// ═══════════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════════
+
+function switchTab(tab) {
+    document.querySelectorAll('.page-tab').forEach(b =>
+        b.classList.toggle('active', b.dataset.tab === tab)
+    );
+    document.getElementById('tab-visao').style.display     = tab === 'visao'     ? '' : 'none';
+    document.getElementById('tab-relatorio').style.display = tab === 'relatorio' ? '' : 'none';
+
+    const title    = document.getElementById('dashboardTitle');
+    const subtitle = document.getElementById('dashboardSubtitle');
+    const refreshBtn  = document.getElementById('refreshBtn');
+    const exportBtn   = document.getElementById('btnExportar');
+
+    if (tab === 'visao') {
+        title.textContent    = currentObraFilters.length === 1 ? currentObraFilters[0] : 'Visão Geral';
+        subtitle.textContent = 'Status financeiro consolidado do portfólio.';
+        refreshBtn.style.display = '';
+        exportBtn.style.display  = 'none';
+    } else {
+        title.textContent    = 'Relatório Inteligente';
+        subtitle.textContent = 'Análise financeira com insights automáticos por IA.';
+        refreshBtn.style.display = 'none';
+        exportBtn.style.display  = document.getElementById('relatorioArea').style.display !== 'none' ? '' : 'none';
+        if (!relatorioInitialized) initRelatorio();
+    }
+
+    const url = new URL(window.location);
+    if (tab === 'relatorio') url.searchParams.set('tab', 'relatorio');
+    else url.searchParams.delete('tab');
+    window.history.replaceState({}, '', url);
+}
 
 // --- INICIALIZAÇÃO ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -57,9 +97,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         btn.disabled = false;
     });
 
-    // Botão "Relatório Inteligente" agora é um <a href>, sem listener necessário.
-
     document.getElementById('applyFiltersBtn').addEventListener('click', atualizarDashboard);
+
+    // Verificar se deve abrir aba de relatório (vindo do nav ou URL)
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') === 'relatorio') {
+        switchTab('relatorio');
+    }
 });
 
 // --- DROPDOWN SETUP ---
@@ -759,3 +803,302 @@ function renderizarTabela() {
         });
     });
 }
+
+
+// ═══════════════════════════════════════════════════
+// RELATÓRIO INTELIGENTE
+// ═══════════════════════════════════════════════════
+
+// Helpers do relatório
+function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtValor(v) {
+    return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPct(v) {
+    return Number(v || 0).toFixed(1) + '%';
+}
+
+// --- INIT RELATÓRIO (lazy, primeira vez que a aba abre) ---
+async function initRelatorio() {
+    relatorioInitialized = true;
+
+    document.querySelectorAll('input[name="relModo"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            const comparativo = radio.value === 'comparativo';
+            document.getElementById('relGrupoObraUnica').style.display      = comparativo ? 'none' : '';
+            document.getElementById('relGrupoObraComparativo').style.display = comparativo ? ''    : 'none';
+        });
+    });
+
+    document.getElementById('btnGerarRelatorio').addEventListener('click', gerarRelatorio);
+
+    if (!dbClient) { setStatus('offline', 'Erro de conexão'); return; }
+    await Promise.all([relCarregarObras(), relCarregarOrdemEtapas()]);
+}
+
+async function relCarregarOrdemEtapas() {
+    try {
+        const { data } = await dbClient.from('etapas').select('nome, ordem').order('ordem');
+        if (data) relEtapasOrdem = Object.fromEntries(data.map(e => [e.nome, e.ordem ?? 9999]));
+    } catch (_) {}
+}
+
+async function relCarregarObras() {
+    try {
+        const { data, error } = await dbClient
+            .from('obras')
+            .select('nome, empresa_id, empresas(nome, logo_url)')
+            .order('nome');
+        if (error) throw error;
+        relObrasDisponiveis = data || [];
+
+        const selUnico = document.getElementById('relSelectObra');
+        const selMulti = document.getElementById('relSelectObrasMulti');
+        selUnico.innerHTML = '<option value="">— Selecione —</option>' +
+            relObrasDisponiveis.map(o => '<option value="' + esc(o.nome) + '">' + esc(o.nome) + '</option>').join('');
+        selMulti.innerHTML = relObrasDisponiveis.map(o =>
+            '<option value="' + esc(o.nome) + '">' + esc(o.nome) + '</option>'
+        ).join('');
+    } catch (e) {
+        setStatus('offline', 'Erro ao carregar obras');
+        console.error(e);
+    }
+}
+
+// --- GERAR RELATÓRIO ---
+async function gerarRelatorio() {
+    const modo    = document.querySelector('input[name="relModo"]:checked').value;
+    const dataIni = document.getElementById('relDataIni').value || null;
+    const dataFim = document.getElementById('relDataFim').value || null;
+
+    let obrasSelecionadas = [];
+    if (modo === 'unico') {
+        const val = document.getElementById('relSelectObra').value;
+        if (!val) { toast.warning('Selecione uma obra.'); return; }
+        obrasSelecionadas = [val];
+    } else {
+        const opts = document.getElementById('relSelectObrasMulti').selectedOptions;
+        obrasSelecionadas = Array.from(opts).map(o => o.value);
+        if (obrasSelecionadas.length < 2) { toast.warning('Selecione pelo menos 2 obras para comparar.'); return; }
+    }
+
+    document.getElementById('loadingArea').style.display    = 'block';
+    document.getElementById('relatorioArea').style.display  = 'none';
+    document.getElementById('btnExportar').style.display    = 'none';
+    document.getElementById('loadingMsg').textContent       = 'Buscando dados financeiros…';
+
+    try {
+        const dadosObras = await relBuscarDadosObras(obrasSelecionadas, dataIni, dataFim);
+        document.getElementById('loadingMsg').textContent = 'Renderizando relatório…';
+
+        relRenderizarEmpresaHeaders(obrasSelecionadas);
+        relRenderizarKPIs(dadosObras);
+        relRenderizarFluxoCaixa(dadosObras);
+        relRenderizarTabelaEtapas(dadosObras);
+
+        document.getElementById('loadingArea').style.display   = 'none';
+        document.getElementById('relatorioArea').style.display = 'block';
+        document.getElementById('btnExportar').style.display   = '';
+    } catch (e) {
+        document.getElementById('loadingArea').style.display = 'none';
+        toast.error('Erro ao gerar relatório: ' + e.message);
+        console.error(e);
+    }
+}
+
+// --- BUSCAR DADOS ---
+async function relBuscarDadosObras(obrasList, dataIni, dataFim) {
+    const resultado = [];
+    for (const obraNome of obrasList) {
+        const obraInfo = relObrasDisponiveis.find(o => o.nome === obraNome) || { nome: obraNome };
+
+        const { data: orcData } = await dbClient.from('orcamentos')
+            .select('etapa, tipo_custo, valor_estimado').eq('obra', obraNome);
+
+        let qDesp = dbClient.from('c_despesas')
+            .select('etapa, tipo, fornecedor, valor_total, data').eq('obra', obraNome);
+        if (dataIni) qDesp = qDesp.gte('data', dataIni);
+        if (dataFim) qDesp = qDesp.lte('data', dataFim);
+        const { data: despData } = await qDesp;
+
+        const { data: recData }  = await dbClient.from('recebimentos').select('valor').eq('obra', obraNome);
+        const { data: taxaData } = await dbClient.from('taxa_conclusao').select('etapa, taxa').eq('obra', obraNome);
+
+        const despesas   = despData   || [];
+        const orcamentos = orcData    || [];
+        const taxaMap    = Object.fromEntries((taxaData || []).map(r => [r.etapa, parseFloat(r.taxa || 0)]));
+
+        const totalOrcado    = orcamentos.reduce((s, r) => s + parseFloat(r.valor_estimado || 0), 0);
+        const totalRealizado = despesas.reduce((s, r) => s + parseFloat(r.valor_total || 0), 0);
+        const totalRecebido  = (recData || []).reduce((s, r) => s + parseFloat(r.valor || 0), 0);
+
+        const etapasSet = new Set([
+            ...orcamentos.map(r => r.etapa),
+            ...despesas.map(r => r.etapa).filter(Boolean),
+        ]);
+        const etapasOrdenadas = [...etapasSet].sort((a, b) => {
+            const oa = relEtapasOrdem[a] ?? 9999;
+            const ob = relEtapasOrdem[b] ?? 9999;
+            return oa !== ob ? oa - ob : a.localeCompare(b);
+        });
+
+        const porEtapa = [];
+        for (const et of etapasOrdenadas) {
+            const orcEt  = orcamentos.filter(r => r.etapa === et).reduce((s, r) => s + parseFloat(r.valor_estimado || 0), 0);
+            const realEt = despesas.filter(r => r.etapa === et).reduce((s, r) => s + parseFloat(r.valor_total || 0), 0);
+
+            const tiposSet = new Set([
+                ...orcamentos.filter(r => r.etapa === et).map(r => r.tipo_custo).filter(Boolean),
+                ...despesas.filter(r => r.etapa === et).map(r => r.tipo).filter(Boolean),
+            ]);
+            const porTipoEtapa = [...tiposSet].map(tipo => {
+                const orcTipo  = orcamentos.filter(r => r.etapa === et && r.tipo_custo === tipo).reduce((s, r) => s + parseFloat(r.valor_estimado || 0), 0);
+                const realTipo = despesas.filter(r => r.etapa === et && r.tipo === tipo).reduce((s, r) => s + parseFloat(r.valor_total || 0), 0);
+                return { tipo, orcado: orcTipo, realizado: realTipo };
+            }).filter(t => t.orcado > 0 || t.realizado > 0);
+
+            if (orcEt > 0 || realEt > 0) {
+                porEtapa.push({
+                    etapa: et, orcado: orcEt, realizado: realEt,
+                    pct: orcEt > 0 ? (realEt / orcEt * 100) : 0,
+                    conclusao: taxaMap[et] || 0,
+                    porTipo: porTipoEtapa,
+                });
+            }
+        }
+
+        resultado.push({
+            nome:         obraNome,
+            empresa:      obraInfo.empresas,
+            totalOrcado,
+            totalRealizado,
+            totalRecebido,
+            pctConclusao: Object.keys(taxaMap).length > 0
+                              ? Object.values(taxaMap).reduce((s, v) => s + v, 0) / Object.keys(taxaMap).length
+                              : 0,
+            porEtapa,
+        });
+    }
+    return resultado;
+}
+
+// --- EMPRESA HEADERS ---
+function relRenderizarEmpresaHeaders(obrasList) {
+    document.getElementById('relEmpresaHeaders').innerHTML = obrasList.map(nome => {
+        const info    = relObrasDisponiveis.find(o => o.nome === nome);
+        const empresa = info && info.empresas;
+        if (!empresa) return '';
+        return '<div class="rel-empresa-header">' +
+            (empresa.logo_url ? '<img src="' + esc(empresa.logo_url) + '" alt="' + esc(empresa.nome) + '">' : '') +
+            '<div><div class="rel-empresa-nome">' + esc(empresa.nome) + '</div>' +
+            '<div class="rel-obra-nome">' + esc(nome) + '</div></div></div>';
+    }).join('');
+}
+
+// --- KPIs DO RELATÓRIO ---
+function relRenderizarKPIs(dadosObras) {
+    const totalOrcado    = dadosObras.reduce((s, o) => s + o.totalOrcado, 0);
+    const totalRealizado = dadosObras.reduce((s, o) => s + o.totalRealizado, 0);
+    const saldoOrc       = totalOrcado - totalRealizado;
+    const pctConclusao   = dadosObras.reduce((s, o) => s + o.pctConclusao, 0) / dadosObras.length;
+
+    const kpis = [
+        { label: 'Orçamento Total',    value: fmtValor(totalOrcado),    sub: null, color: null },
+        { label: 'Realizado',          value: fmtValor(totalRealizado), sub: fmtPct(totalOrcado > 0 ? totalRealizado / totalOrcado * 100 : 0) + ' do orçamento', color: null },
+        { label: 'Saldo Orçamentário', value: fmtValor(saldoOrc),       sub: saldoOrc < 0 ? 'Acima do orçamento' : 'Disponível', color: saldoOrc < 0 ? 'var(--error)' : null },
+        { label: 'Conclusão Média',    value: fmtPct(pctConclusao),     sub: null, color: null },
+    ];
+
+    document.getElementById('relKpisGrid').innerHTML = kpis.map(k =>
+        '<div class="kpi-card">' +
+        '<div class="kpi-title">' + esc(k.label) + '</div>' +
+        '<div class="kpi-value fin-num"' + (k.color ? ' style="color:' + k.color + '"' : '') + '>' + esc(k.value) + '</div>' +
+        (k.sub ? '<div class="kpi-subtitle"' + (k.color ? ' style="color:' + k.color + '"' : '') + '>' + esc(k.sub) + '</div>' : '') +
+        '</div>'
+    ).join('');
+}
+
+// --- FLUXO DE CAIXA DO RELATÓRIO ---
+function relRenderizarFluxoCaixa(dadosObras) {
+    const recebido   = dadosObras.reduce((s, o) => s + o.totalRecebido,  0);
+    const gasto      = dadosObras.reduce((s, o) => s + o.totalRealizado, 0);
+    const saldoAtual = recebido - gasto;
+    const corSaldo   = saldoAtual >= 0 ? 'var(--success)' : 'var(--error)';
+
+    const item = (label, valor, cor) =>
+        '<div><div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">' + label + '</div>' +
+        '<div class="fin-num" style="font-family:var(--font-display);font-size:1.25rem;font-weight:800;color:' + cor + ';">' + fmtValor(valor) + '</div></div>';
+
+    document.getElementById('fluxoRelGrid').innerHTML =
+        item('Recebido',    recebido,   'var(--success)') +
+        item('Gasto',       gasto,      'var(--error)')   +
+        item('Saldo Atual', saldoAtual, corSaldo);
+}
+
+// --- TABELA DE ETAPAS DO RELATÓRIO ---
+function relRenderizarTabelaEtapas(dadosObras) {
+    const tbody = document.getElementById('relTabelaEtapas');
+    const linhas = [];
+    let uid = 0;
+
+    for (const obra of dadosObras) {
+        for (const et of obra.porEtapa) {
+            const id       = 'ret' + (uid++);
+            const saldo    = et.orcado - et.realizado;
+            const isAcima  = et.pct > 100;
+            const isCrit   = et.pct > 90 && et.pct <= 100;
+            const cor      = isAcima ? 'var(--error)' : isCrit ? 'var(--warning)' : 'var(--success)';
+            const temTipos = et.porTipo && et.porTipo.length > 0;
+
+            linhas.push(
+                '<tr class="etapa-row' + (temTipos ? ' etapa-expandivel' : '') + '"' +
+                (temTipos ? ' onclick="relToggleEtapa(\'' + id + '\')" id="relrow-' + id + '"' : '') + '>' +
+                '<td>' +
+                (temTipos
+                    ? '<span class="etapa-chevron" id="relchev-' + id + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg></span>'
+                    : '<span class="status-bar" style="background:' + cor + ';"></span>') +
+                '</td>' +
+                '<td style="font-weight:500;">' + esc(obra.nome) + '</td>' +
+                '<td style="font-weight:600;">' + esc(et.etapa) + '</td>' +
+                '<td class="text-right fin-num">' + fmtValor(et.orcado) + '</td>' +
+                '<td class="text-right fin-num">' + fmtValor(et.realizado) + '</td>' +
+                '<td class="text-right fin-num"' + (saldo < 0 ? ' style="color:var(--error)"' : '') + '>' + fmtValor(saldo) + '</td>' +
+                '<td class="text-right fin-num" style="color:' + cor + '">' + fmtPct(et.pct) + '</td>' +
+                '<td class="text-right fin-num">' + fmtPct(et.conclusao) + '</td>' +
+                '</tr>'
+            );
+
+            if (temTipos) {
+                for (const t of et.porTipo) {
+                    const saldoT = t.orcado - t.realizado;
+                    const pctT   = t.orcado > 0 ? (t.realizado / t.orcado * 100) : 0;
+                    const corT   = pctT > 100 ? 'var(--error)' : pctT > 90 ? 'var(--warning)' : 'var(--success)';
+                    linhas.push(
+                        '<tr class="tipo-row reltiporow-' + id + '" style="display:none;">' +
+                        '<td></td><td></td>' +
+                        '<td class="tipo-nome">↳ ' + esc(t.tipo) + '</td>' +
+                        '<td class="text-right fin-num tipo-num">' + fmtValor(t.orcado) + '</td>' +
+                        '<td class="text-right fin-num tipo-num">' + fmtValor(t.realizado) + '</td>' +
+                        '<td class="text-right fin-num tipo-num"' + (saldoT < 0 ? ' style="color:var(--error)"' : '') + '>' + fmtValor(saldoT) + '</td>' +
+                        '<td class="text-right fin-num tipo-num" style="color:' + corT + '">' + fmtPct(pctT) + '</td>' +
+                        '<td></td></tr>'
+                    );
+                }
+            }
+        }
+    }
+
+    tbody.innerHTML = linhas.join('') ||
+        '<tr><td colspan="8" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Sem dados de etapas.</td></tr>';
+}
+
+function relToggleEtapa(id) {
+    const rows   = document.querySelectorAll('.reltiporow-' + id);
+    const chev   = document.getElementById('relchev-' + id);
+    const isOpen = rows.length > 0 && rows[0].style.display !== 'none';
+    rows.forEach(r => r.style.display = isOpen ? 'none' : '');
+    if (chev) chev.style.transform = isOpen ? '' : 'rotate(90deg)';
+}
+

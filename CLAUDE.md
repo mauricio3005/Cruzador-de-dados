@@ -29,6 +29,7 @@ Acesse em `http://localhost:8080`. O frontend **não funciona via file://** — 
 - **PDF**: ReportLab + Plotly/Kaleido
 
 ### Frontend (WEB/)
+- `WEB/index.html` + `WEB/app.js` — dashboard principal (KPIs, orçamento vs. realizado, fluxo de caixa, modal de PDF)
 - `WEB/env.js` — credenciais Supabase para o browser (usa `SUPABASE_ANON_KEY`, chave pública); expõe `window.ENV`
 - `WEB/style.css` — design system completo via CSS custom properties (não usar inline styles)
 - `WEB/components/nav.js` — sidebar de navegação injetada em todas as páginas; também injeta automaticamente `ai-chat.js`
@@ -38,8 +39,9 @@ Acesse em `http://localhost:8080`. O frontend **não funciona via file://** — 
 - `API_BASE` em todos os módulos JS: `` `http://${location.hostname}:8000` `` (não hardcode `localhost`)
 
 ### Backend (api/)
-- `api/main.py` — bootstrap FastAPI, registra os 5 routers: `ai`, `documentos`, `folha`, `relatorio`, `recorrentes`; expõe `/api/health` e endpoints de debug (`/api/debug/supabase`, `/api/debug/chat-context`)
+- `api/main.py` — bootstrap FastAPI, CORS aberto (`allow_origins=["*"]`), registra os 5 routers: `ai`, `documentos`, `folha`, `relatorio`, `recorrentes`; expõe `/api/health` e endpoints de debug (`/api/debug/supabase`, `/api/debug/chat-context`); Swagger em `http://localhost:8000/docs`
 - `api/supabase_client.py` — singleton Supabase com `@lru_cache`; use `get_supabase()` em novos routes (preferir sobre criar cliente local)
+- `api/embeddings.py` — pgvector semantic search via `text-embedding-3-small`; `sync_embeddings()` é chamado automaticamente a cada `/api/ai/chat` para embeddar despesas novas; `search_despesas(query)` retorna as N despesas semanticamente mais próximas
 - `api/routes/ai.py` — múltiplos endpoints de IA: `POST /extrair` (imagem/PDF), `POST /extrair-texto` (texto livre), `POST /extrair-texto-misto` (texto+arquivos), `POST /transcrever` (Whisper), `POST /chat-despesas` (revisão), `POST /chat` (assistente geral com acesso ao banco), `GET /referencias`
 - `api/routes/folha.py` — fechamento de folha de pagamento (operação atômica: cria despesas + faz upload de comprovantes)
 - `api/routes/relatorio.py` — geração de PDF via `relatorio.py` raiz
@@ -61,11 +63,12 @@ Tabelas principais:
 | `comprovantes_despesa` | Links de comprovantes (Supabase Storage) |
 | `despesas_recorrentes` | Templates de despesas recorrentes (mensal/trimestral/semestral/anual) |
 | `empresas` | Empresas proprietárias; `obras.empresa_id` FK nullable |
+| `taxa_conclusao` | % de conclusão por obra+etapa (`taxa` NUMERIC 0-100) |
 | `fornecedores`, `categorias_despesa`, `formas_pagamento` | Tabelas de referência |
 
 A tabela `c_despesas` é a versão atual (substitui esquema legado). Campo `folha_id` é nullable — preenchido somente para despesas de mão de obra geradas pelo fechamento de folha.
 
-**Migrations:** arquivos em `migrations/` são executados manualmente no SQL Editor do Supabase (não há runner automático). Nomear novos arquivos com prefixo numérico sequencial (`03_`, `04_`, …).
+**Migrations:** arquivos em `migrations/` são executados manualmente no SQL Editor do Supabase (não há runner automático). O último arquivo é `02_empresas.sql` — nomear novos arquivos a partir de `03_`.
 
 ## Design System
 

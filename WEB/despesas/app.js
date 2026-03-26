@@ -53,6 +53,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (_) {}
     }
 
+    // Cursor sempre no canto esquerdo no textarea de descrição por texto
+    const textoIAEl = document.getElementById('textoIA');
+    if (textoIAEl) {
+        textoIAEl.addEventListener('mousedown', function () {
+            setTimeout(() => this.setSelectionRange(0, 0), 0);
+        });
+    }
+
     // Upload NF individual
     const inputNF   = document.getElementById('inputNF');
     const uploadZone = document.getElementById('uploadZone');

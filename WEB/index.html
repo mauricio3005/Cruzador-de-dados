@@ -5,16 +5,136 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Industrial Architect — Finance Suite</title>
-    <!-- Manrope (display) + Inter (body) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Design System -->
     <link rel="stylesheet" href="style.css">
-    <!-- Env vars -->
     <script src="env.js"></script>
-    <!-- Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        /* ── Tabs ── */
+        .page-tabs {
+            display: flex;
+            gap: 2px;
+            background: var(--surface-low);
+            border-radius: var(--r-xl);
+            padding: 3px;
+            width: fit-content;
+            margin-bottom: var(--sp-5);
+        }
+        .page-tab {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 20px;
+            border-radius: calc(var(--r-xl) - 3px);
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--on-surface-muted);
+            background: none;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+        .page-tab.active {
+            background: var(--surface-card);
+            color: var(--on-surface);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* ── Relatório ── */
+        .rel-filtros {
+            background: var(--surface-card);
+            border-radius: var(--r-xl);
+            padding: var(--sp-5) var(--sp-6);
+            margin-bottom: var(--sp-5);
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--sp-4);
+        }
+        .rel-filtros .form-group { display: flex; flex-direction: column; gap: 4px; min-width: 180px; }
+        .rel-modo-toggle {
+            display: flex;
+            background: var(--surface-low);
+            border-radius: var(--r-full);
+            padding: 3px;
+            gap: 2px;
+        }
+        .rel-modo-toggle label {
+            padding: 5px 14px;
+            border-radius: var(--r-full);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            cursor: pointer;
+            color: var(--on-surface-muted);
+            transition: background 0.15s, color 0.15s;
+        }
+        .rel-modo-toggle input[type="radio"] { display: none; }
+        .rel-modo-toggle input:checked + label {
+            background: var(--surface-card);
+            color: var(--on-surface);
+            box-shadow: var(--shadow-sm);
+        }
+        #relatorioArea { display: none; }
+        .rel-empresa-header {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-4);
+            margin-bottom: var(--sp-5);
+            padding: var(--sp-4) var(--sp-6);
+            background: var(--surface-card);
+            border-radius: var(--r-xl);
+            box-shadow: var(--shadow-sm);
+        }
+        .rel-empresa-header img { height: 48px; max-width: 140px; object-fit: contain; }
+        .rel-empresa-nome { font-size: 1rem; font-weight: 700; color: var(--on-surface); }
+        .rel-obra-nome { font-size: 0.8125rem; color: var(--on-surface-muted); }
+        .rel-kpis {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--sp-4);
+            margin-bottom: var(--sp-5);
+        }
+        @media (max-width: 900px) { .rel-kpis { grid-template-columns: repeat(2, 1fr); } }
+        .status-bar { width: 4px; height: 20px; border-radius: 2px; display: inline-block; vertical-align: middle; }
+        .etapa-expandivel { cursor: pointer; }
+        .etapa-expandivel:hover { background: var(--surface-low); }
+        .etapa-chevron {
+            display: inline-flex;
+            align-items: center;
+            color: var(--on-surface-muted);
+            transition: transform 0.18s;
+        }
+        .tipo-row td { background: var(--surface-low); }
+        .tipo-nome { padding-left: 2rem !important; color: var(--on-surface-muted); font-size: 0.8125rem; }
+        .tipo-num { font-size: 0.8125rem; opacity: 0.85; }
+
+        /* ── Print (relatório) ── */
+        @media print {
+            * { overflow: visible !important; }
+            body { background: white !important; margin: 0; }
+            .sidebar, .topbar, .rel-filtros, #btnExportar, #refreshBtn,
+            .page-tabs, .page-hero-actions, #loadingArea, #ai-chat-widget { display: none !important; }
+            .content-shell { margin-left: 0 !important; padding: 0 !important; }
+            .main-content { padding: var(--sp-4) !important; }
+            .page-hero { margin-bottom: var(--sp-4) !important; }
+            .page-hero h1 { font-size: 1.5rem !important; }
+            #tab-visao { display: none !important; }
+            #tab-relatorio { display: block !important; }
+            #relatorioArea { display: block !important; }
+            .rel-empresa-header { box-shadow: none !important; border: 1px solid rgba(0,0,0,0.1); }
+            .rel-kpis { grid-template-columns: repeat(4, 1fr) !important; gap: var(--sp-3) !important; }
+            .kpi-card { box-shadow: none !important; border: 1px solid rgba(0,0,0,0.1); padding: var(--sp-3) !important; }
+            .kpi-value { font-size: 1.25rem !important; }
+            .matrix-section { box-shadow: none !important; border: 1px solid rgba(0,0,0,0.1); page-break-inside: avoid; }
+            #fluxoRelGrid { grid-template-columns: repeat(3,1fr) !important; }
+            .styled-table { font-size: 0.75rem !important; }
+            .styled-table th, .styled-table td { padding: 6px 8px !important; }
+            .fin-num { white-space: nowrap !important; }
+        }
+    </style>
 </head>
 
 <body>
@@ -22,8 +142,6 @@
 
     <!-- ===================== SIDEBAR ===================== -->
     <aside class="sidebar">
-
-        <!-- Brand -->
         <div class="sidebar-brand">
             <div class="sidebar-logo">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -37,22 +155,15 @@
                 <span class="sidebar-brand-sub">Finance Suite</span>
             </div>
         </div>
-
-        <!-- Navigation (injected by nav.js) -->
         <div class="sidebar-nav-wrap" id="main-nav"></div>
-
-        <!-- Footer -->
         <div class="sidebar-footer">
             <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
         </div>
-
     </aside>
-    <!-- ==================== /SIDEBAR ==================== -->
 
     <!-- ================== CONTENT SHELL ================= -->
     <div class="content-shell">
 
-        <!-- Topbar -->
         <header class="topbar">
             <div class="topbar-search">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -62,7 +173,7 @@
                 <input type="text" placeholder="Pesquisar projetos..." disabled>
             </div>
             <div class="topbar-actions">
-                <span class="status-dot online" id="connectionStatus" style="color:var(--on-surface-muted);font-size:0.72rem;font-weight:500;">Sistema Sincronizado</span>
+                <span class="status-dot online" id="connectionStatusTop" style="color:var(--on-surface-muted);font-size:0.72rem;font-weight:500;">Sistema Sincronizado</span>
                 <button class="topbar-icon-btn" title="Notificações" style="position:relative">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
@@ -86,24 +197,15 @@
             </div>
         </header>
 
-        <!-- Main -->
         <main class="main-content">
 
             <!-- Page Hero -->
             <div class="page-hero">
                 <div>
                     <h1 id="dashboardTitle">Visão Geral</h1>
-                    <p class="page-hero-sub">Status financeiro consolidado do portfólio.</p>
+                    <p class="page-hero-sub" id="dashboardSubtitle">Status financeiro consolidado do portfólio.</p>
                 </div>
                 <div class="page-hero-actions">
-                    <a href="/relatorios/" class="btn btn-outline">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="20" x2="18" y2="10"></line>
-                            <line x1="12" y1="20" x2="12" y2="4"></line>
-                            <line x1="6"  y1="20" x2="6"  y2="14"></line>
-                        </svg>
-                        Relatório Inteligente
-                    </a>
                     <button id="refreshBtn" class="btn btn-primary">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="23 4 23 10 17 10"></polyline>
@@ -112,185 +214,282 @@
                         </svg>
                         Atualizar
                     </button>
+                    <button class="btn btn-outline" id="btnExportar" style="display:none;" onclick="window.print()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                            <rect x="6" y="14" width="12" height="8"></rect>
+                        </svg>
+                        Imprimir / PDF
+                    </button>
                 </div>
             </div>
 
-            <!-- Filter Bar -->
-            <div class="matrix-section filter-bar" style="padding: var(--sp-4) var(--sp-6);">
-                <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:var(--sp-4);align-items:end;">
-                    <div>
-                        <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Obras</label>
-                        <div class="dropdown-container">
-                            <div class="dropdown-header" id="obraDropdownHeader">
-                                <span class="dropdown-header-text" id="obraDropdownText">Selecionar Obras</span>
-                                <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                            </div>
-                            <div class="checkbox-list dropdown-list filter-dropdown" id="obraCheckboxes"></div>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Etapas</label>
-                        <div class="dropdown-container">
-                            <div class="dropdown-header" id="etapaDropdownHeader">
-                                <span class="dropdown-header-text" id="etapaDropdownText">Todas as Etapas</span>
-                                <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                            </div>
-                            <div class="checkbox-list dropdown-list filter-dropdown" id="etapaCheckboxes"></div>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Tipo de Custo</label>
-                        <div class="dropdown-container">
-                            <div class="dropdown-header" id="tipoDropdownHeader">
-                                <span class="dropdown-header-text" id="tipoDropdownText">Todos os Tipos</span>
-                                <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                            </div>
-                            <div class="checkbox-list dropdown-list filter-dropdown" id="tipoCheckboxes"></div>
-                        </div>
-                    </div>
-                    <button class="btn btn-primary" id="applyFiltersBtn" style="white-space:nowrap;">Aplicar Filtros</button>
-                </div>
+            <!-- Tab Bar -->
+            <div class="page-tabs">
+                <button class="page-tab active" data-tab="visao" onclick="switchTab('visao')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    Visão Geral
+                </button>
+                <button class="page-tab" data-tab="relatorio" onclick="switchTab('relatorio')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6"  y1="20" x2="6"  y2="14"></line>
+                    </svg>
+                    Relatório Inteligente
+                </button>
             </div>
 
-            <!-- KPI Grid -->
-            <section class="kpi-grid">
+            <!-- ═══════════════ TAB: VISÃO GERAL ═══════════════ -->
+            <div id="tab-visao">
 
-                <div class="kpi-card">
-                    <div class="kpi-title">Orçamento Total Estimado</div>
-                    <div class="kpi-value fin-num" id="kpiOrcamento">R$ —</div>
-                    <div class="kpi-subtitle">Soma de todos os orçamentos</div>
-                </div>
-
-                <div class="kpi-card">
-                    <div class="kpi-title">Custo Realizado</div>
-                    <div class="kpi-value fin-num" id="kpiRealizado">R$ —</div>
-                    <div class="kpi-subtitle">Total despesas lançadas</div>
-                </div>
-
-                <div class="kpi-card">
-                    <div class="kpi-title">% de Consumo</div>
-                    <div class="kpi-value fin-num" id="kpiConsumo">—%</div>
-                    <div class="kpi-progress">
-                        <div class="progress-track">
-                            <div class="progress-fill" id="kpiConsumoBar"></div>
+                <!-- Filter Bar -->
+                <div class="matrix-section filter-bar" style="padding: var(--sp-4) var(--sp-6);">
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:var(--sp-4);align-items:end;">
+                        <div>
+                            <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Obras</label>
+                            <div class="dropdown-container">
+                                <div class="dropdown-header" id="obraDropdownHeader">
+                                    <span class="dropdown-header-text" id="obraDropdownText">Selecionar Obras</span>
+                                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="checkbox-list dropdown-list filter-dropdown" id="obraCheckboxes"></div>
+                            </div>
                         </div>
-                        <div class="kpi-progress-label">
-                            <span id="kpiConsumoMin">0%</span>
-                            <span>100%</span>
+                        <div>
+                            <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Etapas</label>
+                            <div class="dropdown-container">
+                                <div class="dropdown-header" id="etapaDropdownHeader">
+                                    <span class="dropdown-header-text" id="etapaDropdownText">Todas as Etapas</span>
+                                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="checkbox-list dropdown-list filter-dropdown" id="etapaCheckboxes"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="filter-group-label" style="display:block;font-size:0.72rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:5px;letter-spacing:0.02em;">Tipo de Custo</label>
+                            <div class="dropdown-container">
+                                <div class="dropdown-header" id="tipoDropdownHeader">
+                                    <span class="dropdown-header-text" id="tipoDropdownText">Todos os Tipos</span>
+                                    <svg class="dropdown-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="checkbox-list dropdown-list filter-dropdown" id="tipoCheckboxes"></div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" id="applyFiltersBtn" style="white-space:nowrap;">Aplicar Filtros</button>
+                    </div>
+                </div>
+
+                <!-- KPI Grid -->
+                <section class="kpi-grid" style="margin-top:var(--sp-5);">
+                    <div class="kpi-card">
+                        <div class="kpi-title">Orçamento Total Estimado</div>
+                        <div class="kpi-value fin-num" id="kpiOrcamento">R$ —</div>
+                        <div class="kpi-subtitle">Soma de todos os orçamentos</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">Custo Realizado</div>
+                        <div class="kpi-value fin-num" id="kpiRealizado">R$ —</div>
+                        <div class="kpi-subtitle">Total despesas lançadas</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">% de Consumo</div>
+                        <div class="kpi-value fin-num" id="kpiConsumo">—%</div>
+                        <div class="kpi-progress">
+                            <div class="progress-track">
+                                <div class="progress-fill" id="kpiConsumoBar"></div>
+                            </div>
+                            <div class="kpi-progress-label">
+                                <span id="kpiConsumoMin">0%</span>
+                                <span>100%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kpi-card kpi-dark">
+                        <div class="kpi-title">% de Realização</div>
+                        <div class="kpi-value fin-num" id="kpiRealizacao">—%</div>
+                        <div class="kpi-progress">
+                            <div class="progress-track">
+                                <div class="progress-fill" id="kpiRealizacaoBar"></div>
+                            </div>
+                            <div class="kpi-progress-label">
+                                <span id="kpiRealizacaoMin">0%</span>
+                                <span>100%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-title">Fluxo de Caixa</div>
+                        <div class="kpi-value fin-num" id="kpiSaldoCaixa">R$ —</div>
+                        <div class="kpi-subtitle" id="kpiSaldoCaixaSub">Total recebido nas obras</div>
+                    </div>
+                </section>
+
+                <!-- Matrix Table -->
+                <section class="matrix-section" style="margin-top:var(--sp-5);">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Matriz Financeira por Obra</span>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <span style="font-size:0.75rem; color:var(--on-surface-muted);">Clique na obra para expandir etapas</span>
+                        </div>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="styled-table" id="financeTable">
+                            <thead>
+                                <tr>
+                                    <th>Obra / Etapa</th>
+                                    <th class="text-right">Orçamento Estimado</th>
+                                    <th class="text-right">Gasto Realizado</th>
+                                    <th class="text-right">Saldo</th>
+                                    <th class="text-center">% Consumido</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tableBody"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Fluxo de Caixa -->
+                <section class="matrix-section" id="fluxoSection" style="display:none;">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Fluxo de Caixa</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(5,1fr); gap:var(--sp-5); padding:var(--sp-5) var(--sp-6); text-align:center;">
+                        <div>
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Recebido</div>
+                            <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--success);" id="fluxoRecebido">R$ —</div>
+                        </div>
+                        <div>
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Gasto</div>
+                            <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--error);" id="fluxoGasto">R$ —</div>
+                        </div>
+                        <div>
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">A Pagar</div>
+                            <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--warning);" id="fluxoAPagar">R$ —</div>
+                        </div>
+                        <div>
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Saldo Atual</div>
+                            <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;" id="fluxoSaldoAtual">R$ —</div>
+                        </div>
+                        <div>
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Saldo Projetado</div>
+                            <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;" id="fluxoSaldoProjetado">R$ —</div>
+                        </div>
+                    </div>
+                    <!-- Contratos -->
+                    <div style="border-top:1px solid var(--outline-ghost);padding-top:var(--sp-4);margin-top:var(--sp-2);display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-5);">
+                        <div style="text-align:center;">
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Contratos (Total)</div>
+                            <div class="fin-num" style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;" id="fluxoContratosTotal">R$ —</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Contratos Pagos</div>
+                            <div class="fin-num" style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:var(--success);" id="fluxoContratosPago">R$ —</div>
+                        </div>
+                        <div style="text-align:center;">
+                            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Contratos a Executar</div>
+                            <div class="fin-num" style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:var(--warning);" id="fluxoContratosRestante">R$ —</div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+            <!-- ═══════════════ /TAB VISÃO GERAL ═══════════════ -->
+
+            <!-- ═══════════════ TAB: RELATÓRIO ═══════════════ -->
+            <div id="tab-relatorio" style="display:none;">
+
+                <!-- Filtros -->
+                <div class="rel-filtros">
+                    <div class="form-group">
+                        <label class="form-label">Modo</label>
+                        <div class="rel-modo-toggle">
+                            <input type="radio" name="relModo" id="relModoUnico" value="unico" checked>
+                            <label for="relModoUnico">Obra única</label>
+                            <input type="radio" name="relModo" id="relModoComparativo" value="comparativo">
+                            <label for="relModoComparativo">Comparativo</label>
+                        </div>
+                    </div>
+                    <div class="form-group" id="relGrupoObraUnica">
+                        <label class="form-label">Obra</label>
+                        <select class="form-select" id="relSelectObra" style="min-width:220px;">
+                            <option value="">— Selecione —</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="relGrupoObraComparativo" style="display:none;">
+                        <label class="form-label">Obras (selecione 2+)</label>
+                        <select class="form-select" id="relSelectObrasMulti" multiple style="min-width:260px;height:80px;"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Data início</label>
+                        <input type="date" class="form-input" id="relDataIni">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Data fim</label>
+                        <input type="date" class="form-input" id="relDataFim">
+                    </div>
+                    <button class="btn btn-primary" id="btnGerarRelatorio">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        Gerar Relatório
+                    </button>
+                </div>
+
+                <!-- Loading -->
+                <div id="loadingArea" style="display:none;text-align:center;padding:var(--sp-10);color:var(--on-surface-muted);">
+                    <div class="spinner" style="margin:0 auto var(--sp-4);"></div>
+                    <p id="loadingMsg" style="font-size:0.875rem;">Carregando dados…</p>
+                </div>
+
+                <!-- Relatório gerado -->
+                <div id="relatorioArea">
+                    <div id="relEmpresaHeaders"></div>
+                    <div class="rel-kpis" id="relKpisGrid"></div>
+                    <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                        <div class="matrix-header">
+                            <span class="matrix-title">Fluxo de Caixa</span>
+                        </div>
+                        <div id="fluxoRelGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-5);padding:var(--sp-5) var(--sp-6);text-align:center;"></div>
+                    </div>
+                    <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                        <div class="matrix-header">
+                            <span class="matrix-title">Detalhamento por Etapa</span>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="styled-table">
+                                <thead>
+                                    <tr>
+                                        <th></th>
+                                        <th>Obra</th>
+                                        <th>Etapa</th>
+                                        <th class="text-right">Orçado</th>
+                                        <th class="text-right">Realizado</th>
+                                        <th class="text-right">Saldo</th>
+                                        <th class="text-right">% Consumo</th>
+                                        <th class="text-right">% Conclusão</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="relTabelaEtapas"></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
 
-                <div class="kpi-card kpi-dark">
-                    <div class="kpi-title">% de Realização</div>
-                    <div class="kpi-value fin-num" id="kpiRealizacao">—%</div>
-                    <div class="kpi-progress">
-                        <div class="progress-track">
-                            <div class="progress-fill" id="kpiRealizacaoBar"></div>
-                        </div>
-                        <div class="kpi-progress-label">
-                            <span id="kpiRealizacaoMin">0%</span>
-                            <span>100%</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="kpi-card">
-                    <div class="kpi-title">Fluxo de Caixa</div>
-                    <div class="kpi-value fin-num" id="kpiSaldoCaixa">R$ —</div>
-                    <div class="kpi-subtitle" id="kpiSaldoCaixaSub">Total recebido nas obras</div>
-                </div>
-
-            </section>
-
-            <!-- Matrix Table -->
-            <section class="matrix-section">
-                <div class="matrix-header">
-                    <span class="matrix-title">Matriz Financeira por Obra</span>
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        <span style="font-size:0.75rem; color:var(--on-surface-muted);">Clique na obra para expandir etapas</span>
-                    </div>
-                </div>
-                <div class="table-wrapper">
-                    <table class="styled-table" id="financeTable">
-                        <thead>
-                            <tr>
-                                <th>Obra / Etapa</th>
-                                <th class="text-right">Orçamento Estimado</th>
-                                <th class="text-right">Gasto Realizado</th>
-                                <th class="text-right">Saldo</th>
-                                <th class="text-center">% Consumido</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tableBody">
-                            <!-- Linhas injetadas via JS -->
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <!-- Fluxo de Caixa -->
-            <section class="matrix-section" id="fluxoSection" style="display:none;">
-                <div class="matrix-header">
-                    <span class="matrix-title">Fluxo de Caixa</span>
-                </div>
-                <div style="display:grid; grid-template-columns: repeat(5,1fr); gap:var(--sp-5); padding:var(--sp-5) var(--sp-6);">
-
-                    <div>
-                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Recebido</div>
-                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--success);" id="fluxoRecebido">R$ —</div>
-                    </div>
-
-                    <div>
-                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Gasto</div>
-                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--error);" id="fluxoGasto">R$ —</div>
-                    </div>
-
-                    <div>
-                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">A Pagar</div>
-                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;color:var(--warning);" id="fluxoAPagar">R$ —</div>
-                    </div>
-
-                    <div>
-                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Saldo Atual</div>
-                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;" id="fluxoSaldoAtual">R$ —</div>
-                    </div>
-
-                    <div>
-                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Saldo Projetado</div>
-                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;" id="fluxoSaldoProjetado">R$ —</div>
-                    </div>
-
-                </div>
-
-                <!-- Contratos -->
-                <div style="border-top:1px solid var(--outline-ghost);padding-top:var(--sp-4);margin-top:var(--sp-2);display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-5);">
-                    <div style="text-align:center;">
-                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Contratos (Total)</div>
-                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;" id="fluxoContratosTotal">R$ —</div>
-                    </div>
-                    <div style="text-align:center;">
-                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Contratos Pagos</div>
-                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:var(--success);" id="fluxoContratosPago">R$ —</div>
-                    </div>
-                    <div style="text-align:center;">
-                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">Contratos a Executar</div>
-                        <div class="fin-num" style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;color:var(--warning);" id="fluxoContratosRestante">R$ —</div>
-                    </div>
-                </div>
-
-            </section>
+            </div>
+            <!-- ═══════════════ /TAB RELATÓRIO ═══════════════ -->
 
         </main>
     </div>
-    <!-- ================= /CONTENT SHELL ================ -->
 
 </div>
 
-<!-- Componentes compartilhados -->
 <script src="components/toast.js"></script>
 <script src="components/nav.js"></script>
-<!-- Lógica do dashboard -->
 <script src="app.js"></script>
 </body>
 </html>
