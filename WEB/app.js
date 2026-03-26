@@ -57,17 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         btn.disabled = false;
     });
 
-    document.getElementById('exportPdfBtn').addEventListener('click', () => {
-        if (currentObraFilters.length === 0) {
-            toast.warning('Selecione uma obra antes de exportar o relatório.');
-            return;
-        }
-        if (currentObraFilters.length > 1) {
-            toast.warning('Selecione apenas uma obra para gerar o relatório PDF.');
-            return;
-        }
-        abrirModalRelatorio(currentObraFilters[0]);
-    });
+    // Botão "Relatório Inteligente" agora é um <a href>, sem listener necessário.
 
     document.getElementById('applyFiltersBtn').addEventListener('click', atualizarDashboard);
 });
@@ -398,6 +388,18 @@ async function atualizarFluxoCaixa(gastoTotal) {
         const saldoAtual  = recebido - gastoTotal;
         const saldoProj   = recebido - gastoTotal - aPagar;
 
+        const kpiSaldo    = document.getElementById('kpiSaldoCaixa');
+        const kpiSaldoSub = document.getElementById('kpiSaldoCaixaSub');
+        if (kpiSaldo) {
+            kpiSaldo.textContent = formatCurrency(recebido);
+            kpiSaldo.style.color = 'var(--success)';
+        }
+        if (kpiSaldoSub) {
+            const saldo = recebido - gastoTotal;
+            kpiSaldoSub.textContent = `Saldo: ${formatCurrency(saldo)}`;
+            kpiSaldoSub.style.color = saldo >= 0 ? 'var(--success)' : 'var(--error)';
+        }
+
         const colorSaldoAtual = saldoAtual >= 0 ? 'var(--success)' : 'var(--error)';
         const colorSaldoProj  = saldoProj  >= 0 ? 'var(--success)' : 'var(--error)';
 
@@ -439,6 +441,10 @@ function resetarKPIs() {
     if (ctrTotalEl)    ctrTotalEl.textContent    = 'R$ —';
     if (ctrPagoEl)     ctrPagoEl.textContent     = 'R$ —';
     if (ctrRestanteEl) ctrRestanteEl.textContent = 'R$ —';
+    const kpiSaldo    = document.getElementById('kpiSaldoCaixa');
+    const kpiSaldoSub = document.getElementById('kpiSaldoCaixaSub');
+    if (kpiSaldo)    { kpiSaldo.textContent = 'R$ —'; kpiSaldo.style.color = ''; }
+    if (kpiSaldoSub) { kpiSaldoSub.textContent = 'Total recebido nas obras'; kpiSaldoSub.style.color = ''; }
 }
 
 function setStatus(type, text) {
@@ -617,17 +623,24 @@ function renderizarTabela() {
         return;
     }
 
+    // Agrupar por obra → etapa → tipos
     const obrasAgrupadas = {};
     filteredData.forEach(item => {
         if (!obrasAgrupadas[item.OBRA]) {
-            obrasAgrupadas[item.OBRA] = { previsto_total: 0, realizado_total: 0, etapas: [] };
+            obrasAgrupadas[item.OBRA] = { previsto_total: 0, realizado_total: 0, etapas: {} };
         }
+        const et = item.ETAPA || '—';
+        if (!obrasAgrupadas[item.OBRA].etapas[et]) {
+            obrasAgrupadas[item.OBRA].etapas[et] = { previsto: 0, realizado: 0, tipos: [] };
+        }
+        obrasAgrupadas[item.OBRA].etapas[et].previsto  += Number(item.ORÇAMENTO_ESTIMADO);
+        obrasAgrupadas[item.OBRA].etapas[et].realizado += Number(item.GASTO_REALIZADO);
+        obrasAgrupadas[item.OBRA].etapas[et].tipos.push(item);
         obrasAgrupadas[item.OBRA].previsto_total  += Number(item.ORÇAMENTO_ESTIMADO);
         obrasAgrupadas[item.OBRA].realizado_total += Number(item.GASTO_REALIZADO);
-        obrasAgrupadas[item.OBRA].etapas.push(item);
     });
 
-    Object.keys(obrasAgrupadas).forEach((obraName, index) => {
+    Object.keys(obrasAgrupadas).forEach((obraName, obraIdx) => {
         const obra    = obrasAgrupadas[obraName];
         const saldo   = obra.previsto_total - obra.realizado_total;
         const pct     = obra.previsto_total > 0 ? (obra.realizado_total / obra.previsto_total) * 100 : 0;
@@ -641,7 +654,7 @@ function renderizarTabela() {
 
         const trObra = document.createElement('tr');
         trObra.className = `row-obra ${statusClass} ${autoExpand ? 'expanded' : ''}`;
-        trObra.dataset.obraId = index;
+        trObra.dataset.obraId = obraIdx;
         trObra.innerHTML = `
             <td><span class="expand-icon">▶</span>${obraName}</td>
             <td class="text-right fin-num"><strong>${formatCurrency(obra.previsto_total)}</strong></td>
@@ -659,31 +672,90 @@ function renderizarTabela() {
         trObra.addEventListener('click', function () {
             this.classList.toggle('expanded');
             const isExp = this.classList.contains('expanded');
-            document.querySelectorAll(`.etapa-of-${index}`).forEach(el => {
+            document.querySelectorAll(`.etapa-of-${obraIdx}`).forEach(el => {
                 el.style.display = isExp ? 'table-row' : 'none';
             });
+            // Colapsar tipos ao fechar obra
+            if (!isExp) {
+                document.querySelectorAll(`[class*="tipo-of-${obraIdx}-"]`).forEach(el => {
+                    el.style.display = 'none';
+                });
+                document.querySelectorAll(`.etapa-of-${obraIdx}`).forEach(el => {
+                    el.classList.remove('expanded');
+                    const icon = el.querySelector('.expand-icon-etapa');
+                    if (icon) icon.style.transform = '';
+                });
+            }
         });
 
         tbody.appendChild(trObra);
 
-        obra.etapas.forEach(etapa => {
-            const trEt = document.createElement('tr');
-            trEt.className = `row-etapa etapa-of-${index}`;
-            if (autoExpand) trEt.style.display = 'table-row';
+        // Etapas da obra
+        Object.entries(obra.etapas).forEach(([etapaNome, etapaData], etapaIdx) => {
+            // Apenas etapas com orçamento ou gasto
+            if (etapaData.previsto === 0 && etapaData.realizado === 0) return;
 
-            const saldoEt    = Number(etapa.SALDO_ETAPA);
-            const pctEt      = Number(etapa.ORÇAMENTO_ESTIMADO) > 0
-                ? (Number(etapa.GASTO_REALIZADO) / Number(etapa.ORÇAMENTO_ESTIMADO)) * 100 : 0;
+            const etId       = `${obraIdx}-${etapaIdx}`;
+            const saldoEt    = etapaData.previsto - etapaData.realizado;
+            const pctEt      = etapaData.previsto > 0 ? (etapaData.realizado / etapaData.previsto) * 100 : 0;
             const saldoEtCls = saldoEt < 0 ? 'text-error' : 'text-success';
+            const pctEtCls   = pctEt  > 100 ? 'text-error' : '';
 
-            trEt.innerHTML = `
-                <td>${etapa.ETAPA} <span style="opacity:0.55;font-size:0.8em;">(${etapa.TIPO_CUSTO || 'Geral'})</span></td>
-                <td class="text-right fin-num">${formatCurrency(etapa.ORÇAMENTO_ESTIMADO)}</td>
-                <td class="text-right fin-num">${formatCurrency(etapa.GASTO_REALIZADO)}</td>
+            // Tipos com orçamento ou gasto
+            const tiposFiltrados = etapaData.tipos.filter(t =>
+                Number(t.ORÇAMENTO_ESTIMADO) > 0 || Number(t.GASTO_REALIZADO) > 0
+            );
+
+            const trEtapa = document.createElement('tr');
+            trEtapa.className = `row-etapa etapa-of-${obraIdx}`;
+            if (autoExpand) trEtapa.style.display = 'table-row';
+            if (tiposFiltrados.length > 0) trEtapa.style.cursor = 'pointer';
+
+            trEtapa.innerHTML = `
+                <td style="padding-left:1.5rem;">
+                    ${tiposFiltrados.length > 0
+                        ? `<span class="expand-icon-etapa" style="margin-right:6px;display:inline-block;transition:transform .18s;font-size:0.7em;opacity:0.55;">▶</span>`
+                        : `<span style="display:inline-block;width:18px;"></span>`}
+                    ${etapaNome}
+                </td>
+                <td class="text-right fin-num">${formatCurrency(etapaData.previsto)}</td>
+                <td class="text-right fin-num">${formatCurrency(etapaData.realizado)}</td>
                 <td class="text-right fin-num ${saldoEtCls}">${formatCurrency(saldoEt)}</td>
-                <td class="text-center fin-num">${pctEt.toFixed(1)}%</td>`;
+                <td class="text-center fin-num ${pctEtCls}">${pctEt.toFixed(1)}%</td>`;
 
-            tbody.appendChild(trEt);
+            if (tiposFiltrados.length > 0) {
+                trEtapa.addEventListener('click', function () {
+                    this.classList.toggle('expanded');
+                    const isExp = this.classList.contains('expanded');
+                    document.querySelectorAll(`.tipo-of-${etId}`).forEach(el => {
+                        el.style.display = isExp ? 'table-row' : 'none';
+                    });
+                    const icon = this.querySelector('.expand-icon-etapa');
+                    if (icon) icon.style.transform = isExp ? 'rotate(90deg)' : '';
+                });
+            }
+
+            tbody.appendChild(trEtapa);
+
+            // Sub-linhas de tipo (ocultas por padrão)
+            tiposFiltrados.forEach(t => {
+                const saldoT    = Number(t.SALDO_ETAPA);
+                const pctT      = Number(t.ORÇAMENTO_ESTIMADO) > 0
+                    ? (Number(t.GASTO_REALIZADO) / Number(t.ORÇAMENTO_ESTIMADO)) * 100 : 0;
+                const saldoTCls = saldoT < 0 ? 'text-error' : 'text-success';
+                const pctTCls   = pctT  > 100 ? 'text-error' : '';
+
+                const trTipo = document.createElement('tr');
+                trTipo.className = `row-tipo tipo-of-${etId}`;
+                trTipo.style.display = 'none';
+                trTipo.innerHTML = `
+                    <td style="padding-left:3rem;color:var(--on-surface-muted);font-size:0.8125rem;">↳ ${t.TIPO_CUSTO || 'Geral'}</td>
+                    <td class="text-right fin-num" style="font-size:0.8125rem;opacity:0.85;">${formatCurrency(t.ORÇAMENTO_ESTIMADO)}</td>
+                    <td class="text-right fin-num" style="font-size:0.8125rem;opacity:0.85;">${formatCurrency(t.GASTO_REALIZADO)}</td>
+                    <td class="text-right fin-num ${saldoTCls}" style="font-size:0.8125rem;opacity:0.85;">${formatCurrency(saldoT)}</td>
+                    <td class="text-center fin-num ${pctTCls}" style="font-size:0.8125rem;opacity:0.85;">${pctT.toFixed(1)}%</td>`;
+                tbody.appendChild(trTipo);
+            });
         });
     });
 }

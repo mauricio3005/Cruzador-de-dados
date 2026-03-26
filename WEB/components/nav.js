@@ -13,6 +13,7 @@ const NAV_ITEMS = [
     { icon: "💰", label: "Recebimentos",     path: "/recebimentos/",     done: true  },
     { icon: "📝", label: "Contratos",        path: "/contratos/",        done: true  },
     { icon: "🔁", label: "Recorrentes",      path: "/recorrentes/",      done: true  },
+    { icon: "📈", label: "Relatórios",       path: "/relatorios/",       done: true  },
     { icon: "⚙️", label: "Configurações",    path: "/configuracoes/",    done: true  },
 ];
 

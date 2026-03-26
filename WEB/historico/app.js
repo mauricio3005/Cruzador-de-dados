@@ -459,6 +459,28 @@ function setStatus(type, text) {
     el.className   = `status-dot ${type}`;
 }
 
+// ── EXCLUSÃO EM LOTE ────────────────────────────────────────────────────────
+
+async function deletarSelecionadas() {
+    const ids = [...selecionados];
+    if (ids.length === 0) return;
+    const n = ids.length;
+    if (!confirm(`Excluir permanentemente ${n} despesa${n > 1 ? 's' : ''} selecionada${n > 1 ? 's' : ''}?`)) return;
+
+    try {
+        const { error } = await dbClient.from('c_despesas').delete().in('id', ids);
+        if (error) throw error;
+
+        todosRegistros = todosRegistros.filter(r => !selecionados.has(r.id));
+        limparSelecao();
+        renderizarTabela();
+        atualizarSumario();
+        toast.success(`${n} despesa${n > 1 ? 's' : ''} excluída${n > 1 ? 's' : ''}.`);
+    } catch (e) {
+        toast.error(`Erro ao excluir: ${e.message}`);
+    }
+}
+
 // ── SELEÇÃO E VINCULAR COMPROVANTE ──────────────────────────────────────────
 
 function toggleSelecao(id) {

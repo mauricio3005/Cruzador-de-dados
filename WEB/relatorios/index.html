@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatório Inteligente — Industrial Architect</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+    <script src="../env.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        /* ── Layout específico do módulo ── */
+        .rel-filtros {
+            background: var(--surface-card);
+            border-radius: var(--r-xl);
+            padding: var(--sp-5) var(--sp-6);
+            margin-bottom: var(--sp-5);
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: var(--sp-4);
+        }
+        .rel-filtros .form-group { display: flex; flex-direction: column; gap: 4px; min-width: 180px; }
+        .rel-modo-toggle {
+            display: flex;
+            background: var(--surface-low);
+            border-radius: var(--r-full);
+            padding: 3px;
+            gap: 2px;
+        }
+        .rel-modo-toggle label {
+            padding: 5px 14px;
+            border-radius: var(--r-full);
+            font-size: 0.8125rem;
+            font-weight: 500;
+            cursor: pointer;
+            color: var(--on-surface-muted);
+            transition: background 0.15s, color 0.15s;
+        }
+        .rel-modo-toggle input[type="radio"] { display: none; }
+        .rel-modo-toggle input:checked + label {
+            background: var(--surface-card);
+            color: var(--on-surface);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* ── Área do relatório gerado ── */
+        #relatorioArea { display: none; }
+        .rel-empresa-header {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-4);
+            margin-bottom: var(--sp-5);
+            padding: var(--sp-4) var(--sp-6);
+            background: var(--surface-card);
+            border-radius: var(--r-xl);
+            box-shadow: var(--shadow-sm);
+        }
+        .rel-empresa-header img {
+            height: 48px;
+            max-width: 140px;
+            object-fit: contain;
+        }
+        .rel-empresa-nome { font-size: 1rem; font-weight: 700; color: var(--on-surface); }
+        .rel-obra-nome { font-size: 0.8125rem; color: var(--on-surface-muted); }
+
+        /* ── Grid de KPIs ── */
+        .rel-kpis {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: var(--sp-4);
+            margin-bottom: var(--sp-5);
+        }
+        @media (max-width: 900px) { .rel-kpis { grid-template-columns: repeat(2, 1fr); } }
+
+        /* ── Tabela detalhada ── */
+        .status-bar {
+            width: 4px;
+            height: 20px;
+            border-radius: 2px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        /* ── Etapas colapsáveis ── */
+        .etapa-expandivel { cursor: pointer; }
+        .etapa-expandivel:hover { background: var(--surface-low); }
+        .etapa-chevron {
+            display: inline-flex;
+            align-items: center;
+            color: var(--on-surface-muted);
+            transition: transform 0.18s;
+        }
+        .tipo-row td { background: var(--surface-low); }
+        .tipo-nome {
+            padding-left: 2rem !important;
+            color: var(--on-surface-muted);
+            font-size: 0.8125rem;
+        }
+        .tipo-num { font-size: 0.8125rem; opacity: 0.85; }
+
+        /* ── Print ── */
+        @media print {
+            * { overflow: visible !important; }
+            body { background: white !important; margin: 0; }
+            .sidebar, .topbar, .rel-filtros, #btnExportar,
+            #loadingArea, #painelIA, #ai-chat-widget { display: none !important; }
+            .content-shell { margin-left: 0 !important; padding: 0 !important; }
+            .main-content { padding: var(--sp-4) !important; }
+            .page-hero { margin-bottom: var(--sp-4) !important; }
+            .page-hero h1 { font-size: 1.5rem !important; }
+            #relatorioArea { display: block !important; }
+            .rel-empresa-header { box-shadow: none !important; border: 1px solid rgba(0,0,0,0.1); }
+            .rel-kpis { grid-template-columns: repeat(4, 1fr) !important; gap: var(--sp-3) !important; }
+            .kpi-card { box-shadow: none !important; border: 1px solid rgba(0,0,0,0.1); padding: var(--sp-3) !important; }
+            .kpi-value { font-size: 1.25rem !important; }
+            .matrix-section { box-shadow: none !important; border: 1px solid rgba(0,0,0,0.1); page-break-inside: avoid; }
+            #fluxoGrid { grid-template-columns: repeat(3,1fr) !important; }
+            .styled-table { font-size: 0.75rem !important; }
+            .styled-table th, .styled-table td { padding: 6px 8px !important; }
+            .fin-num { white-space: nowrap !important; }
+            .styled-table th:first-child,
+            .styled-table td:first-child { display: none !important; }
+        }
+    </style>
+</head>
+
+<body>
+<div class="app-shell">
+
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <div class="sidebar-brand-text">
+                <span class="sidebar-brand-name">Industrial Architect</span>
+                <span class="sidebar-brand-sub">Finance Suite</span>
+            </div>
+        </div>
+        <div class="sidebar-nav-wrap" id="main-nav"></div>
+        <div class="sidebar-footer">
+            <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
+        </div>
+    </aside>
+
+    <div class="content-shell">
+
+        <header class="topbar">
+            <div class="topbar-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" placeholder="Módulo de Relatórios" readonly style="cursor:default;">
+            </div>
+            <div class="topbar-actions">
+                <button class="btn btn-outline" id="btnExportar" style="font-size:0.8125rem;display:none;"
+                        onclick="window.print()">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                        <rect x="6" y="14" width="12" height="8"></rect>
+                    </svg>
+                    Imprimir / PDF
+                </button>
+            </div>
+        </header>
+
+        <main class="main-content">
+
+            <div class="page-hero">
+                <div>
+                    <h1>Relatório Inteligente</h1>
+                    <p class="page-hero-sub">Análise financeira com insights automáticos por IA.</p>
+                </div>
+            </div>
+
+            <!-- FILTROS -->
+            <div class="rel-filtros">
+                <!-- Toggle modo -->
+                <div class="form-group">
+                    <label class="form-label">Modo</label>
+                    <div class="rel-modo-toggle">
+                        <input type="radio" name="modo" id="modoUnico" value="unico" checked>
+                        <label for="modoUnico">Obra única</label>
+                        <input type="radio" name="modo" id="modoComparativo" value="comparativo">
+                        <label for="modoComparativo">Comparativo</label>
+                    </div>
+                </div>
+
+                <!-- Seletor de obra (único) -->
+                <div class="form-group" id="grupoObraUnica">
+                    <label class="form-label">Obra</label>
+                    <select class="form-select" id="selectObra" style="min-width:220px;">
+                        <option value="">— Selecione —</option>
+                    </select>
+                </div>
+
+                <!-- Seletor de obras (comparativo) — multi-select simulado -->
+                <div class="form-group" id="grupoObraComparativo" style="display:none;">
+                    <label class="form-label">Obras (selecione 2+)</label>
+                    <select class="form-select" id="selectObrasMulti" multiple style="min-width:260px;height:80px;">
+                    </select>
+                </div>
+
+                <!-- Período -->
+                <div class="form-group">
+                    <label class="form-label">Data início</label>
+                    <input type="date" class="form-input" id="filtroDataIni">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Data fim</label>
+                    <input type="date" class="form-input" id="filtroDataFim">
+                </div>
+
+                <button class="btn btn-primary" id="btnGerarRelatorio" style="align-self:flex-end;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Gerar Relatório
+                </button>
+            </div>
+
+            <!-- LOADING -->
+            <div id="loadingArea" style="display:none;text-align:center;padding:var(--sp-10);color:var(--on-surface-muted);">
+                <div class="spinner" style="margin:0 auto var(--sp-4);"></div>
+                <p id="loadingMsg" style="font-size:0.875rem;">Carregando dados…</p>
+            </div>
+
+            <!-- RELATÓRIO GERADO -->
+            <div id="relatorioArea">
+
+                <!-- Cabeçalho empresa(s) -->
+                <div id="empresaHeaders"></div>
+
+                <!-- KPIs -->
+                <div class="rel-kpis" id="kpisGrid"></div>
+
+                <!-- Fluxo de Caixa -->
+                <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Fluxo de Caixa</span>
+                    </div>
+                    <div id="fluxoGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-5);padding:var(--sp-5) var(--sp-6);"></div>
+                </div>
+
+                <!-- 1) Tabela detalhada (Detalhamento por Etapa) -->
+                <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Detalhamento por Etapa</span>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="styled-table">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Obra</th>
+                                    <th>Etapa</th>
+                                    <th class="text-right">Orçado</th>
+                                    <th class="text-right">Realizado</th>
+                                    <th class="text-right">Saldo</th>
+                                    <th class="text-right">% Consumo</th>
+                                    <th class="text-right">% Conclusão</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaEtapas"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div><!-- /relatorioArea -->
+
+        </main>
+    </div>
+</div>
+
+<script src="../components/toast.js"></script>
+<script src="../components/nav.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -15,6 +15,7 @@ function carregarEnv() {
 
 // --- ESTADO ---
 let obras      = [];
+let empresas   = [];
 let etapas     = [];
 let tiposCusto = [];
 let formas     = [];
@@ -59,6 +60,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (e.target === e.currentTarget) fecharModalObra();
     });
 
+    // Botões empresas
+    document.getElementById('btnNovaEmpresa').addEventListener('click', () => abrirModalEmpresa(null));
+    document.getElementById('btnSalvarEmpresa').addEventListener('click', salvarEmpresa);
+    document.getElementById('modalEmpresa').addEventListener('click', e => {
+        if (e.target === e.currentTarget) fecharModalEmpresa();
+    });
+    document.getElementById('btnEscolherLogo').addEventListener('click', () => {
+        document.getElementById('eLogoFile').click();
+    });
+    document.getElementById('eLogoFile').addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        document.getElementById('eLogoNome').textContent = file.name;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            const prev = document.getElementById('eLogoPreview');
+            prev.src = ev.target.result;
+            prev.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    });
+
     // Botões etapas
     document.getElementById('btnNovaEtapa').addEventListener('click', () => abrirModalEtapa(null));
     document.getElementById('btnSalvarEtapa').addEventListener('click', salvarEtapa);
@@ -101,8 +124,9 @@ async function carregarReferencias() {
         } catch { return []; }
     };
 
-    const [resObras, resEtapas, resTipos, resFormas, resCats] = await Promise.all([
+    const [resObras, resEmpresas, resEtapas, resTipos, resFormas, resCats] = await Promise.all([
         safe(db.from('obras').select('*').order('nome')),
+        safe(db.from('empresas').select('*').order('nome')),
         safe(db.from('etapas').select('nome,ordem').order('ordem')),
         safe(db.from('tipos_custo').select('nome').order('nome')),
         safe(db.from('formas_pagamento').select('nome').order('nome')),
@@ -110,12 +134,14 @@ async function carregarReferencias() {
     ]);
 
     obras      = resObras;
+    empresas   = resEmpresas;
     etapas     = resEtapas;
     tiposCusto = resTipos.map(r => r.nome);
     formas     = resFormas.map(r => r.nome);
     categorias = resCats.map(r => r.nome);
 
     renderizarObras();
+    renderizarEmpresas();
     renderizarEtapas();
     popularSelectObra('obraOrcamento');
     popularSelectObra('obraTaxa');
@@ -140,12 +166,14 @@ function renderizarObras() {
         tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhuma obra cadastrada.</td></tr>`;
         return;
     }
-    tbody.innerHTML = obras.map(o => `
+    tbody.innerHTML = obras.map(o => {
+        const empresa = empresas.find(e => e.id === o.empresa_id);
+        return `
         <tr>
             <td style="font-weight:600;">${esc(o.nome)}</td>
             <td>${esc(o.descricao || '—')}</td>
+            <td>${empresa ? `<span style="font-size:0.8125rem;background:var(--surface-low);padding:2px 8px;border-radius:4px;">${esc(empresa.nome)}</span>` : '—'}</td>
             <td>${esc(o.contrato || '—')}</td>
-            <td>${esc(o.art || '—')}</td>
             <td style="text-align:center;white-space:nowrap;">
                 <button class="btn btn-outline" onclick="abrirModalObra('${esc(o.nome)}')" style="font-size:0.72rem;padding:3px 8px;" title="Editar">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -160,7 +188,8 @@ function renderizarObras() {
                     </svg>
                 </button>
             </td>
-        </tr>`).join('');
+        </tr>`;
+    }).join('');
 }
 
 function abrirModalObra(nome) {
@@ -172,6 +201,12 @@ function abrirModalObra(nome) {
     document.getElementById('oContrato').value      = o ? (o.contrato   || '') : '';
     document.getElementById('oArt').value           = o ? (o.art        || '') : '';
     document.getElementById('oNome').disabled       = !!o; // nome é PK, não pode alterar
+
+    // Popula select de empresas
+    const sel = document.getElementById('oEmpresaId');
+    sel.innerHTML = `<option value="">— Sem empresa —</option>` +
+        empresas.map(e => `<option value="${e.id}"${o && o.empresa_id === e.id ? ' selected' : ''}>${esc(e.nome)}</option>`).join('');
+
     document.getElementById('modalObra').style.display = 'flex';
 }
 
@@ -182,10 +217,12 @@ function fecharModalObra() {
 async function salvarObra() {
     const nome     = document.getElementById('oNome').value.trim();
     const original = document.getElementById('oNomeOriginal').value;
+    const empresaIdVal = document.getElementById('oEmpresaId').value;
     const payload  = {
-        descricao: document.getElementById('oDescricao').value.trim() || null,
-        contrato:  document.getElementById('oContrato').value.trim()  || null,
-        art:       document.getElementById('oArt').value.trim()       || null,
+        descricao:  document.getElementById('oDescricao').value.trim() || null,
+        contrato:   document.getElementById('oContrato').value.trim()  || null,
+        art:        document.getElementById('oArt').value.trim()       || null,
+        empresa_id: empresaIdVal ? parseInt(empresaIdVal) : null,
     };
 
     if (!nome) { toast.warning('Nome é obrigatório.'); return; }
@@ -312,6 +349,148 @@ async function salvarOrdemEtapas() {
         toast.error('Erro: ' + e.message);
     } finally {
         btn.disabled = false; btn.textContent = 'Salvar Ordem';
+    }
+}
+
+// ============================================================
+// EMPRESAS
+// ============================================================
+function renderizarEmpresas() {
+    const tbody = document.getElementById('tabelaEmpresas');
+    if (!tbody) return;
+    if (!empresas.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhuma empresa cadastrada.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = empresas.map(e => `
+        <tr>
+            <td>
+                ${e.logo_url
+                    ? `<img src="${esc(e.logo_url)}" alt="${esc(e.nome)}" style="width:48px;height:32px;object-fit:contain;border-radius:4px;background:var(--surface-low);padding:2px;">`
+                    : `<span style="font-size:0.75rem;color:var(--on-surface-muted);">Sem logo</span>`}
+            </td>
+            <td style="font-weight:600;">${esc(e.nome)}</td>
+            <td>${esc(e.cnpj || '—')}</td>
+            <td>${esc(e.telefone || '—')}</td>
+            <td>${esc(e.endereco || '—')}</td>
+            <td style="text-align:center;white-space:nowrap;">
+                <button class="btn btn-outline" onclick="abrirModalEmpresa(${e.id})" style="font-size:0.72rem;padding:3px 8px;" title="Editar">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                </button>
+                <button class="btn btn-outline" onclick="removerEmpresa(${e.id},'${esc(e.nome)}')" style="font-size:0.72rem;padding:3px 8px;color:var(--error);border-color:var(--error);" title="Remover">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                    </svg>
+                </button>
+            </td>
+        </tr>`).join('');
+}
+
+function abrirModalEmpresa(id) {
+    const e = id ? empresas.find(x => x.id === id) : null;
+    document.getElementById('modalEmpresaTitulo').textContent = e ? 'Editar Empresa' : 'Nova Empresa';
+    document.getElementById('eId').value        = e ? e.id           : '';
+    document.getElementById('eNome').value      = e ? e.nome         : '';
+    document.getElementById('eCnpj').value      = e ? (e.cnpj        || '') : '';
+    document.getElementById('eTelefone').value  = e ? (e.telefone    || '') : '';
+    document.getElementById('eEndereco').value  = e ? (e.endereco    || '') : '';
+    document.getElementById('eLogoUrlAtual').value = e ? (e.logo_url || '') : '';
+    document.getElementById('eLogoNome').textContent = '';
+    document.getElementById('eLogoFile').value = '';
+
+    const prev = document.getElementById('eLogoPreview');
+    if (e && e.logo_url) {
+        prev.src = e.logo_url;
+        prev.style.display = 'block';
+    } else {
+        prev.src = '';
+        prev.style.display = 'none';
+    }
+
+    document.getElementById('modalEmpresa').style.display = 'flex';
+}
+
+function fecharModalEmpresa() {
+    document.getElementById('modalEmpresa').style.display = 'none';
+}
+
+async function salvarEmpresa() {
+    const nome = document.getElementById('eNome').value.trim();
+    if (!nome) { toast.warning('Nome é obrigatório.'); return; }
+
+    const btn = document.getElementById('btnSalvarEmpresa');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+
+    try {
+        let logo_url = document.getElementById('eLogoUrlAtual').value || null;
+
+        // Upload de logo se um novo arquivo foi selecionado
+        const fileInput = document.getElementById('eLogoFile');
+        if (fileInput.files.length > 0) {
+            const file = fileInput.files[0];
+            const ext  = file.name.split('.').pop().toLowerCase();
+            const path = `empresa_${nome.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.${ext}`;
+
+            const { error: upErr } = await db.storage.from('logos').upload(path, file, {
+                contentType: file.type,
+                upsert: true,
+            });
+            if (upErr) throw upErr;
+
+            const base = window.ENV.SUPABASE_URL.replace(/\/$/, '');
+            logo_url = `${base}/storage/v1/object/public/logos/${path}`;
+        }
+
+        const payload = {
+            nome,
+            cnpj:     document.getElementById('eCnpj').value.trim()     || null,
+            telefone: document.getElementById('eTelefone').value.trim()  || null,
+            endereco: document.getElementById('eEndereco').value.trim()  || null,
+            logo_url,
+        };
+
+        const id = document.getElementById('eId').value;
+        if (id) {
+            const { error } = await db.from('empresas').update(payload).eq('id', parseInt(id));
+            if (error) throw error;
+            toast.success('Empresa atualizada.');
+        } else {
+            const { error } = await db.from('empresas').insert(payload);
+            if (error) throw error;
+            toast.success(`Empresa "${nome}" adicionada.`);
+        }
+
+        fecharModalEmpresa();
+        const { data } = await db.from('empresas').select('*').order('nome');
+        empresas = data || [];
+        renderizarEmpresas();
+        renderizarObras(); // atualiza coluna empresa nas obras
+    } catch (e) {
+        toast.error('Erro: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Salvar';
+    }
+}
+
+async function removerEmpresa(id, nome) {
+    if (!confirm(`Remover a empresa "${nome}"? As obras vinculadas ficarão sem empresa.`)) return;
+    try {
+        const { error } = await db.from('empresas').delete().eq('id', id);
+        if (error) throw error;
+        toast.success(`Empresa "${nome}" removida.`);
+        const { data } = await db.from('empresas').select('*').order('nome');
+        empresas = data || [];
+        renderizarEmpresas();
+        // Recarregar obras para refletir remoção da empresa
+        const { data: obrasData } = await db.from('obras').select('*').order('nome');
+        obras = obrasData || [];
+        renderizarObras();
+    } catch (e) {
+        toast.error('Erro: ' + e.message);
     }
 }
 

@@ -68,6 +68,7 @@
             <!-- TABS -->
             <div class="sub-tabs" id="configTabs">
                 <button class="sub-tab-btn active" data-tab="obras">Obras</button>
+                <button class="sub-tab-btn" data-tab="empresas">Empresas</button>
                 <button class="sub-tab-btn" data-tab="etapas">Etapas</button>
                 <button class="sub-tab-btn" data-tab="orcamentos">Orçamentos</button>
                 <button class="sub-tab-btn" data-tab="taxa">Taxa de Conclusão</button>
@@ -95,13 +96,46 @@
                                 <tr>
                                     <th>Nome</th>
                                     <th>Descrição</th>
+                                    <th>Empresa</th>
                                     <th>Contrato</th>
-                                    <th>ART</th>
                                     <th style="text-align:center;">Ações</th>
                                 </tr>
                             </thead>
                             <tbody id="tabelaObras">
                                 <tr><td colspan="5" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Carregando…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TAB: EMPRESAS ───────────────────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-empresas">
+                <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Empresas cadastradas</span>
+                        <button class="btn btn-primary" id="btnNovaEmpresa" style="font-size:0.8125rem;">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                            Nova Empresa
+                        </button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="styled-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:60px;">Logo</th>
+                                    <th>Nome</th>
+                                    <th>CNPJ</th>
+                                    <th>Telefone</th>
+                                    <th>Endereço</th>
+                                    <th style="text-align:center;">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaEmpresas">
+                                <tr><td colspan="6" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Carregando…</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -311,6 +345,12 @@
                 <input type="text" class="form-input" id="oNome" placeholder="Ex: Casa Busca Vida">
                 <input type="hidden" id="oNomeOriginal">
             </div>
+            <div style="grid-column:1/-1;">
+                <label class="form-label">Empresa</label>
+                <select class="form-select" id="oEmpresaId">
+                    <option value="">— Sem empresa —</option>
+                </select>
+            </div>
             <div>
                 <label class="form-label">Descrição</label>
                 <input type="text" class="form-input" id="oDescricao" placeholder="Descrição breve">
@@ -327,6 +367,57 @@
         <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);margin-top:var(--sp-5);">
             <button class="btn btn-outline" onclick="fecharModalObra()">Cancelar</button>
             <button class="btn btn-primary" id="btnSalvarObra" style="min-width:100px;">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL EMPRESA (add / edit) -->
+<div id="modalEmpresa" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(580px,95vw);box-shadow:0 24px 64px rgba(0,0,0,0.4);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
+            <h2 id="modalEmpresaTitulo" style="font-size:1.125rem;font-weight:700;color:var(--on-surface);">Nova Empresa</h2>
+            <button onclick="fecharModalEmpresa()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <input type="hidden" id="eId">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);">
+            <div style="grid-column:1/-1;">
+                <label class="form-label">Nome *</label>
+                <input type="text" class="form-input" id="eNome" placeholder="Ex: MM Reformas & Serviços">
+            </div>
+            <div>
+                <label class="form-label">CNPJ</label>
+                <input type="text" class="form-input" id="eCnpj" placeholder="00.000.000/0001-00">
+            </div>
+            <div>
+                <label class="form-label">Telefone</label>
+                <input type="text" class="form-input" id="eTelefone" placeholder="(00) 00000-0000">
+            </div>
+            <div style="grid-column:1/-1;">
+                <label class="form-label">Endereço</label>
+                <input type="text" class="form-input" id="eEndereco" placeholder="Rua, número, cidade — UF">
+            </div>
+            <div style="grid-column:1/-1;">
+                <label class="form-label">Logo</label>
+                <div style="display:flex;align-items:center;gap:var(--sp-4);">
+                    <img id="eLogoPreview" src="" alt="" style="display:none;width:80px;height:50px;object-fit:contain;border-radius:var(--r-md);background:var(--surface-card);padding:4px;border:1px solid var(--outline-ghost);">
+                    <div style="flex:1;">
+                        <input type="file" id="eLogoFile" accept=".png,.jpg,.jpeg,.webp,.svg" style="display:none;">
+                        <button type="button" class="btn btn-outline" id="btnEscolherLogo" style="font-size:0.8125rem;">
+                            Escolher imagem…
+                        </button>
+                        <span id="eLogoNome" style="margin-left:var(--sp-3);font-size:0.8125rem;color:var(--on-surface-muted);"></span>
+                    </div>
+                </div>
+                <input type="hidden" id="eLogoUrlAtual">
+            </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);margin-top:var(--sp-5);">
+            <button class="btn btn-outline" onclick="fecharModalEmpresa()">Cancelar</button>
+            <button class="btn btn-primary" id="btnSalvarEmpresa" style="min-width:100px;">Salvar</button>
         </div>
     </div>
 </div>
