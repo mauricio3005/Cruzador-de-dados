@@ -636,14 +636,25 @@ _TOOLS = [
         "type": "function",
         "function": {
             "name": "planejar_editar_lote_despesas",
-            "description": "Planeja edição de MÚLTIPLAS despesas com o mesmo conjunto de campos. Use após buscar_despesas para obter os ids[].",
+            "description": "Planeja edição de MÚLTIPLAS despesas aplicando os mesmos campos a todas. Use após buscar_despesas para obter os ids[]. Forneça pelo menos um campo além de ids.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "ids":    {"type": "array", "items": {"type": "string"}, "description": "Lista de UUIDs"},
-                    "campos": {"type": "object", "description": "Campos a aplicar em todos os registros"},
+                    "ids":         {"type": "array", "items": {"type": "string"}, "description": "Lista de UUIDs das despesas a editar"},
+                    "fornecedor":  {"type": "string", "description": "Novo fornecedor (fuzzy match automático)"},
+                    "obra":        {"type": "string", "description": "Nova obra"},
+                    "etapa":       {"type": "string", "description": "Nova etapa"},
+                    "tipo":        {"type": "string", "enum": ["Mão de Obra", "Materiais", "Geral"]},
+                    "despesa":     {"type": "string", "description": "Nova categoria de despesa"},
+                    "descricao":   {"type": "string"},
+                    "valor_total": {"type": "number"},
+                    "data":        {"type": "string", "description": "YYYY-MM-DD"},
+                    "forma":       {"type": "string", "description": "Forma de pagamento"},
+                    "banco":       {"type": "string"},
+                    "paga":        {"type": "boolean"},
+                    "vencimento":  {"type": "string", "description": "YYYY-MM-DD"},
                 },
-                "required": ["ids", "campos"],
+                "required": ["ids"],
             },
         },
     },
@@ -864,14 +875,19 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
         return json.dumps({"tabela": "c_despesas", "operacao": "atualizar", "id": id_, "dados": campos, "antes": antes}, ensure_ascii=False)
 
     elif tool_name == "planejar_editar_lote_despesas":
-        ids    = args.get("ids", [])
-        campos = dict(args.get("campos", {}))
+        ids = args.get("ids", [])
         if not ids:
             return json.dumps({"erro": "ids[] obrigatório"})
-        if "obra" in campos:      campos["obra"]      = fuzzy(campos["obra"], refs["obras"])
-        if "etapa" in campos:     campos["etapa"]     = fuzzy(campos["etapa"], refs["etapas"])
-        if "fornecedor" in campos:campos["fornecedor"]= fuzzy(campos["fornecedor"], refs["fornecedores"])
-        if "despesa" in campos:   campos["despesa"]   = fuzzy(campos["despesa"], refs["categorias"])
+        # Extrai campos diretamente de args (sem wrapper "campos")
+        _CAMPOS_DESPESA = {"fornecedor", "obra", "etapa", "tipo", "despesa", "descricao",
+                           "valor_total", "data", "forma", "banco", "paga", "vencimento"}
+        campos = {k: v for k, v in args.items() if k in _CAMPOS_DESPESA and v is not None}
+        if not campos:
+            return json.dumps({"erro": "Nenhum campo para alterar foi fornecido. Informe pelo menos um campo além de ids."})
+        if "obra" in campos:       campos["obra"]       = fuzzy(campos["obra"], refs["obras"])
+        if "etapa" in campos:      campos["etapa"]      = fuzzy(campos["etapa"], refs["etapas"])
+        if "fornecedor" in campos: campos["fornecedor"] = fuzzy(campos["fornecedor"], refs["fornecedores"])
+        if "despesa" in campos:    campos["despesa"]    = fuzzy(campos["despesa"], refs["categorias"])
         res = db.table("c_despesas").select("id, data, fornecedor, descricao, despesa, valor_total").in_("id", ids).execute()
         antes = res.data or []
         return json.dumps({"tabela": "c_despesas", "operacao": "atualizar_lote", "ids": ids, "dados": campos, "antes": antes}, ensure_ascii=False)
