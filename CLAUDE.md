@@ -112,3 +112,22 @@ Descrito em `DESIGN.md`. Princípios-chave:
 **Prefill IA → Despesas:** O chat widget pode navegar para `/despesas/` com dados pré-preenchidos. O `despesas/app.js` lê `sessionStorage('ai_despesa_prefill')` no `DOMContentLoaded` e preenche o formulário.
 
 **Supabase no frontend:** Cada módulo chama `window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY)` após verificar `window.ENV`. Não usar service key no browser.
+
+## Testing
+
+Não há suite de testes automatizados. Teste manual via Swagger UI (`http://localhost:8000/docs`) para endpoints backend.
+
+Para verificar conexão com o banco:
+```bash
+python test_db.py
+```
+
+Para debug de contexto do chat IA: `GET /api/debug/chat-context` (requer API rodando).
+
+## Known Caveats
+
+- **Sem transações reais** — o fechamento de folha executa operações sequenciais sem rollback; falha parcial deixa estado inconsistente
+- **Duas tabelas de despesas** — `c_despesas` (atual) e schema legado coexistem; sempre usar `c_despesas` em código novo
+- **CORS aberto** — `allow_origins=["*"]` em `api/main.py`; adequado apenas para desenvolvimento local
+- **Migrations não são idempotentes** — executar novamente pode duplicar dados históricos; nunca re-executar arquivos já aplicados
+- **`relatorio.py` usa `_get_supabase()` próprio** — exceção histórica; novos routes devem usar `get_supabase()` de `api/supabase_client.py`

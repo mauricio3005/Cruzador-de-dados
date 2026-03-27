@@ -434,7 +434,7 @@ async def chat_despesas(payload: dict):
     contexto      = payload.get("contexto", "")
 
     _CHAT_SYSTEM = (
-        "Você é um assistente especializado em revisar despesas de construção civil extraídas por IA. "
+        "Você é o Jarvis, assistente especializado em revisar despesas de construção civil extraídas por IA. "
         "O usuário pode pedir explicações sobre o raciocínio da extração ou solicitar correções na tabela.\n\n"
         "Responda SEMPRE em JSON válido, sem texto fora do JSON, no formato:\n"
         '{"mensagem": "sua resposta em texto para o usuário", "despesas": null}\n\n'
@@ -581,6 +581,177 @@ _TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    # ── Tools de planejamento (não escrevem — apenas validam e montam payload) ──
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_criar_despesa",
+            "description": "Planeja criação de uma despesa em c_despesas. Retorna payload validado para confirmação — NÃO escreve no banco.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "descricao":       {"type": "string"},
+                    "valor_total":     {"type": "number"},
+                    "obra":            {"type": "string"},
+                    "etapa":           {"type": "string"},
+                    "tipo":            {"type": "string", "description": "Mão de Obra | Materiais | Geral"},
+                    "fornecedor":      {"type": "string"},
+                    "despesa":         {"type": "string", "description": "Categoria da despesa"},
+                    "forma":           {"type": "string", "description": "PIX | Boleto | Cartão | Dinheiro | Transferência"},
+                    "banco":           {"type": "string"},
+                    "data":            {"type": "string", "description": "YYYY-MM-DD (default: hoje)"},
+                    "data_vencimento": {"type": "string", "description": "YYYY-MM-DD (default: hoje)"},
+                },
+                "required": ["descricao", "valor_total", "obra"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_editar_despesa",
+            "description": "Planeja edição de UMA despesa existente. Requer id (UUID obtido via buscar_despesas). Informe apenas os campos a alterar.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id":              {"type": "string", "description": "UUID da despesa"},
+                    "descricao":       {"type": "string"},
+                    "valor_total":     {"type": "number"},
+                    "obra":            {"type": "string"},
+                    "etapa":           {"type": "string"},
+                    "tipo":            {"type": "string"},
+                    "fornecedor":      {"type": "string"},
+                    "despesa":         {"type": "string"},
+                    "forma":           {"type": "string"},
+                    "banco":           {"type": "string"},
+                    "data":            {"type": "string"},
+                    "data_vencimento": {"type": "string"},
+                    "paga":            {"type": "boolean"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_editar_lote_despesas",
+            "description": "Planeja edição de MÚLTIPLAS despesas com o mesmo conjunto de campos. Use após buscar_despesas para obter os ids[].",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ids":    {"type": "array", "items": {"type": "string"}, "description": "Lista de UUIDs"},
+                    "campos": {"type": "object", "description": "Campos a aplicar em todos os registros"},
+                },
+                "required": ["ids", "campos"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_criar_recebimento",
+            "description": "Planeja criação de um recebimento.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "descricao":  {"type": "string"},
+                    "valor":      {"type": "number"},
+                    "obra":       {"type": "string"},
+                    "data":       {"type": "string", "description": "YYYY-MM-DD"},
+                    "fornecedor": {"type": "string"},
+                    "forma":      {"type": "string"},
+                },
+                "required": ["descricao", "valor", "obra"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_editar_recebimento",
+            "description": "Planeja edição de um recebimento existente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id":         {"type": "string"},
+                    "descricao":  {"type": "string"},
+                    "valor":      {"type": "number"},
+                    "obra":       {"type": "string"},
+                    "data":       {"type": "string"},
+                    "fornecedor": {"type": "string"},
+                    "forma":      {"type": "string"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_criar_conta_a_pagar",
+            "description": "Planeja criação de uma conta a pagar.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "descricao":  {"type": "string"},
+                    "valor":      {"type": "number"},
+                    "vencimento": {"type": "string", "description": "YYYY-MM-DD"},
+                    "obra":       {"type": "string"},
+                    "fornecedor": {"type": "string"},
+                },
+                "required": ["descricao", "valor", "vencimento", "obra"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_editar_conta_a_pagar",
+            "description": "Planeja edição de uma conta a pagar existente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id":         {"type": "string"},
+                    "descricao":  {"type": "string"},
+                    "valor":      {"type": "number"},
+                    "vencimento": {"type": "string"},
+                    "obra":       {"type": "string"},
+                    "fornecedor": {"type": "string"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_marcar_conta_paga",
+            "description": "Planeja marcação de uma conta a pagar como paga.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id":              {"type": "string", "description": "UUID da conta"},
+                    "data_pagamento":  {"type": "string", "description": "YYYY-MM-DD (default: hoje)"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_criar_fornecedor",
+            "description": "Planeja criação de um novo fornecedor.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nome": {"type": "string"},
+                },
+                "required": ["nome"],
+            },
+        },
+    },
 ]
 
 
@@ -590,7 +761,7 @@ def _exec_buscar_despesas(db, fornecedor=None, obra=None, etapa=None, categoria=
     fornecs_reais = list({r.get("fornecedor") for r in existentes if r.get("fornecedor")})
     obras_reais   = list({r.get("obra")       for r in existentes if r.get("obra")})
 
-    q = db.table("c_despesas").select("obra, etapa, fornecedor, despesa, tipo, data, valor_total, descricao")
+    q = db.table("c_despesas").select("id, obra, etapa, fornecedor, despesa, tipo, data, valor_total, descricao")
     if fornecedor:
         match = _melhor_match(fornecs_reais, _normalizar(fornecedor))
         if match: q = q.eq("fornecedor", match)
@@ -605,7 +776,7 @@ def _exec_buscar_despesas(db, fornecedor=None, obra=None, etapa=None, categoria=
     rows = q.order("data", desc=True).limit(200).execute().data or []
     total = sum(r.get("valor_total") or 0 for r in rows)
     linhas = [
-        f"[{r.get('data','')}] obra={r.get('obra','N/D')} | etapa={r.get('etapa','N/D')} | "
+        f"[id:{r.get('id','')}] [{r.get('data','')}] obra={r.get('obra','N/D')} | etapa={r.get('etapa','N/D')} | "
         f"fornecedor={r.get('fornecedor','N/D')} | categoria={r.get('despesa','N/D')} | "
         f"R$ {r.get('valor_total',0):,.2f}" + (f" | {r.get('descricao','')}" if r.get('descricao') else "")
         for r in rows
@@ -658,6 +829,106 @@ def _exec_listar_referencias(db):
     return {"obras": obras, "etapas": etapas, "fornecedores": fornecs, "categorias": cats}
 
 
+def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
+    """Handler unificado para todos os tools planejar_*. Valida, faz fuzzy match e monta payload — não escreve no banco."""
+    from datetime import date
+
+    hoje = date.today().isoformat()
+
+    def fuzzy(valor, lista):
+        if not valor or not lista:
+            return valor
+        return _melhor_match(lista, _normalizar(str(valor))) or valor
+
+    if tool_name == "planejar_criar_despesa":
+        dados = {k: v for k, v in args.items() if v is not None}
+        dados["obra"]      = fuzzy(dados.get("obra"), refs["obras"])
+        dados["etapa"]     = fuzzy(dados.get("etapa"), refs["etapas"])
+        dados["fornecedor"]= fuzzy(dados.get("fornecedor"), refs["fornecedores"])
+        dados["despesa"]   = fuzzy(dados.get("despesa"), refs["categorias"])
+        dados.setdefault("data", hoje)
+        dados.setdefault("data_vencimento", hoje)
+        return json.dumps({"tabela": "c_despesas", "operacao": "inserir", "dados": dados, "antes": None}, ensure_ascii=False)
+
+    elif tool_name == "planejar_editar_despesa":
+        id_ = args.get("id")
+        if not id_:
+            return json.dumps({"erro": "id obrigatório para edição"})
+        campos = {k: v for k, v in args.items() if k != "id" and v is not None}
+        if "obra" in campos:      campos["obra"]      = fuzzy(campos["obra"], refs["obras"])
+        if "etapa" in campos:     campos["etapa"]     = fuzzy(campos["etapa"], refs["etapas"])
+        if "fornecedor" in campos:campos["fornecedor"]= fuzzy(campos["fornecedor"], refs["fornecedores"])
+        if "despesa" in campos:   campos["despesa"]   = fuzzy(campos["despesa"], refs["categorias"])
+        res = db.table("c_despesas").select("*").eq("id", id_).limit(1).execute()
+        antes = res.data[0] if res.data else {}
+        return json.dumps({"tabela": "c_despesas", "operacao": "atualizar", "id": id_, "dados": campos, "antes": antes}, ensure_ascii=False)
+
+    elif tool_name == "planejar_editar_lote_despesas":
+        ids    = args.get("ids", [])
+        campos = dict(args.get("campos", {}))
+        if not ids:
+            return json.dumps({"erro": "ids[] obrigatório"})
+        if "obra" in campos:      campos["obra"]      = fuzzy(campos["obra"], refs["obras"])
+        if "etapa" in campos:     campos["etapa"]     = fuzzy(campos["etapa"], refs["etapas"])
+        if "fornecedor" in campos:campos["fornecedor"]= fuzzy(campos["fornecedor"], refs["fornecedores"])
+        if "despesa" in campos:   campos["despesa"]   = fuzzy(campos["despesa"], refs["categorias"])
+        res = db.table("c_despesas").select("id, data, fornecedor, descricao, despesa, valor_total").in_("id", ids).execute()
+        antes = res.data or []
+        return json.dumps({"tabela": "c_despesas", "operacao": "atualizar_lote", "ids": ids, "dados": campos, "antes": antes}, ensure_ascii=False)
+
+    elif tool_name == "planejar_criar_recebimento":
+        dados = {k: v for k, v in args.items() if v is not None}
+        dados["obra"]      = fuzzy(dados.get("obra"), refs["obras"])
+        dados["fornecedor"]= fuzzy(dados.get("fornecedor"), refs["fornecedores"])
+        dados.setdefault("data", hoje)
+        return json.dumps({"tabela": "recebimentos", "operacao": "inserir", "dados": dados, "antes": None}, ensure_ascii=False)
+
+    elif tool_name == "planejar_editar_recebimento":
+        id_ = args.get("id")
+        if not id_:
+            return json.dumps({"erro": "id obrigatório"})
+        campos = {k: v for k, v in args.items() if k != "id" and v is not None}
+        if "obra" in campos:      campos["obra"]      = fuzzy(campos["obra"], refs["obras"])
+        if "fornecedor" in campos:campos["fornecedor"]= fuzzy(campos["fornecedor"], refs["fornecedores"])
+        res = db.table("recebimentos").select("*").eq("id", id_).limit(1).execute()
+        antes = res.data[0] if res.data else {}
+        return json.dumps({"tabela": "recebimentos", "operacao": "atualizar", "id": id_, "dados": campos, "antes": antes}, ensure_ascii=False)
+
+    elif tool_name == "planejar_criar_conta_a_pagar":
+        dados = {k: v for k, v in args.items() if v is not None}
+        dados["obra"]      = fuzzy(dados.get("obra"), refs["obras"])
+        dados["fornecedor"]= fuzzy(dados.get("fornecedor"), refs["fornecedores"])
+        dados.setdefault("paga", False)
+        return json.dumps({"tabela": "contas_a_pagar", "operacao": "inserir", "dados": dados, "antes": None}, ensure_ascii=False)
+
+    elif tool_name == "planejar_editar_conta_a_pagar":
+        id_ = args.get("id")
+        if not id_:
+            return json.dumps({"erro": "id obrigatório"})
+        campos = {k: v for k, v in args.items() if k != "id" and v is not None}
+        if "obra" in campos: campos["obra"] = fuzzy(campos["obra"], refs["obras"])
+        res = db.table("contas_a_pagar").select("*").eq("id", id_).limit(1).execute()
+        antes = res.data[0] if res.data else {}
+        return json.dumps({"tabela": "contas_a_pagar", "operacao": "atualizar", "id": id_, "dados": campos, "antes": antes}, ensure_ascii=False)
+
+    elif tool_name == "planejar_marcar_conta_paga":
+        id_ = args.get("id")
+        if not id_:
+            return json.dumps({"erro": "id obrigatório"})
+        data_pag = args.get("data_pagamento", hoje)
+        res = db.table("contas_a_pagar").select("*").eq("id", id_).limit(1).execute()
+        antes = res.data[0] if res.data else {}
+        return json.dumps({"tabela": "contas_a_pagar", "operacao": "atualizar", "id": id_, "dados": {"paga": True, "data_pagamento": data_pag}, "antes": antes}, ensure_ascii=False)
+
+    elif tool_name == "planejar_criar_fornecedor":
+        nome = (args.get("nome") or "").strip()
+        if not nome:
+            return json.dumps({"erro": "nome obrigatório"})
+        return json.dumps({"tabela": "fornecedores", "operacao": "inserir", "dados": {"nome": nome}, "antes": None}, ensure_ascii=False)
+
+    return json.dumps({"erro": f"tool '{tool_name}' não reconhecido"})
+
+
 # ---------------------------------------------------------------------------
 # Endpoint: chat assistente geral — tool calling + reasoning effort
 # ---------------------------------------------------------------------------
@@ -684,17 +955,34 @@ async def chat_assistente(payload: dict):
         raise HTTPException(status_code=500, detail=f"Erro no banco: {type(err).__name__}: {str(err)}")
 
     _SYSTEM = (
-        "Você é o assistente financeiro do sistema Industrial Architect Finance Suite, "
-        "especializado em gestão de obras de construção civil brasileira.\n\n"
-        "REGRAS:\n"
-        "1. Para qualquer pergunta sobre despesas específicas (por fornecedor, obra, período ou categoria), "
-        "   chame 'buscar_despesas'. NUNCA afirme que não há dados sem antes buscar.\n"
-        "2. Para totais e resumos financeiros, chame 'buscar_totais'.\n"
-        "3. Nomes com variação de acento são aceitos ('antonio luiz' encontra 'Antônio Luiz ...').\n"
-        "4. Seja objetivo. Sem introduções, sem frases de cortesia. Vá direto ao dado.\n"
-        "5. Formate valores como 'R$ 1.234,56'.\n"
-        "6. Para cadastrar despesa: retorne JSON {\"acao\": \"cadastrar_despesa\", \"mensagem\": \"...\", \"despesa\": {\"FORNECEDOR\": ..., \"DESCRICAO\": ..., \"VALOR_TOTAL\": ..., \"DATA\": \"YYYY-MM-DD\", \"OBRA\": ..., \"ETAPA\": ..., \"TIPO\": ..., \"DESPESA\": ..., \"FORMA\": ..., \"BANCO\": ...}}. Inclua BANCO sempre que o usuário mencionar banco, conta ou instituição financeira.\n"
-        f"7. Página atual: {pagina}." + (f" Obra selecionada: {obra_contexto}." if obra_contexto else "")
+        "Você é a IA de bordo de um sistema de gestão de obras. Você tem acesso a ferramentas de leitura e planejamento de operações no banco de dados. Seu comportamento segue regras rígidas descritas abaixo.\n\n"
+        "---\n\n"
+        "## IDENTIDADE E ESCOPO\n\n"
+        "Você auxilia gestores e equipes de obra a consultar, registrar e alterar dados financeiros e operacionais — despesas, recebimentos, contas a pagar e fornecedores. Você é direto, eficiente e nunca inventa dados.\n\n"
+        "---\n\n"
+        "## REGRAS DE OURO (invioláveis)\n\n"
+        "1. **Nunca escreva no banco de dados diretamente.** Para qualquer operação de criação ou edição, use exclusivamente os tools `planejar_*`. Esses tools apenas validam e montam o payload — não executam nada.\n\n"
+        "2. **Toda operação de escrita exige confirmação explícita do usuário.** Após usar um tool `planejar_*`, retorne sempre um JSON com `\"acao\": \"confirmar_operacao\"` para o frontend exibir o card de confirmação. Nunca simule que a operação foi executada antes da confirmação.\n\n"
+        "3. **Nunca delete registros.** Operações de exclusão não estão disponíveis e não devem ser sugeridas.\n\n"
+        "4. **Nunca invente IDs, UUIDs ou dados que você não buscou.** Para edições, use primeiro `buscar_despesas` para obter os IDs reais antes de chamar qualquer tool `planejar_editar_*`.\n\n"
+        "5. **Se faltar um campo obrigatório, pergunte antes de planejar.** Não tente prosseguir com dados incompletos.\n\n"
+        "6. **Para edições em lote, sempre busque os registros antes.** Fluxo: `buscar_despesas` → colete os UUIDs → `planejar_editar_lote_despesas(ids, campos)`.\n\n"
+        "7. **Aplique fuzzy match ao interpretar nomes.** Obras, etapas, fornecedores e categorias podem vir com grafia aproximada. Use correspondência aproximada — mas confirme se ambíguo.\n\n"
+        "8. **Seja conciso.** Sem introduções nem frases de cortesia. Formate valores como 'R$ 1.234,56'.\n\n"
+        "---\n\n"
+        "## FORMATO DE RETORNO PARA CONFIRMAÇÃO\n\n"
+        "Sempre que um tool `planejar_*` retornar sucesso, sua resposta deve ser **exclusivamente** o seguinte JSON (sem texto antes ou depois):\n"
+        "```json\n"
+        "{\"acao\": \"confirmar_operacao\", \"tipo\": \"<tipo>\", \"resumo\": \"<descrição curta>\", "
+        "\"registros\": [{\"id\": \"...\", \"descricao\": \"...\", \"antes\": {}, \"depois\": {}}], "
+        "\"payload\": {\"tabela\": \"...\", \"operacao\": \"...\", \"dados\": {}}}\n"
+        "```\n"
+        "Para criações, `\"antes\"` é null e `\"depois\"` contém os campos do novo registro.\n"
+        "O campo `\"payload\"` deve conter exatamente o que o tool `planejar_*` retornou (tabela, operacao, id/ids, dados).\n\n"
+        "---\n\n"
+        "## FLUXO DE CONSULTA\n\n"
+        "Para perguntas como 'quais despesas da Obra Norte em março?' use os tools de leitura e responda em linguagem natural. Não exiba cards de confirmação para consultas.\n\n"
+        f"Página atual: {pagina}." + (f" Obra selecionada: {obra_contexto}." if obra_contexto else "")
     )
 
     messages: list = [
@@ -710,7 +998,7 @@ async def chat_assistente(payload: dict):
         for _ in range(5):
             resp = await asyncio.to_thread(
                 client.chat.completions.create,
-                model="gpt-5.4",
+                model="gpt-5.4-mini",
                 max_completion_tokens=2000,
                 tools=_TOOLS,
                 tool_choice="auto",
@@ -737,12 +1025,22 @@ async def chat_assistente(payload: dict):
                 for tc in choice.message.tool_calls:
                     args = json.loads(tc.function.arguments)
                     logger.debug("chat: tool_call '%s' args=%s", tc.function.name, args)
+                    _PLANEJAR_TOOLS = {
+                        "planejar_criar_despesa", "planejar_editar_despesa",
+                        "planejar_editar_lote_despesas", "planejar_criar_recebimento",
+                        "planejar_editar_recebimento", "planejar_criar_conta_a_pagar",
+                        "planejar_editar_conta_a_pagar", "planejar_marcar_conta_paga",
+                        "planejar_criar_fornecedor",
+                    }
                     if tc.function.name == "buscar_despesas":
                         result = _exec_buscar_despesas(db, **args)
                     elif tc.function.name == "buscar_totais":
                         result = _exec_buscar_totais(db, **args)
                     elif tc.function.name == "listar_referencias":
                         result = _exec_listar_referencias(db)
+                    elif tc.function.name in _PLANEJAR_TOOLS:
+                        refs = _get_referencias()
+                        result = _exec_planejar(db, tc.function.name, args, refs)
                     else:
                         result = {"error": "ferramenta desconhecida"}
 
@@ -766,4 +1064,58 @@ async def chat_assistente(payload: dict):
         return {"resposta": "Não foi possível completar a consulta."}
     except Exception as e:
         logger.error("chat: erro — %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: executar operação confirmada pelo usuário
+# ---------------------------------------------------------------------------
+
+_TABELAS_PERMITIDAS = {
+    "c_despesas", "recebimentos", "contas_a_pagar", "fornecedores",
+    "obras", "etapas", "empresas", "orcamentos", "taxa_conclusao",
+    "categorias_despesa", "formas_pagamento", "obra_etapas", "despesas_recorrentes",
+}
+_PK_TEXTO = {"fornecedores", "obras", "etapas", "categorias_despesa", "formas_pagamento"}
+
+
+@router.post("/executar")
+async def executar_operacao(body: dict):
+    """Executa operação de escrita no banco após confirmação do usuário no frontend."""
+    tabela   = body.get("tabela")
+    operacao = body.get("operacao")
+    dados    = dict(body.get("dados", {}))
+
+    if tabela not in _TABELAS_PERMITIDAS:
+        raise HTTPException(400, f"Tabela '{tabela}' não permitida")
+    if operacao not in {"inserir", "atualizar", "atualizar_lote"}:
+        raise HTTPException(400, "Operação inválida")
+
+    sb = _get_supabase()
+
+    try:
+        if operacao == "inserir":
+            res = sb.table(tabela).insert(dados).execute()
+
+        elif operacao == "atualizar":
+            id_ = body.get("id")
+            if not id_:
+                raise HTTPException(400, "id obrigatório para atualizar")
+            pk  = "nome" if tabela in _PK_TEXTO else "id"
+            res = sb.table(tabela).update(dados).eq(pk, id_).execute()
+
+        elif operacao == "atualizar_lote":
+            ids = body.get("ids", [])
+            if not ids:
+                raise HTTPException(400, "ids[] obrigatório para atualizar_lote")
+            res = sb.table(tabela).update(dados).in_("id", ids).execute()
+
+        afetados = len(res.data) if res.data else 0
+        logger.info("[AI-EXEC] %s em %s | afetados=%d | dados=%s", operacao, tabela, afetados, dados)
+        return {"sucesso": True, "afetados": afetados}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("[AI-EXEC] erro — %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

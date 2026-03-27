@@ -8,6 +8,8 @@
     const VISUAL_KEY  = 'ai_chat_visual';
     let historico = [];   // [{role, content}]
     let aberto    = false;
+    let mediaRecorder = null;
+    let audioChunks   = [];
 
     function salvarHistorico() {
         try {
@@ -121,8 +123,8 @@
     position: absolute;
     bottom: 64px;
     right: 0;
-    width: 480px;
-    max-height: 820px;
+    width: min(900px, calc(100vw - 48px));
+    max-height: 750px;
     background: var(--surface-card, #1a1a24);
     border-radius: var(--r-xl, 16px);
     box-shadow: 0 8px 40px rgba(0,0,0,.6);
@@ -173,19 +175,19 @@
 .ai-chat-messages {
     flex: 1;
     overflow-y: auto;
-    padding: 14px 14px 8px;
+    padding: 22px 22px 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 14px;
     scrollbar-width: thin;
 }
 
 .ai-msg {
-    max-width: 88%;
-    padding: 9px 12px;
+    max-width: 80%;
+    padding: 12px 16px;
     border-radius: 12px;
-    font-size: .84rem;
-    line-height: 1.5;
+    font-size: .95rem;
+    line-height: 1.65;
     white-space: pre-wrap;
     word-break: break-word;
 }
@@ -318,6 +320,73 @@
     background: var(--secondary, #7bb8f5);
     color: #000;
 }
+
+#ai-chat-voice {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--surface-elevated, #22222e);
+    color: var(--on-surface-muted, #888);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1rem;
+    transition: background .15s, color .15s;
+}
+#ai-chat-voice:hover { color: var(--on-surface, #e8e8f0); }
+#ai-chat-voice.gravando { background: rgba(220,50,50,.2); color: #f55; animation: pulse-voice .8s infinite; }
+@keyframes pulse-voice { 0%,100%{opacity:1} 50%{opacity:.5} }
+#ai-chat-voice.processando { opacity: .5; cursor: default; pointer-events: none; }
+
+.ai-confirm-card {
+    margin: 0 14px 10px;
+    padding: 12px 14px;
+    background: rgba(245,197,66,.06);
+    border-radius: 10px;
+    border-left: 3px solid #f5c542;
+    font-size: .82rem;
+    color: var(--on-surface, #e8e8f0);
+}
+.ai-confirm-card-title {
+    font-weight: 700;
+    color: #f5c542;
+    margin-bottom: 6px;
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+}
+.ai-confirm-card-resumo { margin-bottom: 8px; line-height: 1.5; }
+.ai-confirm-card-registros {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.ai-confirm-card-registros li {
+    font-size: .76rem;
+    padding: 3px 8px;
+    background: rgba(255,255,255,.04);
+    border-radius: 5px;
+    color: var(--on-surface-muted, #aaa);
+}
+.ai-confirm-card-btns { display: flex; gap: 8px; }
+.ai-confirm-btn {
+    font-size: .78rem;
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity .15s;
+}
+.ai-confirm-btn:hover { opacity: .85; }
+.ai-confirm-btn.ok  { background: #f5c542; color: #1a1a24; font-weight: 700; }
+.ai-confirm-btn.nao { background: rgba(255,255,255,.08); color: var(--on-surface-muted, #aaa); }
 </style>
 
 <button id="ai-chat-btn" title="Assistente IA" aria-label="Abrir assistente de IA">
@@ -329,7 +398,7 @@
     <div class="ai-chat-header">
         <span class="ai-chat-header-icon">🤖</span>
         <div style="flex:1">
-            <div class="ai-chat-header-title">Assistente IA</div>
+            <div class="ai-chat-header-title">Jarvis</div>
             <div class="ai-chat-header-sub">Industrial Architect Finance Suite</div>
         </div>
         <button class="ai-chat-close" id="ai-chat-clear-btn" title="Limpar conversa" style="font-size:.85rem;opacity:.7;margin-right:2px">🗑</button>
@@ -337,7 +406,7 @@
     </div>
 
     <div class="ai-chat-messages" id="ai-chat-messages">
-        <div class="ai-msg assistant">Como posso ajudar?</div>
+        <div class="ai-msg assistant">Olá, sou o Jarvis. Como posso ajudar?</div>
     </div>
 
     <div class="ai-chat-sugestoes" id="ai-chat-sugestoes">
@@ -350,7 +419,8 @@
     <div id="ai-action-area"></div>
 
     <div class="ai-chat-input-wrap">
-        <textarea id="ai-chat-input" placeholder="Pergunte algo ou descreva uma despesa…" rows="1"></textarea>
+        <textarea id="ai-chat-input" placeholder="Pergunte algo… (CTRL+Q)" rows="1"></textarea>
+        <button id="ai-chat-voice" title="Gravar voz (clique para iniciar/parar)">🎤</button>
         <button id="ai-chat-send" title="Enviar">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -374,10 +444,11 @@
             sessionStorage.removeItem(STORAGE_KEY);
             sessionStorage.removeItem(VISUAL_KEY);
             const msgs = document.getElementById('ai-chat-messages');
-            msgs.innerHTML = '<div class="ai-msg assistant">Como posso ajudar?</div>';
+            msgs.innerHTML = '<div class="ai-msg assistant">Olá, sou o Jarvis. Como posso ajudar?</div>';
             document.getElementById('ai-chat-sugestoes').style.display = '';
         });
         document.getElementById('ai-chat-send').addEventListener('click', enviarMensagem);
+        document.getElementById('ai-chat-voice').addEventListener('click', toggleVoz);
         const input = document.getElementById('ai-chat-input');
         input.addEventListener('keydown', e => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensagem(); }
@@ -386,6 +457,13 @@
         input.addEventListener('input', () => {
             input.style.height = 'auto';
             input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+        });
+        // Atalho CTRL+Q para abrir/fechar
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && (e.key === 'q' || e.key === 'Q')) {
+                e.preventDefault();
+                toggleChat();
+            }
         });
     }
 
@@ -463,8 +541,15 @@
             const data = await res.json();
             loader.remove();
 
-            // Ação especial: cadastrar despesa
-            if (data.acao === 'cadastrar_despesa') {
+            // Ação especial: confirmar operação de escrita
+            if (data.acao === 'confirmar_operacao') {
+                const msg = data.resumo || 'Confirmar operação?';
+                appendMsg('assistant', msg);
+                historico.push({ role: 'assistant', content: msg });
+                salvarHistorico();
+                mostrarConfirmacao(data);
+            // Ação especial: cadastrar despesa (legado — navega para o formulário)
+            } else if (data.acao === 'cadastrar_despesa') {
                 const msg = data.mensagem || 'Identifiquei uma despesa. Deseja abrir o formulário?';
                 const despesaSugerida = data.despesa || {};
                 appendMsg('assistant', msg);
@@ -509,11 +594,132 @@
             </div>`;
     }
 
+    function mostrarConfirmacao(data) {
+        const area = document.getElementById('ai-action-area');
+        const payload = data.payload || {};
+        const registros = Array.isArray(data.registros) ? data.registros : [];
+
+        // Monta lista de registros afetados com diff
+        let itensHtml = '';
+        if (registros.length) {
+            const itens = registros.slice(0, 10).map(r => {
+                const label = r.descricao || r.id || '';
+                const antes  = r.antes  ? Object.entries(r.antes).filter(([k]) => k in (r.depois||{})).map(([k,v]) => `${k}: ${v}`).join(' · ') : '';
+                const depois = r.depois ? Object.entries(r.depois).map(([k,v]) => `→ ${k}: ${v}`).join(' · ') : '';
+                return `<li>${label}${antes ? ' | '+antes : ''}${depois ? ' '+depois : ''}</li>`;
+            }).join('');
+            itensHtml = `<ul class="ai-confirm-card-registros">${itens}${registros.length > 10 ? `<li>…e mais ${registros.length-10}</li>` : ''}</ul>`;
+        }
+
+        // Serializa payload para uso inline no onclick
+        const payloadStr = JSON.stringify(payload).replace(/"/g, '&quot;');
+
+        area.innerHTML = `
+            <div class="ai-confirm-card">
+                <div class="ai-confirm-card-title">⚡ Confirmar operação</div>
+                <div class="ai-confirm-card-resumo">${data.resumo || ''}</div>
+                ${itensHtml}
+                <div class="ai-confirm-card-btns">
+                    <button class="ai-confirm-btn ok" onclick="aiChatConfirmar('${payloadStr}', this)">Confirmar</button>
+                    <button class="ai-confirm-btn nao" onclick="document.getElementById('ai-action-area').innerHTML=''">Cancelar</button>
+                </div>
+            </div>`;
+    }
+
+    async function executarOperacao(payload) {
+        try {
+            const res = await fetch(`${API_BASE}/api/ai/executar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const result = await res.json();
+            if (result.sucesso) {
+                const n = result.afetados || 1;
+                const msg = n > 1 ? `✓ ${n} registros atualizados.` : '✓ Operação realizada com sucesso.';
+                appendMsg('assistant', msg);
+                historico.push({ role: 'assistant', content: msg });
+                salvarHistorico();
+                if (window.showToast) showToast(msg, 'success');
+            } else {
+                appendMsg('assistant', '⚠️ A operação retornou sem sucesso.');
+                if (window.showToast) showToast('Erro na operação', 'error');
+            }
+        } catch (err) {
+            appendMsg('assistant', '⚠️ Erro ao executar: ' + err.message);
+        }
+    }
+
+    async function toggleVoz() {
+        const btn = document.getElementById('ai-chat-voice');
+        if (!btn) return;
+
+        // Se está gravando, para
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+            return;
+        }
+
+        // Inicia gravação
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunks = [];
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+
+            mediaRecorder.onstop = async () => {
+                btn.textContent = '⏳';
+                btn.className = 'processando';
+                stream.getTracks().forEach(t => t.stop());
+
+                try {
+                    const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const fd = new FormData();
+                    fd.append('arquivo', blob, 'voz.webm');
+                    const res  = await fetch(`${API_BASE}/api/ai/transcrever`, { method: 'POST', body: fd });
+                    const data = await res.json();
+                    const texto = (data.texto || '').trim();
+                    if (texto) {
+                        const input = document.getElementById('ai-chat-input');
+                        input.value = texto;
+                        input.style.height = 'auto';
+                        input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+                        input.focus();
+                    }
+                } catch (err) {
+                    appendMsg('assistant', '⚠️ Erro na transcrição: ' + err.message);
+                } finally {
+                    btn.textContent = '🎤';
+                    btn.className = '';
+                }
+            };
+
+            mediaRecorder.start();
+            btn.textContent = '⏹';
+            btn.className = 'gravando';
+        } catch (err) {
+            appendMsg('assistant', '⚠️ Microfone indisponível: ' + err.message);
+        }
+    }
+
     // Expõe globais para uso nos botões inline
     window.aiChatSugerir = function(btn) {
         const txt = btn.textContent.trim();
         document.getElementById('ai-chat-input').value = txt;
         enviarMensagem();
+    };
+
+    window.aiChatConfirmar = async function(payloadStr, btn) {
+        try {
+            const payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
+            btn.disabled = true;
+            btn.textContent = '…';
+            document.getElementById('ai-action-area').innerHTML = '';
+            await executarOperacao(payload);
+        } catch (err) {
+            appendMsg('assistant', '⚠️ Erro ao confirmar: ' + err.message);
+        }
     };
 
     window.aiChatAbrirDespesas = function(despesaStr) {
