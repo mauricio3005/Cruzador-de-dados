@@ -85,7 +85,7 @@
             <!-- Filtros -->
             <div class="matrix-section" style="margin-bottom:var(--sp-5);">
                 <div style="padding:var(--sp-4) var(--sp-6);">
-                    <div style="display:grid;grid-template-columns:140px 140px 1fr 1fr auto;gap:var(--sp-4);align-items:end;">
+                    <div style="display:grid;grid-template-columns:140px 140px 1fr 1fr 1fr auto;gap:var(--sp-4);align-items:end;">
                         <div>
                             <label class="form-label">De</label>
                             <input type="date" class="form-input" id="filtroDataIni">
@@ -101,6 +101,10 @@
                         <div>
                             <label class="form-label">Fornecedor / Cliente</label>
                             <input type="text" class="form-input" id="filtroFornecedor" placeholder="Todos">
+                        </div>
+                        <div>
+                            <label class="form-label">Banco</label>
+                            <input type="text" class="form-input" id="filtroBanco" placeholder="Todos">
                         </div>
                         <div style="display:flex;gap:var(--sp-3);align-items:flex-end;">
                             <button class="btn btn-primary" id="btnFiltrar">
@@ -158,13 +162,14 @@
                                 <th>Fornecedor / Cliente</th>
                                 <th>Descrição</th>
                                 <th>Forma</th>
+                                <th>Banco</th>
                                 <th class="text-right">Valor (R$)</th>
                                 <th style="text-align:center;">Comprovante</th>
                                 <th style="text-align:center;">Ações</th>
                             </tr>
                         </thead>
                         <tbody id="tabelaBody">
-                            <tr><td colspan="8" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Use os filtros acima e clique em Filtrar.</td></tr>
+                            <tr><td colspan="9" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Use os filtros acima e clique em Filtrar.</td></tr>
                         </tbody>
                     </table>
                 </div>

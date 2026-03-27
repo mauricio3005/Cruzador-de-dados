@@ -140,6 +140,7 @@ async function carregarRecebimentos() {
         const dataFim    = document.getElementById('filtroDataFim').value;
         const obra       = document.getElementById('filtroObra').value;
         const fornecedor = document.getElementById('filtroFornecedor').value.trim();
+        const banco      = document.getElementById('filtroBanco').value.trim();
 
         let q = dbClient
             .from('recebimentos')
@@ -151,6 +152,7 @@ async function carregarRecebimentos() {
         if (dataFim)    q = q.lte('data', dataFim);
         if (obra)       q = q.eq('obra', obra);
         if (fornecedor) q = q.ilike('fornecedor', `%${fornecedor}%`);
+        if (banco)      q = q.ilike('banco',      `%${banco}%`);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -187,7 +189,7 @@ function renderizarTabela() {
     const paginacaoWrap = document.getElementById('paginacaoWrap');
 
     if (!pagina.length) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum recebimento encontrado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum recebimento encontrado.</td></tr>`;
         paginacaoWrap.style.display = 'none';
         return;
     }
@@ -215,6 +217,7 @@ function renderizarTabela() {
                 ${esc(r.descricao || '—')}${parcelaBadge}
             </td>
             <td>${esc(r.forma || '—')}</td>
+            <td>${esc(r.banco || '—')}</td>
             <td class="text-right" style="font-weight:600;">R$ ${valor}</td>
             <td style="text-align:center;">${nfIcon}</td>
             <td style="text-align:center;white-space:nowrap;">
@@ -277,6 +280,7 @@ function atualizarKPIs() {
 function limparFiltros() {
     ['filtroDataIni','filtroDataFim','filtroObra'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('filtroFornecedor').value = '';
+    document.getElementById('filtroBanco').value      = '';
     document.getElementById('buscaTexto').value = '';
     paginaAtual = 1;
     carregarRecebimentos();

@@ -9,6 +9,59 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../style.css">
+    <style>
+        /* Wizard step indicators */
+        .wiz-ind { display:flex; align-items:center; gap:6px; }
+        .wiz-dot {
+            width:28px; height:28px; border-radius:50%;
+            display:flex; align-items:center; justify-content:center;
+            font-size:0.8125rem; font-weight:700; flex-shrink:0;
+            background:var(--surface-low); color:var(--on-surface-muted);
+            border:2px solid var(--outline-ghost);
+            transition:background 0.2s, color 0.2s, border-color 0.2s;
+        }
+        .wiz-ind.active .wiz-dot { background:var(--primary); color:#fff; border-color:var(--primary); }
+        .wiz-ind.done .wiz-dot   { background:color-mix(in srgb,var(--primary) 20%,transparent); color:var(--primary); border-color:var(--primary); }
+        .wiz-label { font-size:0.8125rem; font-weight:500; color:var(--on-surface-muted); transition:color 0.2s; white-space:nowrap; }
+        .wiz-ind.active .wiz-label { color:var(--on-surface); font-weight:600; }
+        .wiz-line  { flex:1; height:2px; background:var(--outline-ghost); margin:0 8px; min-width:16px; }
+        /* Etapa chips */
+        /* chips usados no wizard (pill style) */
+        .wiz-chip {
+            padding:6px 14px; border-radius:20px; cursor:pointer;
+            font-size:0.875rem; font-weight:500;
+            background:var(--surface-low); color:var(--on-surface-muted);
+            border:2px solid var(--outline-ghost);
+            transition:background 0.15s, color 0.15s, border-color 0.15s;
+            user-select:none;
+        }
+        .wiz-chip.selected {
+            background:color-mix(in srgb,var(--primary) 15%,transparent);
+            color:var(--primary); border-color:var(--primary);
+        }
+        .wiz-chip.selected::before { content:'✓ '; }
+        /* chips no modal editar etapas (row style, cabe no grid) */
+        .etapa-chip {
+            display:flex; align-items:center; gap:8px;
+            padding:8px 12px; border-radius:var(--radius-md); cursor:pointer;
+            font-size:0.8125rem; font-weight:500;
+            background:var(--surface-low); color:var(--on-surface-muted);
+            border:1.5px solid var(--outline-ghost);
+            transition:background 0.12s, color 0.12s, border-color 0.12s;
+            user-select:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .etapa-chip:hover { border-color:var(--primary); color:var(--on-surface); }
+        .etapa-chip.selected {
+            background:color-mix(in srgb,var(--primary) 12%,transparent);
+            color:var(--primary); border-color:var(--primary);
+        }
+        .etapa-chip .chip-check {
+            width:16px; height:16px; border-radius:4px; flex-shrink:0;
+            border:1.5px solid currentColor; display:flex; align-items:center; justify-content:center;
+            font-size:10px; font-weight:700;
+        }
+        .etapa-chip.selected .chip-check::after { content:'✓'; }
+    </style>
     <script src="../env.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -74,6 +127,7 @@
                 <button class="sub-tab-btn" data-tab="taxa">Taxa de Conclusão</button>
                 <button class="sub-tab-btn" data-tab="formas">Formas de Pagamento</button>
                 <button class="sub-tab-btn" data-tab="categorias">Categorias de Despesa</button>
+                <button class="sub-tab-btn" data-tab="fornecedores">Fornecedores</button>
                 <button class="sub-tab-btn" data-tab="regras">Regras de Serviço</button>
             </div>
 
@@ -269,6 +323,36 @@
                 </div>
             </div>
 
+            <!-- ── TAB: FORNECEDORES ───────────────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-fornecedores">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-6);align-items:start;">
+                    <div class="matrix-section">
+                        <div class="matrix-header">
+                            <span class="matrix-title">Fornecedores cadastrados</span>
+                            <span id="totalFornecedores" style="font-size:0.8125rem;color:var(--on-surface-muted);"></span>
+                        </div>
+                        <div style="padding:var(--sp-3) var(--sp-6);">
+                            <input type="text" class="form-input" id="buscaFornecedor" placeholder="Buscar fornecedor...">
+                        </div>
+                        <div class="table-wrapper" style="max-height:420px;overflow-y:auto;">
+                            <table class="styled-table">
+                                <thead><tr><th>Nome</th><th style="text-align:center;">Ações</th></tr></thead>
+                                <tbody id="tabelaFornecedores">
+                                    <tr><td colspan="2" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Carregando…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="matrix-section" style="padding:var(--sp-6);">
+                        <h3 style="font-size:0.9375rem;font-weight:600;margin-bottom:var(--sp-4);">Novo Fornecedor</h3>
+                        <div style="display:flex;gap:var(--sp-3);">
+                            <input type="text" class="form-input" id="inputNovoFornecedor" placeholder="Ex: Ferragens São Paulo" style="flex:1;">
+                            <button class="btn btn-primary" id="btnAdicionarFornecedor">Adicionar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- ── TAB: REGRAS DE SERVIÇO ──────────────────────────────────── -->
             <div class="sub-tab-pane" id="pane-regras">
                 <div style="display:flex;align-items:center;gap:var(--sp-4);margin-bottom:var(--sp-5);">
@@ -328,7 +412,112 @@
 
 </div>
 
-<!-- MODAL OBRA (add / edit) -->
+<!-- MODAL WIZARD: NOVA OBRA ─────────────────────────────────── -->
+<div id="modalWizardObra" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(700px,95vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,0.4);">
+
+        <!-- header -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);flex-shrink:0;">
+            <h2 style="font-size:1.125rem;font-weight:700;color:var(--on-surface);">Cadastrar Nova Obra</h2>
+            <button onclick="fecharWizard()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <!-- step indicators -->
+        <div style="display:flex;align-items:center;margin-bottom:var(--sp-6);flex-shrink:0;">
+            <div class="wiz-ind active" id="wizInd1">
+                <span class="wiz-dot">1</span><span class="wiz-label">Informações</span>
+            </div>
+            <div class="wiz-line"></div>
+            <div class="wiz-ind" id="wizInd2">
+                <span class="wiz-dot">2</span><span class="wiz-label">Etapas</span>
+            </div>
+            <div class="wiz-line"></div>
+            <div class="wiz-ind" id="wizInd3">
+                <span class="wiz-dot">3</span><span class="wiz-label">Orçamentos</span>
+            </div>
+            <div class="wiz-line"></div>
+            <div class="wiz-ind" id="wizInd4">
+                <span class="wiz-dot">4</span><span class="wiz-label">Revisão</span>
+            </div>
+        </div>
+
+        <!-- scrollable step content -->
+        <div style="flex:1;overflow-y:auto;min-height:180px;">
+
+            <!-- Step 1: Informações -->
+            <div id="wizStep1">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);">
+                    <div style="grid-column:1/-1;">
+                        <label class="form-label">Nome da Obra *</label>
+                        <input type="text" class="form-input" id="wNome" placeholder="Ex: Residência Rua das Flores">
+                    </div>
+                    <div style="grid-column:1/-1;">
+                        <label class="form-label">Empresa responsável</label>
+                        <div style="display:flex;gap:var(--sp-3);">
+                            <select class="form-select" id="wEmpresaId" style="flex:1;">
+                                <option value="">— Sem empresa —</option>
+                            </select>
+                            <button type="button" class="btn btn-outline" onclick="wizAbrirNovaEmpresa()" style="white-space:nowrap;font-size:0.8125rem;">+ Nova empresa</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label">Descrição</label>
+                        <input type="text" class="form-input" id="wDescricao" placeholder="Descrição breve">
+                    </div>
+                    <div>
+                        <label class="form-label">Contrato</label>
+                        <input type="text" class="form-input" id="wContrato" placeholder="Nº do contrato">
+                    </div>
+                    <div style="grid-column:1/-1;">
+                        <label class="form-label">ART</label>
+                        <input type="text" class="form-input" id="wArt" placeholder="Nº da ART">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Etapas -->
+            <div id="wizStep2" style="display:none;">
+                <p style="color:var(--on-surface-muted);font-size:0.875rem;margin-bottom:var(--sp-4);">Selecione as etapas desta obra. Obrigatório ao menos uma.</p>
+                <div id="wizChipsEtapas" style="display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-5);min-height:40px;"></div>
+                <div style="display:flex;align-items:center;gap:var(--sp-3);">
+                    <button type="button" class="btn btn-outline" onclick="wizToggleNovaEtapa()" id="wizBtnNovaEtapa" style="font-size:0.8125rem;">+ Nova etapa</button>
+                    <input type="text" class="form-input" id="wNovaEtapaNome" placeholder="Nome da etapa" style="display:none;width:200px;" onkeydown="if(event.key==='Enter')wizAdicionarEtapa()">
+                    <button type="button" class="btn btn-primary" id="wizBtnConfirmarEtapa" onclick="wizAdicionarEtapa()" style="display:none;font-size:0.8125rem;">Adicionar</button>
+                    <button type="button" class="btn btn-outline" id="wizBtnCancelarEtapa" onclick="wizToggleNovaEtapa()" style="display:none;font-size:0.8125rem;">Cancelar</button>
+                </div>
+            </div>
+
+            <!-- Step 3: Orçamentos -->
+            <div id="wizStep3" style="display:none;">
+                <p style="color:var(--on-surface-muted);font-size:0.875rem;margin-bottom:var(--sp-4);">Defina o orçamento estimado por etapa e tipo de custo. Opcional — pode preencher depois pela aba <strong>Orçamentos</strong>.</p>
+                <div id="wizGridOrcamentos"></div>
+            </div>
+
+            <!-- Step 4: Revisão -->
+            <div id="wizStep4" style="display:none;">
+                <p style="color:var(--on-surface-muted);font-size:0.875rem;margin-bottom:var(--sp-4);">Confirme os dados antes de criar a obra.</p>
+                <div id="wizResumo"></div>
+            </div>
+
+        </div><!-- end scrollable -->
+
+        <!-- navigation -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--sp-5);padding-top:var(--sp-4);border-top:1px solid var(--outline-ghost);flex-shrink:0;">
+            <button class="btn btn-outline" onclick="fecharWizard()">Cancelar</button>
+            <div style="display:flex;gap:var(--sp-3);">
+                <button class="btn btn-outline" id="wizBtnAnterior" onclick="wizPrev()" style="display:none;">← Anterior</button>
+                <button class="btn btn-primary" id="wizBtnProximo" onclick="wizNext()">Próximo →</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- MODAL OBRA (edit only) -->
 <div id="modalObra" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.65);backdrop-filter:blur(6px);align-items:center;justify-content:center;">
     <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);padding:var(--sp-6);width:min(560px,95vw);box-shadow:0 24px 64px rgba(0,0,0,0.4);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--sp-5);">
@@ -364,9 +553,48 @@
                 <input type="text" class="form-input" id="oArt" placeholder="Nº da ART">
             </div>
         </div>
-        <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);margin-top:var(--sp-5);">
-            <button class="btn btn-outline" onclick="fecharModalObra()">Cancelar</button>
-            <button class="btn btn-primary" id="btnSalvarObra" style="min-width:100px;">Salvar</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--sp-5);">
+            <button class="btn btn-outline" id="btnEditarEtapasObra" onclick="abrirModalEtapasObra()" style="display:none;">Editar Etapas</button>
+            <div style="display:flex;gap:var(--sp-3);margin-left:auto;">
+                <button class="btn btn-outline" onclick="fecharModalObra()">Cancelar</button>
+                <button class="btn btn-primary" id="btnSalvarObra" style="min-width:100px;">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL ETAPAS DA OBRA -->
+<div id="modalEtapasObra" style="display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+    <div style="background:var(--surface-container);border:1px solid var(--outline-ghost);border-radius:var(--radius-lg);width:60vw;height:40vh;max-width:960px;min-width:480px;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,0.45);overflow:hidden;">
+
+        <!-- header -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:var(--sp-4) var(--sp-6);border-bottom:1px solid var(--outline-ghost);flex-shrink:0;">
+            <div>
+                <h2 style="font-size:1rem;font-weight:700;color:var(--on-surface);margin:0;">Etapas da Obra</h2>
+                <p id="modalEtapasObraSubtitulo" style="font-size:0.775rem;color:var(--on-surface-muted);margin:2px 0 0;"></p>
+            </div>
+            <div style="display:flex;align-items:center;gap:var(--sp-3);">
+                <span id="modalEtapasObraContador" style="font-size:0.775rem;color:var(--on-surface-muted);"></span>
+                <button onclick="fecharModalEtapasObra()" style="background:none;border:none;cursor:pointer;color:var(--on-surface-muted);padding:4px;display:flex;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- chips scrollable -->
+        <div style="flex:1;overflow-y:auto;padding:var(--sp-4) var(--sp-6);">
+            <div id="modalEtapasObraChips" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:var(--sp-2);"></div>
+        </div>
+
+        <!-- footer -->
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:var(--sp-3) var(--sp-6);border-top:1px solid var(--outline-ghost);flex-shrink:0;background:var(--surface-container);">
+            <button onclick="modalEtapasObraToggleAll()" style="background:none;border:none;cursor:pointer;font-size:0.8rem;color:var(--on-surface-muted);padding:0;text-decoration:underline;">Selecionar / desmarcar tudo</button>
+            <div style="display:flex;gap:var(--sp-3);">
+                <button class="btn btn-outline" onclick="fecharModalEtapasObra()">Cancelar</button>
+                <button class="btn btn-primary" id="btnSalvarEtapasObra" style="min-width:100px;">Salvar</button>
+            </div>
         </div>
     </div>
 </div>

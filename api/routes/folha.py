@@ -6,7 +6,10 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from api.logger import get_logger
+
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 class FolhaFecharRequest(BaseModel):
@@ -103,7 +106,7 @@ def fechar_folha(req: FolhaFecharRequest):
                 }).execute()
         except Exception as e:
             # Não aborta — registra o erro mas continua
-            print(f"Erro ao fazer upload do comprovante {i}: {e}")
+            logger.warning("Erro ao fazer upload do comprovante %d: %s", i, e)
 
     # 5. Atualiza status da folha
     sb.table("folhas").update({"status": "fechada"}).eq("id", req.folha_id).execute()

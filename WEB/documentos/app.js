@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('btnFiltrar').addEventListener('click', () => { paginaAtual = 1; carregarDocs(); });
     document.getElementById('btnLimparFiltro').addEventListener('click', limparFiltros);
+    document.getElementById('filtroObra').addEventListener('change', e => filtrarEtapasPorObra(e.target.value));
     document.getElementById('btnExportarCSV').addEventListener('click', exportarCSV);
     document.getElementById('buscaTexto').addEventListener('input', () => { paginaAtual = 1; renderizarTabela(); });
 
@@ -88,6 +89,15 @@ function popularSelect(id, opcoes, placeholder) {
     if (!sel) return;
     sel.innerHTML = `<option value="">${placeholder}</option>` +
         opcoes.map(o => `<option value="${o}">${o}</option>`).join('');
+}
+
+async function filtrarEtapasPorObra(obra) {
+    const el = document.getElementById('filtroEtapa');
+    if (!obra) { popularSelect('filtroEtapa', etapas, 'Todas as etapas'); el.value = ''; return; }
+    const { data } = await dbClient.from('obra_etapas').select('etapa').eq('obra', obra);
+    const nomes = (data || []).map(r => r.etapa);
+    popularSelect('filtroEtapa', nomes, 'Todas as etapas');
+    if (!nomes.includes(el.value)) el.value = '';
 }
 
 // --- CARREGAR DOCS ---

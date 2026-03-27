@@ -54,6 +54,15 @@ function popularSelect(id, opcoes, placeholder) {
     sel.innerHTML = `<option value="">${placeholder}</option>` +
         opcoes.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('');
 }
+async function filtrarEtapasPorObra(obra) {
+    const el = document.getElementById('filtroEtapa');
+    if (!obra) { popularSelect('filtroEtapa', etapas, 'Todas as etapas'); el.value = ''; return; }
+    const { data } = await dbClient.from('obra_etapas').select('etapa').eq('obra', obra);
+    const nomes = (data || []).map(r => r.etapa);
+    popularSelect('filtroEtapa', nomes, 'Todas as etapas');
+    if (!nomes.includes(el.value)) el.value = '';
+}
+
 function setSelectValue(id, value) {
     const sel = document.getElementById(id);
     if (!sel || !value) { if (sel) sel.value = ''; return; }
@@ -72,6 +81,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('btnFiltrar').addEventListener('click', () => { paginaAtual = 1; carregarContratos(); });
     document.getElementById('btnLimparFiltro').addEventListener('click', limparFiltros);
+    document.getElementById('filtroObra').addEventListener('change', e => filtrarEtapasPorObra(e.target.value));
     document.getElementById('buscaTexto').addEventListener('input', renderizarTabela);
 
     document.getElementById('btnPagAnterior').addEventListener('click', () => {

@@ -495,6 +495,7 @@
             despesa.DATA       ? `Data: ${despesa.DATA.split('-').reverse().join('/')}` : '',
             despesa.OBRA       ? `Obra: ${despesa.OBRA}`             : '',
             despesa.ETAPA      ? `Etapa: ${despesa.ETAPA}`           : '',
+            despesa.BANCO      ? `Banco: ${despesa.BANCO}`           : '',
         ].filter(Boolean);
 
         area.innerHTML = `

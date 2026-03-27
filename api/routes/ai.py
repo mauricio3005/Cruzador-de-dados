@@ -1,15 +1,20 @@
+import asyncio
 import base64
 import io
 import json
 import os
+import time
 import unicodedata
+from functools import lru_cache
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from api.supabase_client import get_supabase as _get_supabase
+from api.logger import get_logger
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +41,7 @@ def _melhor_match(candidatos: list, query: str) -> str | None:
 # Helpers
 # ---------------------------------------------------------------------------
 
+@lru_cache(maxsize=1)
 def _get_openai():
     from dotenv import load_dotenv
     from openai import OpenAI
@@ -54,14 +60,25 @@ def _parse_json_response(text: str):
     return json.loads(text)
 
 
+_refs_cache: dict = {}
+_refs_cache_ts: float = 0.0
+_REFS_TTL = 120  # segundos
+
+
 def _get_referencias() -> dict:
-    """Busca obras, etapas, fornecedores e categorias do Supabase (service key)."""
+    """Busca obras, etapas, fornecedores e categorias do Supabase (cache de 2 min)."""
+    global _refs_cache, _refs_cache_ts
+    if _refs_cache and (time.monotonic() - _refs_cache_ts) < _REFS_TTL:
+        return _refs_cache
     db = _get_supabase()
     obras      = [r["nome"] for r in (db.table("obras").select("nome").order("nome").execute().data or [])]
     etapas     = [r["nome"] for r in (db.table("etapas").select("nome").order("nome").execute().data or [])]
     fornecs    = [r["nome"] for r in (db.table("fornecedores").select("nome").order("nome").execute().data or [])]
     categorias = [r["nome"] for r in (db.table("categorias_despesa").select("nome").order("nome").execute().data or [])]
-    return {"obras": obras, "etapas": etapas, "fornecedores": fornecs, "categorias": categorias}
+    _refs_cache = {"obras": obras, "etapas": etapas, "fornecedores": fornecs, "categorias": categorias}
+    _refs_cache_ts = time.monotonic()
+    logger.debug("_get_referencias: cache atualizado (%d fornecs, %d obras)", len(fornecs), len(obras))
+    return _refs_cache
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +140,7 @@ async def extrair_nota(
     categorias: str  = Form("[]"),
 ):
     """Extrai dados de uma nota fiscal ou comprovante usando GPT-4 Vision."""
+    logger.info("extrair_nota: arquivo='%s' tipo='%s'", file.filename, file.content_type)
     file_bytes = await file.read()
     media_type = file.content_type or "image/jpeg"
 
@@ -190,8 +208,11 @@ async def extrair_nota(
             ]
 
         resp = client.chat.completions.create(model="gpt-5.4", max_completion_tokens=1024, messages=messages)
-        return _parse_json_response(resp.choices[0].message.content)
+        result = _parse_json_response(resp.choices[0].message.content)
+        logger.info("extrair_nota: concluído tokens=%s", resp.usage.total_tokens if resp.usage else "?")
+        return result
     except Exception as e:
+        logger.error("extrair_nota: erro — %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -231,10 +252,14 @@ async def extrair_texto(payload: dict):
     prompt = (
         "Você é um assistente de gestão de obras. Analise o texto abaixo e extraia os dados de UMA ou MAIS despesas.\n"
         "Cada campo deve ser preenchido com precisão. Não coloque em DESCRICAO o que já está em outro campo.\n"
+        "ATENÇÃO: FORNECEDOR é empresa/pessoa física que forneceu o serviço/material. "
+        "BANCO é a instituição financeira usada para o pagamento (ex: Itaú, Bradesco, Nubank, Caixa). "
+        "Nunca coloque banco em FORNECEDOR nem fornecedor em BANCO.\n"
         "Retorne SOMENTE um array JSON válido (mesmo que seja 1 item), sem texto adicional:\n"
         "[\n"
         "  {\n"
-        '    "FORNECEDOR": "nome exato ou mais próximo da lista de fornecedores cadastrados, ou null",\n'
+        '    "FORNECEDOR": "empresa/pessoa que forneceu o serviço ou material — NÃO coloque banco aqui, ou null",\n'
+        '    "BANCO": "instituição financeira do pagamento (ex: Itaú, Nubank) — NÃO coloque fornecedor aqui, ou null",\n'
         '    "OBRA": "nome exato ou mais próximo da lista de obras cadastradas, ou null",\n'
         '    "ETAPA": "nome exato ou mais próximo da lista de etapas cadastradas, ou null",\n'
         '    "VALOR_TOTAL": <número float ou null>,\n'
@@ -308,10 +333,14 @@ async def extrair_texto_misto(
         "Você é um assistente de gestão de obras. Analise TODO o conteúdo abaixo "
         "(texto informado + documentos/imagens anexados) e extraia os dados de UMA ou MAIS despesas.\n"
         "Cada campo deve ser preenchido com precisão. Não coloque em DESCRICAO o que já está em outro campo.\n"
+        "ATENÇÃO: FORNECEDOR é empresa/pessoa física que forneceu o serviço/material. "
+        "BANCO é a instituição financeira usada para o pagamento (ex: Itaú, Bradesco, Nubank, Caixa). "
+        "Nunca coloque banco em FORNECEDOR nem fornecedor em BANCO.\n"
         "Retorne SOMENTE um array JSON válido (mesmo que seja 1 item), sem texto adicional:\n"
         "[\n"
         "  {\n"
-        '    "FORNECEDOR": "nome exato ou mais próximo da lista de fornecedores cadastrados, ou null",\n'
+        '    "FORNECEDOR": "empresa/pessoa que forneceu o serviço ou material — NÃO coloque banco aqui, ou null",\n'
+        '    "BANCO": "instituição financeira do pagamento (ex: Itaú, Nubank) — NÃO coloque fornecedor aqui, ou null",\n'
         '    "OBRA": "nome exato ou mais próximo da lista de obras cadastradas, ou null",\n'
         '    "ETAPA": "nome exato ou mais próximo da lista de etapas cadastradas, ou null",\n'
         '    "VALOR_TOTAL": <número float ou null>,\n'
@@ -378,6 +407,7 @@ async def transcrever_audio(file: UploadFile = File(...)):
     file_bytes = await file.read()
     filename   = file.filename or "audio.webm"
     media_type = file.content_type or "audio/webm"
+    logger.info("transcrever: arquivo='%s' size=%d bytes", filename, len(file_bytes))
     client = _get_openai()
     try:
         transcript = client.audio.transcriptions.create(
@@ -385,8 +415,10 @@ async def transcrever_audio(file: UploadFile = File(...)):
             file=(filename, file_bytes, media_type),
             language="pt",
         )
+        logger.info("transcrever: concluído %d chars", len(transcript.text))
         return {"texto": transcript.text}
     except Exception as e:
+        logger.error("transcrever: erro — %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -489,11 +521,11 @@ async def extrair_pix(file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 
 @router.post("/embeddings/sync")
-def embeddings_sync():
+async def embeddings_sync():
     """Gera embeddings para todas as despesas que ainda não possuem um."""
     try:
         from api.embeddings import sync_embeddings
-        total = sync_embeddings()
+        total = await asyncio.to_thread(sync_embeddings)
         return {"ok": True, "embedados": total}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -631,7 +663,7 @@ def _exec_listar_referencias(db):
 # ---------------------------------------------------------------------------
 
 @router.post("/chat")
-def chat_assistente(payload: dict):
+async def chat_assistente(payload: dict):
     """
     Assistente de IA com tool calling + reasoning effort high.
     O modelo decide quais queries executar — nunca erra por falta de dados.
@@ -643,6 +675,8 @@ def chat_assistente(payload: dict):
 
     if not mensagem:
         raise HTTPException(status_code=400, detail="Campo 'mensagem' obrigatório")
+
+    logger.info("chat: mensagem='%.80s' obra='%s' pagina='%s'", mensagem, obra_contexto, pagina)
 
     try:
         db = _get_supabase()
@@ -659,7 +693,7 @@ def chat_assistente(payload: dict):
         "3. Nomes com variação de acento são aceitos ('antonio luiz' encontra 'Antônio Luiz ...').\n"
         "4. Seja objetivo. Sem introduções, sem frases de cortesia. Vá direto ao dado.\n"
         "5. Formate valores como 'R$ 1.234,56'.\n"
-        "6. Para cadastrar despesa: retorne JSON {\"acao\": \"cadastrar_despesa\", \"mensagem\": \"...\", \"despesa\": {...}}.\n"
+        "6. Para cadastrar despesa: retorne JSON {\"acao\": \"cadastrar_despesa\", \"mensagem\": \"...\", \"despesa\": {\"FORNECEDOR\": ..., \"DESCRICAO\": ..., \"VALOR_TOTAL\": ..., \"DATA\": \"YYYY-MM-DD\", \"OBRA\": ..., \"ETAPA\": ..., \"TIPO\": ..., \"DESPESA\": ..., \"FORMA\": ..., \"BANCO\": ...}}. Inclua BANCO sempre que o usuário mencionar banco, conta ou instituição financeira.\n"
         f"7. Página atual: {pagina}." + (f" Obra selecionada: {obra_contexto}." if obra_contexto else "")
     )
 
@@ -674,7 +708,8 @@ def chat_assistente(payload: dict):
     try:
         # Tool calling loop — até 5 rodadas
         for _ in range(5):
-            resp = client.chat.completions.create(
+            resp = await asyncio.to_thread(
+                client.chat.completions.create,
                 model="gpt-5.4",
                 max_completion_tokens=2000,
                 tools=_TOOLS,
@@ -701,6 +736,7 @@ def chat_assistente(payload: dict):
                 # Executa cada ferramenta e devolve o resultado
                 for tc in choice.message.tool_calls:
                     args = json.loads(tc.function.arguments)
+                    logger.debug("chat: tool_call '%s' args=%s", tc.function.name, args)
                     if tc.function.name == "buscar_despesas":
                         result = _exec_buscar_despesas(db, **args)
                     elif tc.function.name == "buscar_totais":
@@ -726,6 +762,8 @@ def chat_assistente(payload: dict):
                     pass
                 return {"resposta": conteudo}
 
+        logger.warning("chat: loop de tool_calls esgotado sem resposta final")
         return {"resposta": "Não foi possível completar a consulta."}
     except Exception as e:
+        logger.error("chat: erro — %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

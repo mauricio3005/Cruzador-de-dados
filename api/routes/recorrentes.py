@@ -17,8 +17,10 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 from api.supabase_client import get_supabase
+from api.logger import get_logger
 
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -79,7 +81,7 @@ def criar(body: RecorrenteIn):
         raise
     except Exception as e:
         tb = traceback.format_exc()
-        print("ERRO /api/recorrentes POST:\n", tb)
+        logger.error("Erro em POST /api/recorrentes:\n%s", tb)
         raise HTTPException(500, f"{type(e).__name__}: {e}")
 
 

@@ -2,7 +2,10 @@ import os
 
 from fastapi import APIRouter, HTTPException
 
+from api.logger import get_logger
+
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 def _get_supabase():
@@ -43,7 +46,7 @@ def remover_nf(nf_id: int):
         try:
             sb.storage.from_("comprovantes").remove([nome_arquivo])
         except Exception as e:
-            print(f"[documentos] Aviso: não foi possível remover '{nome_arquivo}' do bucket: {e}")
+            logger.warning("Não foi possível remover '%s' do bucket: %s", nome_arquivo, e)
 
     # Remove o registro
     sb.table("comprovantes_despesa").delete().eq("id", nf_id).execute()

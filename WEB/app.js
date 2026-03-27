@@ -146,7 +146,7 @@ function configurarFiltrosMultiplos(containerId, textId, filterType) {
     const container   = document.getElementById(containerId);
     const textElement = document.getElementById(textId);
 
-    container.addEventListener('change', (e) => {
+    container.addEventListener('change', async (e) => {
         if (e.target.tagName !== 'INPUT' || e.target.type !== 'checkbox') return;
 
         const checkboxes   = Array.from(container.querySelectorAll('input[type="checkbox"]'));
@@ -155,7 +155,7 @@ function configurarFiltrosMultiplos(containerId, textId, filterType) {
 
         if (filterType === 'obra') {
             currentObraFilters = values;
-            povoarFiltroEtapas();
+            await povoarFiltroEtapas();
             povoarFiltroTipos();
         } else if (filterType === 'etapa') {
             currentEtapaFilters = values;
@@ -247,7 +247,7 @@ function povoarFiltroObras() {
     });
 }
 
-function povoarFiltroEtapas() {
+async function povoarFiltroEtapas() {
     const container = document.getElementById('etapaCheckboxes');
     container.innerHTML = '';
 
@@ -257,8 +257,8 @@ function povoarFiltroEtapas() {
         return;
     }
 
-    const filtradas  = rawData.filter(i => currentObraFilters.includes(i.OBRA));
-    const etapas     = [...new Set(filtradas.map(i => i.ETAPA))].filter(Boolean).sort();
+    const { data } = await dbClient.from('obra_etapas').select('etapa').in('obra', currentObraFilters);
+    const etapas     = [...new Set((data || []).map(r => r.etapa))].filter(Boolean).sort();
     const stillValid = currentEtapaFilters.filter(e => etapas.includes(e));
     currentEtapaFilters = stillValid.length === 0 ? [...etapas] : stillValid;
 

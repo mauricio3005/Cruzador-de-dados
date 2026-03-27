@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('btnFiltrar').addEventListener('click', () => { paginaAtual = 1; carregarHistorico(); });
     document.getElementById('btnLimparFiltro').addEventListener('click', limparFiltros);
+    document.getElementById('filtroObra').addEventListener('change', e => filtrarEtapasPorObra(e.target.value));
     document.getElementById('btnExportarCSV').addEventListener('click', exportarCSV);
     document.getElementById('buscaTexto').addEventListener('input', () => { paginaAtual = 1; renderizarTabela(); });
 
@@ -114,6 +115,15 @@ function popularSelectModal(id, opcoes, placeholder) {
         opcoes.map(o => `<option value="${o}">${o}</option>`).join('');
 }
 
+async function filtrarEtapasPorObra(obra) {
+    const el = document.getElementById('filtroEtapa');
+    if (!obra) { popularSelect('filtroEtapa', etapas, 'Todas as etapas'); el.value = ''; return; }
+    const { data } = await dbClient.from('obra_etapas').select('etapa').eq('obra', obra);
+    const nomes = (data || []).map(r => r.etapa);
+    popularSelect('filtroEtapa', nomes, 'Todas as etapas');
+    if (!nomes.includes(el.value)) el.value = '';
+}
+
 function popularFornecedorModal() {
     const sel = document.getElementById('editFornecedor');
     if (!sel) return;
@@ -133,6 +143,7 @@ async function carregarHistorico() {
     const categoria  = document.getElementById('filtroCategoria').value;
     const fornecedor = document.getElementById('filtroFornecedor').value.trim();
     const descricao  = document.getElementById('filtroDescricao').value.trim();
+    const banco      = document.getElementById('filtroBanco').value.trim();
 
     document.getElementById('tabelaLoading').style.display = 'flex';
 
@@ -152,6 +163,7 @@ async function carregarHistorico() {
         if (categoria)  q = q.eq('despesa', categoria);
         if (fornecedor) q = q.ilike('fornecedor', `%${fornecedor}%`);
         if (descricao)  q = q.ilike('descricao',  `%${descricao}%`);
+        if (banco)      q = q.ilike('banco',      `%${banco}%`);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -187,7 +199,7 @@ function renderizarTabela() {
     const tbody = document.getElementById('tabelaBody');
 
     if (pagina.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum registro encontrado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum registro encontrado.</td></tr>`;
         document.getElementById('paginacaoWrap').style.display = 'none';
         atualizarBarraSelecao();
         return;
@@ -226,6 +238,7 @@ function renderizarTabela() {
             <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.descricao)}">${esc(r.descricao)}</td>
             <td>${esc(r.despesa)}</td>
             <td>${esc(r.forma)}</td>
+            <td>${esc(r.banco || '—')}</td>
             <td class="text-right" style="font-variant-numeric:tabular-nums;">${valor}</td>
             <td style="text-align:center;">${nfIcon}</td>
             <td>
@@ -280,6 +293,7 @@ function limparFiltros() {
     document.getElementById('filtroCategoria').value  = '';
     document.getElementById('filtroFornecedor').value = '';
     document.getElementById('filtroDescricao').value  = '';
+    document.getElementById('filtroBanco').value      = '';
     document.getElementById('buscaTexto').value       = '';
     paginaAtual = 1;
     carregarHistorico();

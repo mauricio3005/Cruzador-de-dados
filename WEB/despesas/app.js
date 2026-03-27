@@ -49,6 +49,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (ia.VALOR_TOTAL) document.getElementById('fValor').value = parseFloat(ia.VALOR_TOTAL).toFixed(2);
             if (ia.DATA)        document.getElementById('fData').value  = ia.DATA;
             if (ia.DESCRICAO)   document.getElementById('fDescricao').value = ia.DESCRICAO;
+            if (ia.BANCO)       document.getElementById('fBanco').value = ia.BANCO;
             document.getElementById('iaBanner').style.display = '';
         } catch (_) {}
     }
@@ -85,6 +86,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Submit individual
     document.getElementById('btnCadastrar').addEventListener('click', cadastrarDespesa);
+    document.getElementById('fObra').addEventListener('change', e => filtrarEtapasPorObra(e.target.value));
 
     // Lote — upload
     const inputLote   = document.getElementById('inputLoteNFs');
@@ -155,6 +157,15 @@ function popularSelect(id, opcoes, placeholder, opcional) {
     if (!sel) return;
     sel.innerHTML = `<option value="">${placeholder}</option>` +
         opcoes.map(o => `<option value="${o}">${o}</option>`).join('');
+}
+
+async function filtrarEtapasPorObra(obra) {
+    const el = document.getElementById('fEtapa');
+    if (!obra) { popularSelect('fEtapa', etapas, 'Selecione a etapa...'); el.value = ''; return; }
+    const { data } = await dbClient.from('obra_etapas').select('etapa').eq('obra', obra);
+    const nomes = (data || []).map(r => r.etapa);
+    popularSelect('fEtapa', nomes, 'Selecione a etapa...');
+    if (!nomes.includes(el.value)) el.value = '';
 }
 
 function popularFornecedor() {
@@ -314,7 +325,23 @@ async function extrairIATexto() {
     const btn    = document.getElementById('btnExtrairTexto');
     const status = document.getElementById('textoIAStatus');
     btn.disabled = true;
-    status.textContent = 'Extraindo…';
+
+    // Animação de progresso com etapas reais e tempo decorrido
+    const temArquivos = nfsTexto.length > 0;
+    const etapas = temArquivos
+        ? ['Enviando arquivos e texto…', 'IA lendo os documentos…', 'Identificando despesas…', 'Cruzando fornecedores…', 'Estruturando dados…', 'Finalizando…']
+        : ['Enviando texto para análise…', 'IA interpretando…', 'Identificando despesas…', 'Cruzando fornecedores…', 'Estruturando dados…', 'Finalizando…'];
+    const tempos = [0, 3, 7, 12, 18, 25]; // segundos aproximados de cada etapa
+    let inicio = Date.now();
+    let etapaIdx = 0;
+
+    const timer = setInterval(() => {
+        const seg = Math.floor((Date.now() - inicio) / 1000);
+        // Avança etapa conforme o tempo esperado
+        while (etapaIdx < etapas.length - 1 && seg >= tempos[etapaIdx + 1]) etapaIdx++;
+        const dots = '.'.repeat((Math.floor(seg * 2) % 3) + 1).padEnd(3, '\u00a0');
+        status.textContent = `${etapas[etapaIdx]}${dots} ${seg}s`;
+    }, 500);
 
     try {
         let lista;
@@ -355,6 +382,7 @@ async function extrairIATexto() {
             if (ia.VALOR_TOTAL) document.getElementById('fValor').value = parseFloat(ia.VALOR_TOTAL).toFixed(2);
             if (ia.DATA)        document.getElementById('fData').value  = ia.DATA;
             if (ia.DESCRICAO)   document.getElementById('fDescricao').value = ia.DESCRICAO;
+            if (ia.BANCO)       document.getElementById('fBanco').value = ia.BANCO;
             document.getElementById('iaBanner').style.display = '';
             if (nfsTexto.length === 1) handleNFSelecionada(nfsTexto);
             document.getElementById('textoIA').value = '';
@@ -373,6 +401,7 @@ async function extrairIATexto() {
     } catch (e) {
         toast.error('Erro na extração: ' + e.message);
     } finally {
+        clearInterval(timer);
         btn.disabled = false;
         status.textContent = '';
     }
@@ -470,6 +499,7 @@ async function salvarTodasDoTexto() {
                 data:        d.DATA      || new Date().toISOString().split('T')[0],
                 descricao:   d.DESCRICAO || null,
                 despesa:     d.DESPESA   || null,
+                banco:       d.BANCO     || null,
                 forma:       d.FORMA     || null,
             }).select('id').single();
             if (error) throw error;
@@ -560,6 +590,7 @@ async function extrairIAIndividual() {
         if (ia.VALOR_TOTAL) document.getElementById('fValor').value = parseFloat(ia.VALOR_TOTAL).toFixed(2);
         if (ia.DATA)        document.getElementById('fData').value  = ia.DATA;
         if (ia.DESCRICAO)   document.getElementById('fDescricao').value = ia.DESCRICAO;
+        if (ia.BANCO)       document.getElementById('fBanco').value = ia.BANCO;
 
         document.getElementById('iaBanner').style.display = '';
         const msg = files.length > 1

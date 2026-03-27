@@ -1,7 +1,18 @@
-from fastapi import FastAPI
+import asyncio
+import sys
+import time
+
+from fastapi import FastAPI, Request
+
+# Corrige WinError 10054 no Windows com Python 3.8+ (ProactorEventLoop)
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.logger import get_logger
 from api.routes import ai, documentos, folha, relatorio, recorrentes
+
+logger = get_logger(__name__)
 
 app = FastAPI(title="Dashboard API", version="1.0.0")
 
@@ -12,6 +23,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    logger.info(
+        "%s %s %s %.1fms",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 app.include_router(ai.router,        prefix="/api/ai",         tags=["IA"])
 app.include_router(documentos.router,prefix="/api/documentos", tags=["Documentos"])

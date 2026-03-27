@@ -20,6 +20,7 @@ let etapas     = [];
 let tiposCusto = [];
 let formas     = [];
 let categorias = [];
+let fornecedores = [];
 
 // --- HELPERS ---
 function esc(s) {
@@ -54,10 +55,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('buscaCategoria').addEventListener('input', renderizarCategorias);
 
     // Botões obras
-    document.getElementById('btnNovaObra').addEventListener('click', () => abrirModalObra(null));
+    document.getElementById('btnNovaObra').addEventListener('click', abrirWizard);
     document.getElementById('btnSalvarObra').addEventListener('click', salvarObra);
     document.getElementById('modalObra').addEventListener('click', e => {
         if (e.target === e.currentTarget) fecharModalObra();
+    });
+    document.getElementById('modalWizardObra').addEventListener('click', e => {
+        if (e.target === e.currentTarget) fecharWizard();
     });
 
     // Botões empresas
@@ -106,6 +110,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('btnAdicionarCategoria').addEventListener('click', adicionarCategoria);
     document.getElementById('inputNovaCategoria').addEventListener('keydown', e => { if (e.key === 'Enter') adicionarCategoria(); });
 
+    // Fornecedores
+    document.getElementById('btnAdicionarFornecedor').addEventListener('click', adicionarFornecedor);
+    document.getElementById('inputNovoFornecedor').addEventListener('keydown', e => { if (e.key === 'Enter') adicionarFornecedor(); });
+    document.getElementById('buscaFornecedor').addEventListener('input', renderizarFornecedores);
+
     // Regras
     document.getElementById('obraRegras').addEventListener('change', carregarRegras);
     document.getElementById('btnAdicionarRegra').addEventListener('click', adicionarRegra);
@@ -116,7 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // --- REFERÊNCIAS ---
 async function carregarReferencias() {
-    const safe = async (query, campo = 'nome') => {
+    const safe = async (query) => {
         try {
             const { data, error } = await query;
             if (error) { console.warn(error.message); return []; }
@@ -124,21 +133,23 @@ async function carregarReferencias() {
         } catch { return []; }
     };
 
-    const [resObras, resEmpresas, resEtapas, resTipos, resFormas, resCats] = await Promise.all([
+    const [resObras, resEmpresas, resEtapas, resTipos, resFormas, resCats, resForn] = await Promise.all([
         safe(db.from('obras').select('*').order('nome')),
         safe(db.from('empresas').select('*').order('nome')),
         safe(db.from('etapas').select('nome,ordem').order('ordem')),
         safe(db.from('tipos_custo').select('nome').order('nome')),
         safe(db.from('formas_pagamento').select('nome').order('nome')),
         safe(db.from('categorias_despesa').select('nome').order('nome')),
+        safe(db.from('fornecedores').select('nome').order('nome')),
     ]);
 
-    obras      = resObras;
-    empresas   = resEmpresas;
-    etapas     = resEtapas;
-    tiposCusto = resTipos.map(r => r.nome);
-    formas     = resFormas.map(r => r.nome);
-    categorias = resCats.map(r => r.nome);
+    obras        = resObras;
+    empresas     = resEmpresas;
+    etapas       = resEtapas;
+    tiposCusto   = resTipos.map(r => r.nome);
+    formas       = resFormas.map(r => r.nome);
+    categorias   = resCats.map(r => r.nome);
+    fornecedores = resForn.map(r => r.nome);
 
     renderizarObras();
     renderizarEmpresas();
@@ -148,6 +159,7 @@ async function carregarReferencias() {
     popularSelectObra('obraRegras');
     renderizarFormas();
     renderizarCategorias();
+    renderizarFornecedores();
 }
 
 function popularSelectObra(id) {
@@ -207,11 +219,88 @@ function abrirModalObra(nome) {
     sel.innerHTML = `<option value="">— Sem empresa —</option>` +
         empresas.map(e => `<option value="${e.id}"${o && o.empresa_id === e.id ? ' selected' : ''}>${esc(e.nome)}</option>`).join('');
 
+    document.getElementById('btnEditarEtapasObra').style.display = o ? '' : 'none';
     document.getElementById('modalObra').style.display = 'flex';
 }
 
 function fecharModalObra() {
     document.getElementById('modalObra').style.display = 'none';
+}
+
+// --- EDITAR ETAPAS DA OBRA ---
+let _etapasObraOriginal = []; // etapas já associadas antes de abrir
+
+async function abrirModalEtapasObra() {
+    const nome = document.getElementById('oNomeOriginal').value;
+    if (!nome) return;
+
+    document.getElementById('modalEtapasObraSubtitulo').textContent = nome;
+    document.getElementById('modalEtapasObraChips').innerHTML = '<span style="color:var(--on-surface-muted);font-size:0.8rem;">Carregando…</span>';
+    document.getElementById('modalEtapasObra').style.display = 'flex';
+    document.getElementById('btnSalvarEtapasObra').onclick = salvarEtapasObra;
+
+    const { data } = await db.from('obra_etapas').select('etapa').eq('obra', nome);
+    _etapasObraOriginal = (data || []).map(r => r.etapa);
+    renderizarChipsEtapasObra(_etapasObraOriginal);
+}
+
+function fecharModalEtapasObra() {
+    document.getElementById('modalEtapasObra').style.display = 'none';
+}
+
+function renderizarChipsEtapasObra(selecionadas) {
+    const container = document.getElementById('modalEtapasObraChips');
+    if (!etapas.length) {
+        container.innerHTML = '<span style="color:var(--on-surface-muted);font-size:0.8rem;">Nenhuma etapa cadastrada.</span>';
+        return;
+    }
+    container.innerHTML = etapas.map(et => {
+        const sel = selecionadas.includes(et.nome) ? ' selected' : '';
+        return `<div class="etapa-chip${sel}" onclick="this.classList.toggle('selected');atualizarContadorEtapas()" data-etapa="${esc(et.nome)}"><span class="chip-check"></span>${esc(et.nome)}</div>`;
+    }).join('');
+    atualizarContadorEtapas();
+}
+
+function atualizarContadorEtapas() {
+    const total = document.querySelectorAll('#modalEtapasObraChips .etapa-chip').length;
+    const sel   = document.querySelectorAll('#modalEtapasObraChips .etapa-chip.selected').length;
+    document.getElementById('modalEtapasObraContador').textContent = `${sel} de ${total} selecionadas`;
+}
+
+function modalEtapasObraToggleAll() {
+    const chips = Array.from(document.querySelectorAll('#modalEtapasObraChips .etapa-chip'));
+    const todaSelecionada = chips.every(c => c.classList.contains('selected'));
+    chips.forEach(c => c.classList.toggle('selected', !todaSelecionada));
+    atualizarContadorEtapas();
+}
+
+async function salvarEtapasObra() {
+    const nome = document.getElementById('oNomeOriginal').value;
+    const chips = Array.from(document.querySelectorAll('#modalEtapasObraChips .etapa-chip.selected'));
+    const novas = chips.map(c => c.dataset.etapa);
+
+    const adicionadas = novas.filter(e => !_etapasObraOriginal.includes(e));
+    const removidas   = _etapasObraOriginal.filter(e => !novas.includes(e));
+
+    const btn = document.getElementById('btnSalvarEtapasObra');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+
+    try {
+        if (removidas.length) {
+            const { error } = await db.from('obra_etapas').delete().eq('obra', nome).in('etapa', removidas);
+            if (error) throw error;
+        }
+        if (adicionadas.length) {
+            const { error } = await db.from('obra_etapas').insert(adicionadas.map(e => ({ obra: nome, etapa: e })));
+            if (error) throw error;
+        }
+        toast.success('Etapas atualizadas.');
+        fecharModalEtapasObra();
+    } catch (e) {
+        toast.error('Erro: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Salvar';
+    }
 }
 
 async function salvarObra() {
@@ -416,6 +505,8 @@ function abrirModalEmpresa(id) {
 
 function fecharModalEmpresa() {
     document.getElementById('modalEmpresa').style.display = 'none';
+    document.getElementById('modalEmpresa').style.zIndex = '';
+    if (wizardAberto) wizEmpresaFechada();
 }
 
 async function salvarEmpresa() {
@@ -510,9 +601,10 @@ async function carregarOrcamentos() {
     wrap.innerHTML = '<p style="padding:var(--sp-6);color:var(--on-surface-muted);">Carregando…</p>';
 
     try {
-        const { data, error } = await db.from('orcamentos')
-            .select('obra,etapa,tipo_custo,valor_estimado')
-            .eq('obra', obra);
+        const [{ data, error }, { data: oeData }] = await Promise.all([
+            db.from('orcamentos').select('obra,etapa,tipo_custo,valor_estimado').eq('obra', obra),
+            db.from('obra_etapas').select('etapa').eq('obra', obra),
+        ]);
         if (error) throw error;
 
         orcamentosData = {};
@@ -521,21 +613,25 @@ async function carregarOrcamentos() {
             orcamentosData[r.etapa][r.tipo_custo] = r.valor_estimado;
         }
 
-        renderizarGridOrcamentos(wrap);
+        const etapasObra = (oeData || []).map(r => r.etapa);
+        renderizarGridOrcamentos(wrap, etapasObra.length ? etapasObra : null);
     } catch (e) {
         wrap.innerHTML = `<p style="padding:var(--sp-6);color:var(--error);">Erro: ${esc(e.message)}</p>`;
     }
 }
 
-function renderizarGridOrcamentos(wrap) {
-    if (!etapas.length || !tiposCusto.length) {
+function renderizarGridOrcamentos(wrap, etapasObra = null) {
+    const etapasParaRenderizar = etapasObra
+        ? etapas.filter(et => etapasObra.includes(et.nome))
+        : etapas;
+    if (!etapasParaRenderizar.length || !tiposCusto.length) {
         wrap.innerHTML = '<p style="padding:var(--sp-6);color:var(--on-surface-muted);">Configure etapas e tipos de custo primeiro.</p>';
         return;
     }
 
     const cols = tiposCusto;
     const header = `<tr><th>Etapa</th>${cols.map(c => `<th class="text-right">${esc(c)}</th>`).join('')}</tr>`;
-    const rows = etapas.map(et => {
+    const rows = etapasParaRenderizar.map(et => {
         const inputs = cols.map(c => {
             const val = (orcamentosData[et.nome] || {})[c] || 0;
             return `<td><input type="number" class="form-input" data-etapa="${esc(et.nome)}" data-tipo="${esc(c)}" value="${val}" min="0" step="0.01" style="width:100%;padding:4px 8px;font-size:0.875rem;text-align:right;font-variant-numeric:tabular-nums;"></td>`;
@@ -771,6 +867,67 @@ async function recarregarCategorias() {
 }
 
 // ============================================================
+// FORNECEDORES
+// ============================================================
+function renderizarFornecedores() {
+    const tbody = document.getElementById('tabelaFornecedores');
+    const busca = document.getElementById('buscaFornecedor').value.trim().toLowerCase();
+    const lista = busca ? fornecedores.filter(f => f.toLowerCase().includes(busca)) : fornecedores;
+
+    document.getElementById('totalFornecedores').textContent =
+        `${lista.length} de ${fornecedores.length}`;
+
+    if (!lista.length) {
+        tbody.innerHTML = `<tr><td colspan="2" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum fornecedor encontrado.</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = lista.map(f => `
+        <tr>
+            <td style="font-size:0.8125rem;">${esc(f)}</td>
+            <td style="text-align:center;">
+                <button class="btn btn-outline" onclick="removerFornecedor('${esc(f)}')" style="font-size:0.72rem;padding:3px 8px;color:var(--error);border-color:var(--error);" title="Remover">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                    </svg>
+                </button>
+            </td>
+        </tr>`).join('');
+}
+
+async function adicionarFornecedor() {
+    const nome = document.getElementById('inputNovoFornecedor').value.trim();
+    if (!nome) { toast.warning('Informe um nome.'); return; }
+    try {
+        const { error } = await db.from('fornecedores').insert({ nome });
+        if (error) throw error;
+        toast.success(`"${nome}" adicionado.`);
+        document.getElementById('inputNovoFornecedor').value = '';
+        await recarregarFornecedores();
+    } catch (e) {
+        toast.error('Erro: ' + e.message);
+    }
+}
+
+async function removerFornecedor(nome) {
+    if (!confirm(`Remover o fornecedor "${nome}"?`)) return;
+    try {
+        const { error } = await db.from('fornecedores').delete().eq('nome', nome);
+        if (error) throw error;
+        toast.success(`"${nome}" removido.`);
+        await recarregarFornecedores();
+    } catch (e) {
+        toast.error('Erro: ' + e.message);
+    }
+}
+
+async function recarregarFornecedores() {
+    const { data } = await db.from('fornecedores').select('nome').order('nome');
+    fornecedores = (data || []).map(r => r.nome);
+    renderizarFornecedores();
+}
+
+// ============================================================
 // REGRAS DE SERVIÇO
 // ============================================================
 let regrasData = [];
@@ -856,5 +1013,376 @@ async function removerRegra(obra, servico) {
         await carregarRegras();
     } catch (e) {
         toast.error('Erro: ' + e.message);
+    }
+}
+
+// ============================================================
+// WIZARD: NOVA OBRA
+// ============================================================
+let wizardAberto = false;
+let _wizPreviousEmpresaIds = [];
+let wiz = { step: 1, nome: '', empresa_id: null, descricao: null, contrato: null, art: null, etapas: [], orcamentos: {} };
+
+function abrirWizard() {
+    wizardAberto = true;
+    wiz = { step: 1, nome: '', empresa_id: null, descricao: null, contrato: null, art: null, etapas: [], orcamentos: {} };
+    document.getElementById('wNome').value     = '';
+    document.getElementById('wDescricao').value = '';
+    document.getElementById('wContrato').value  = '';
+    document.getElementById('wArt').value       = '';
+    wizPopularEmpresaSelect();
+    wizSetStep(1);
+    document.getElementById('modalWizardObra').style.display = 'flex';
+}
+
+function fecharWizard() {
+    wizardAberto = false;
+    document.getElementById('modalWizardObra').style.display = 'none';
+}
+
+function wizPopularEmpresaSelect(autoSelecionarId = null) {
+    const sel = document.getElementById('wEmpresaId');
+    sel.innerHTML = `<option value="">— Sem empresa —</option>` +
+        empresas.map(e => `<option value="${e.id}">${esc(e.nome)}</option>`).join('');
+    if (autoSelecionarId) sel.value = autoSelecionarId;
+}
+
+function wizSetStep(n) {
+    wiz.step = n;
+
+    for (let i = 1; i <= 4; i++) {
+        document.getElementById(`wizStep${i}`).style.display = i === n ? 'block' : 'none';
+    }
+
+    for (let i = 1; i <= 4; i++) {
+        const ind = document.getElementById(`wizInd${i}`);
+        const dot = ind.querySelector('.wiz-dot');
+        ind.className = 'wiz-ind' + (i === n ? ' active' : i < n ? ' done' : '');
+        if (i < n) {
+            dot.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+        } else {
+            dot.textContent = i;
+        }
+    }
+
+    document.getElementById('wizBtnAnterior').style.display = n > 1 ? 'inline-flex' : 'none';
+    document.getElementById('wizBtnProximo').textContent = n === 4 ? 'Criar Obra' : 'Próximo →';
+
+    if (n === 2) wizRenderizarChips();
+    if (n === 3) wizRenderizarGridOrcamentos();
+    if (n === 4) wizRenderizarRevisao();
+}
+
+async function wizNext() {
+    if (wiz.step === 1) {
+        const nome = document.getElementById('wNome').value.trim();
+        if (!nome) { toast.warning('Nome da obra é obrigatório.'); return; }
+        if (obras.find(o => o.nome === nome)) { toast.warning(`Já existe uma obra com o nome "${nome}".`); return; }
+        wiz.nome      = nome;
+        const empVal  = document.getElementById('wEmpresaId').value;
+        wiz.empresa_id = empVal ? parseInt(empVal) : null;
+        wiz.descricao = document.getElementById('wDescricao').value.trim() || null;
+        wiz.contrato  = document.getElementById('wContrato').value.trim()  || null;
+        wiz.art       = document.getElementById('wArt').value.trim()       || null;
+        wizSetStep(2);
+
+    } else if (wiz.step === 2) {
+        const selected = wizGetEtapasSelecionadas();
+        if (!selected.length) { toast.warning('Selecione ao menos uma etapa.'); return; }
+        wiz.etapas = selected;
+        wiz.orcamentos = {};
+        for (const et of wiz.etapas) {
+            wiz.orcamentos[et] = {};
+            for (const tipo of tiposCusto) wiz.orcamentos[et][tipo] = 0;
+        }
+        wizSetStep(3);
+
+    } else if (wiz.step === 3) {
+        wizColetarOrcamentos();
+        wizSetStep(4);
+
+    } else if (wiz.step === 4) {
+        await criarObraCompleta();
+    }
+}
+
+function wizPrev() {
+    if (wiz.step > 1) wizSetStep(wiz.step - 1);
+}
+
+// ── Step 2: Etapas ──────────────────────────────────────────
+
+function wizGetEtapasSelecionadas() {
+    return Array.from(document.querySelectorAll('#wizChipsEtapas .wiz-chip.selected'))
+        .map(chip => chip.dataset.etapa);
+}
+
+function wizRenderizarChips() {
+    const container = document.getElementById('wizChipsEtapas');
+    if (!etapas.length) {
+        container.innerHTML = `<p style="color:var(--on-surface-muted);font-size:0.875rem;">Nenhuma etapa cadastrada. Adicione uma abaixo.</p>`;
+    } else {
+        container.innerHTML = etapas.map(et => {
+            const sel = wiz.etapas.includes(et.nome);
+            return `<div class="wiz-chip${sel ? ' selected' : ''}" data-etapa="${esc(et.nome)}" onclick="this.classList.toggle('selected')">${esc(et.nome)}</div>`;
+        }).join('');
+    }
+    // Reset inline form
+    document.getElementById('wNovaEtapaNome').style.display    = 'none';
+    document.getElementById('wizBtnConfirmarEtapa').style.display = 'none';
+    document.getElementById('wizBtnCancelarEtapa').style.display  = 'none';
+    document.getElementById('wizBtnNovaEtapa').style.display      = 'inline-flex';
+}
+
+function wizToggleNovaEtapa() {
+    const input      = document.getElementById('wNovaEtapaNome');
+    const btnNovaEt  = document.getElementById('wizBtnNovaEtapa');
+    const btnConfirm = document.getElementById('wizBtnConfirmarEtapa');
+    const btnCancel  = document.getElementById('wizBtnCancelarEtapa');
+    const showing = input.style.display !== 'none';
+    if (showing) {
+        input.style.display = 'none';
+        btnConfirm.style.display = 'none';
+        btnCancel.style.display  = 'none';
+        btnNovaEt.style.display  = 'inline-flex';
+        input.value = '';
+    } else {
+        input.style.display = 'block';
+        btnConfirm.style.display = 'inline-flex';
+        btnCancel.style.display  = 'inline-flex';
+        btnNovaEt.style.display  = 'none';
+        input.focus();
+    }
+}
+
+async function wizAdicionarEtapa() {
+    const nome = document.getElementById('wNovaEtapaNome').value.trim();
+    if (!nome) { toast.warning('Informe o nome da etapa.'); return; }
+
+    const btn = document.getElementById('wizBtnConfirmarEtapa');
+    btn.disabled = true; btn.textContent = 'Adicionando…';
+
+    try {
+        const { error } = await db.from('etapas').insert({ nome, ordem: 999 });
+        if (error) throw error;
+
+        // Preserve current chip selection + add new
+        const currentSelected = wizGetEtapasSelecionadas();
+        wiz.etapas = [...new Set([...currentSelected, nome])];
+
+        // Reload global etapas
+        const { data } = await db.from('etapas').select('nome,ordem').order('ordem');
+        etapas = data || [];
+
+        wizRenderizarChips(); // re-renders with wiz.etapas for selection
+        toast.success(`Etapa "${nome}" adicionada.`);
+    } catch (e) {
+        toast.error('Erro: ' + e.message);
+        btn.disabled = false; btn.textContent = 'Adicionar';
+    }
+}
+
+// ── Step 3: Orçamentos ───────────────────────────────────────
+
+function wizRenderizarGridOrcamentos() {
+    const wrap = document.getElementById('wizGridOrcamentos');
+    if (!wiz.etapas.length || !tiposCusto.length) {
+        wrap.innerHTML = '<p style="color:var(--on-surface-muted);">Sem etapas ou tipos de custo configurados.</p>';
+        return;
+    }
+
+    const cols   = tiposCusto;
+    const header = `<tr><th>Etapa</th>${cols.map(c => `<th class="text-right">${esc(c)}</th>`).join('')}<th class="text-right">Total</th></tr>`;
+
+    const bodyRows = wiz.etapas.map(et => {
+        const inputs = cols.map(c => {
+            const val = (wiz.orcamentos[et] || {})[c] || 0;
+            return `<td><input type="number" class="form-input" data-et="${esc(et)}" data-tipo="${esc(c)}"
+                value="${val}" min="0" step="0.01"
+                style="width:100%;padding:4px 8px;font-size:0.875rem;text-align:right;font-variant-numeric:tabular-nums;"
+                oninput="wizAtualizarTotais()"></td>`;
+        }).join('');
+        const rowTotal = cols.reduce((s, c) => s + ((wiz.orcamentos[et] || {})[c] || 0), 0);
+        return `<tr>
+            <td style="font-weight:500;">${esc(et)}</td>
+            ${inputs}
+            <td class="text-right" data-row-total="${esc(et)}" style="font-variant-numeric:tabular-nums;color:var(--on-surface-muted);">R$ ${formatarValor(rowTotal)}</td>
+        </tr>`;
+    }).join('');
+
+    const colTotals = cols.map(c => {
+        const total = wiz.etapas.reduce((s, et) => s + ((wiz.orcamentos[et] || {})[c] || 0), 0);
+        return `<td class="text-right" data-col-total="${esc(c)}" style="font-weight:600;font-variant-numeric:tabular-nums;">R$ ${formatarValor(total)}</td>`;
+    }).join('');
+    const grand = wiz.etapas.reduce((s, et) => s + cols.reduce((ss, c) => ss + ((wiz.orcamentos[et] || {})[c] || 0), 0), 0);
+    const totaisRow = `<tr style="background:var(--surface-low);">
+        <td style="font-weight:600;">Total</td>
+        ${colTotals}
+        <td class="text-right" id="wizGrandTotal" style="font-weight:700;font-variant-numeric:tabular-nums;">R$ ${formatarValor(grand)}</td>
+    </tr>`;
+
+    wrap.innerHTML = `<div class="table-wrapper"><table class="styled-table">
+        <thead>${header}</thead>
+        <tbody>${bodyRows}${totaisRow}</tbody>
+    </table></div>`;
+}
+
+function wizAtualizarTotais() {
+    const cols      = tiposCusto;
+    const etapasArr = wiz.etapas;
+
+    // Collect current values from DOM
+    const vals = {};
+    for (const inp of document.querySelectorAll('#wizGridOrcamentos input[data-et]')) {
+        const et = inp.dataset.et, tipo = inp.dataset.tipo;
+        if (!vals[et]) vals[et] = {};
+        vals[et][tipo] = parseFloat(inp.value) || 0;
+    }
+
+    // Row totals
+    for (const el of document.querySelectorAll('#wizGridOrcamentos [data-row-total]')) {
+        const et = el.dataset.rowTotal;
+        el.textContent = `R$ ${formatarValor(cols.reduce((s, c) => s + ((vals[et] || {})[c] || 0), 0))}`;
+    }
+
+    // Col totals
+    let grand = 0;
+    for (const el of document.querySelectorAll('#wizGridOrcamentos [data-col-total]')) {
+        const tipo  = el.dataset.colTotal;
+        const total = etapasArr.reduce((s, et) => s + ((vals[et] || {})[tipo] || 0), 0);
+        grand += total;
+        el.textContent = `R$ ${formatarValor(total)}`;
+    }
+
+    const grandEl = document.getElementById('wizGrandTotal');
+    if (grandEl) grandEl.textContent = `R$ ${formatarValor(grand)}`;
+}
+
+function wizColetarOrcamentos() {
+    wiz.orcamentos = {};
+    for (const inp of document.querySelectorAll('#wizGridOrcamentos input[data-et]')) {
+        const et = inp.dataset.et, tipo = inp.dataset.tipo;
+        if (!wiz.orcamentos[et]) wiz.orcamentos[et] = {};
+        wiz.orcamentos[et][tipo] = parseFloat(inp.value) || 0;
+    }
+}
+
+// ── Step 4: Revisão ──────────────────────────────────────────
+
+function wizRenderizarRevisao() {
+    const empresa = wiz.empresa_id ? empresas.find(e => e.id === wiz.empresa_id) : null;
+
+    const orcRows = [];
+    for (const [et, tipos] of Object.entries(wiz.orcamentos)) {
+        for (const [tipo, val] of Object.entries(tipos)) {
+            if (val > 0) orcRows.push({ et, tipo, val });
+        }
+    }
+
+    const orcHtml = orcRows.length
+        ? `<div class="table-wrapper" style="margin-top:var(--sp-2);">
+            <table class="styled-table">
+                <thead><tr><th>Etapa</th><th>Tipo de Custo</th><th class="text-right">Valor Est.</th></tr></thead>
+                <tbody>${orcRows.map(r => `<tr>
+                    <td>${esc(r.et)}</td>
+                    <td>${esc(r.tipo)}</td>
+                    <td class="text-right">R$ ${formatarValor(r.val)}</td>
+                </tr>`).join('')}</tbody>
+            </table></div>`
+        : `<p style="font-size:0.875rem;color:var(--on-surface-muted);margin-top:var(--sp-2);">Nenhum orçamento preenchido — configure depois pela aba Orçamentos.</p>`;
+
+    document.getElementById('wizResumo').innerHTML = `
+        <div style="display:grid;gap:var(--sp-4);">
+            <div style="background:var(--surface-low);border-radius:var(--radius-md);padding:var(--sp-4);">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);">
+                    <div>
+                        <p style="font-size:0.75rem;color:var(--on-surface-muted);margin-bottom:2px;">Nome</p>
+                        <p style="font-weight:600;">${esc(wiz.nome)}</p>
+                    </div>
+                    <div>
+                        <p style="font-size:0.75rem;color:var(--on-surface-muted);margin-bottom:2px;">Empresa</p>
+                        <p style="font-weight:600;">${empresa ? esc(empresa.nome) : '—'}</p>
+                    </div>
+                    ${wiz.descricao ? `<div>
+                        <p style="font-size:0.75rem;color:var(--on-surface-muted);margin-bottom:2px;">Descrição</p>
+                        <p>${esc(wiz.descricao)}</p></div>` : ''}
+                    ${wiz.contrato ? `<div>
+                        <p style="font-size:0.75rem;color:var(--on-surface-muted);margin-bottom:2px;">Contrato</p>
+                        <p>${esc(wiz.contrato)}</p></div>` : ''}
+                    ${wiz.art ? `<div style="grid-column:1/-1;">
+                        <p style="font-size:0.75rem;color:var(--on-surface-muted);margin-bottom:2px;">ART</p>
+                        <p>${esc(wiz.art)}</p></div>` : ''}
+                </div>
+            </div>
+            <div>
+                <p style="font-size:0.8125rem;font-weight:600;margin-bottom:var(--sp-2);">Etapas (${wiz.etapas.length})</p>
+                <div style="display:flex;flex-wrap:wrap;gap:var(--sp-2);">
+                    ${wiz.etapas.map(et => `<span style="background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary);border:1px solid var(--primary);padding:3px 12px;border-radius:20px;font-size:0.8125rem;font-weight:500;">${esc(et)}</span>`).join('')}
+                </div>
+            </div>
+            <div>
+                <p style="font-size:0.8125rem;font-weight:600;margin-bottom:var(--sp-2);">Orçamentos</p>
+                ${orcHtml}
+            </div>
+        </div>`;
+}
+
+// ── Sub-popup: Empresa ────────────────────────────────────────
+
+function wizAbrirNovaEmpresa() {
+    _wizPreviousEmpresaIds = empresas.map(e => e.id);
+    document.getElementById('modalEmpresa').style.zIndex = '1100';
+    abrirModalEmpresa(null);
+}
+
+async function wizEmpresaFechada() {
+    const { data } = await db.from('empresas').select('*').order('nome');
+    empresas = data || [];
+    renderizarEmpresas();
+    const novaEmpresa = empresas.find(e => !_wizPreviousEmpresaIds.includes(e.id));
+    wizPopularEmpresaSelect(novaEmpresa ? novaEmpresa.id : null);
+}
+
+// ── Salvar ───────────────────────────────────────────────────
+
+async function criarObraCompleta() {
+    const btn = document.getElementById('wizBtnProximo');
+    btn.disabled = true; btn.textContent = 'Criando…';
+
+    try {
+        // 1. obras
+        const { error: obraErr } = await db.from('obras').insert({
+            nome:       wiz.nome,
+            empresa_id: wiz.empresa_id,
+            descricao:  wiz.descricao,
+            contrato:   wiz.contrato,
+            art:        wiz.art,
+        });
+        if (obraErr) throw obraErr;
+
+        // 2. obra_etapas
+        const { error: etErr } = await db.from('obra_etapas')
+            .insert(wiz.etapas.map(e => ({ obra: wiz.nome, etapa: e })));
+        if (etErr) throw etErr;
+
+        // 3. orcamentos (apenas não-zeros)
+        const orcRows = [];
+        for (const [et, tipos] of Object.entries(wiz.orcamentos)) {
+            for (const [tipo_custo, valor_estimado] of Object.entries(tipos)) {
+                if (valor_estimado > 0) orcRows.push({ obra: wiz.nome, etapa: et, tipo_custo, valor_estimado });
+            }
+        }
+        if (orcRows.length) {
+            const { error: orcErr } = await db.from('orcamentos')
+                .upsert(orcRows, { onConflict: 'obra,etapa,tipo_custo' });
+            if (orcErr) throw orcErr;
+        }
+
+        fecharWizard();
+        await carregarReferencias();
+        toast.success(`Obra "${wiz.nome}" criada com sucesso!`);
+    } catch (e) {
+        toast.error('Erro ao criar obra: ' + e.message);
+        btn.disabled = false; btn.textContent = 'Criar Obra';
     }
 }

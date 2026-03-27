@@ -25,7 +25,7 @@ Acesse em `http://localhost:8080`. O frontend **não funciona via file://** — 
 - **Frontend**: HTML5 + CSS3 + vanilla JavaScript (sem framework), Supabase JS SDK diretamente no browser
 - **Backend**: FastAPI (Python) com Uvicorn
 - **Banco de dados**: PostgreSQL via Supabase (cliente Python `supabase-py` no backend, JS SDK no frontend)
-- **IA**: OpenAI GPT-4 Vision (extração de notas fiscais/comprovantes), Whisper (transcrição de áudio)
+- **IA**: OpenAI `gpt-5.4` (extração de NF e chat principal), `gpt-4.1-mini` (análise de relatórios), Whisper (transcrição de áudio), `text-embedding-3-small` (embeddings pgvector)
 - **PDF**: ReportLab + Plotly/Kaleido
 
 ### Frontend (WEB/)
@@ -35,16 +35,21 @@ Acesse em `http://localhost:8080`. O frontend **não funciona via file://** — 
 - `WEB/components/nav.js` — sidebar de navegação injetada em todas as páginas; também injeta automaticamente `ai-chat.js`
 - `WEB/components/ai-chat.js` — widget global de chat IA (fixo, canto inferior direito); comunica com `POST /api/ai/chat`; suporta ação `cadastrar_despesa` que salva prefill em `sessionStorage('ai_despesa_prefill')` e navega para `/despesas/`
 - Cada módulo tem sua própria pasta (`despesas/`, `historico/`, `folha/`, `recebimentos/`, `contratos/`, `configuracoes/`, `contas/`, `documentos/`, `recorrentes/`, `relatorios/`)
+- `WEB/contratos/` — CRUD de contratos com fornecedores por obra/etapas (seleção multi-etapa via checkboxes); cada pagamento registrado cria automaticamente uma entrada em `c_despesas`
+- `WEB/relatorios/` — relatórios financeiros com IA: modo único (uma obra) ou comparativo (múltiplas obras); chama `POST /api/relatorio/analisar` e exibe saúde financeira 0-100 + alertas
+- `WEB/documentos/` — galeria de comprovantes com paginação (50/página), upload drag-and-drop, múltiplos NFs por despesa, exportação CSV
 - `WEB/components/toast.js` — sistema de notificações toast global
 - `API_BASE` em todos os módulos JS: `` `http://${location.hostname}:8000` `` (não hardcode `localhost`)
 
 ### Backend (api/)
-- `api/main.py` — bootstrap FastAPI, CORS aberto (`allow_origins=["*"]`), registra os 5 routers: `ai`, `documentos`, `folha`, `relatorio`, `recorrentes`; expõe `/api/health` e endpoints de debug (`/api/debug/supabase`, `/api/debug/chat-context`); Swagger em `http://localhost:8000/docs`
-- `api/supabase_client.py` — singleton Supabase com `@lru_cache`; use `get_supabase()` em novos routes (preferir sobre criar cliente local)
+- `api/main.py` — bootstrap FastAPI, CORS aberto (`allow_origins=["*"]`), middleware HTTP de log (método + path + status + ms), registra os 5 routers: `ai`, `documentos`, `folha`, `relatorio`, `recorrentes`; expõe `/api/health` e endpoints de debug (`/api/debug/supabase`, `/api/debug/chat-context`); Swagger em `http://localhost:8000/docs`
+- `api/logger.py` — configuração centralizada de logging; use `get_logger(__name__)` em qualquer módulo; grava em console (INFO+) e em `logs/api.log` com rotação (10 MB × 5 backups, DEBUG+)
+- `api/supabase_client.py` — singleton Supabase com `@lru_cache`; use `get_supabase()` em novos routes (preferir sobre criar cliente local); `api/routes/relatorio.py` tem `_get_supabase()` próprio — exceção histórica, não replicar
 - `api/embeddings.py` — pgvector semantic search via `text-embedding-3-small`; `sync_embeddings()` é chamado automaticamente a cada `/api/ai/chat` para embeddar despesas novas; `search_despesas(query)` retorna as N despesas semanticamente mais próximas
-- `api/routes/ai.py` — múltiplos endpoints de IA: `POST /extrair` (imagem/PDF), `POST /extrair-texto` (texto livre), `POST /extrair-texto-misto` (texto+arquivos), `POST /transcrever` (Whisper), `POST /chat-despesas` (revisão), `POST /chat` (assistente geral com acesso ao banco), `GET /referencias`
+- `api/routes/ai.py` — múltiplos endpoints de IA: `POST /extrair` (imagem/PDF), `POST /extrair-texto` (texto livre), `POST /extrair-texto-misto` (texto+arquivos), `POST /extrair-pix` (comprovante PIX), `POST /transcrever` (Whisper), `POST /chat-despesas` (revisão), `POST /chat` (assistente geral com tool calling — loop de até 5 rounds com tools `buscar_despesas`, `buscar_totais`, `listar_referencias`), `GET /referencias` (cache 2 min)
+- `api/routes/documentos.py` — `DELETE /api/documentos/nf/{nf_id}`: remove arquivo do Storage `comprovantes`, deleta registro de `comprovantes_despesa`; se não restar NFs, atualiza `tem_nota_fiscal = False` na `c_despesas`
 - `api/routes/folha.py` — fechamento de folha de pagamento (operação atômica: cria despesas + faz upload de comprovantes)
-- `api/routes/relatorio.py` — geração de PDF via `relatorio.py` raiz
+- `api/routes/relatorio.py` — `GET /pdf` (StreamingResponse PDF) + `POST /analisar` (análise IA com gpt-4.1-mini, retorna JSON estruturado com saúde financeira 0-100 e alertas)
 - `api/routes/recorrentes.py` — CRUD de templates de despesas recorrentes + `POST /api/recorrentes/processar` (gera `c_despesas` para templates vencidos, avança `proxima_data`, desativa quando `data_fim` é atingida)
 - Backend usa `SUPABASE_SERVICE_KEY` (admin) — nunca expor no frontend
 
@@ -64,11 +69,18 @@ Tabelas principais:
 | `despesas_recorrentes` | Templates de despesas recorrentes (mensal/trimestral/semestral/anual) |
 | `empresas` | Empresas proprietárias; `obras.empresa_id` FK nullable |
 | `taxa_conclusao` | % de conclusão por obra+etapa (`taxa` NUMERIC 0-100) |
+| `obra_etapas` | Vínculo explícito entre obras e etapas (PK composta obra+etapa) |
+| `contratos` | Contratos com fornecedores; `contrato_pagamentos` registra cada pagamento |
+| `contratos_etapas` | Junction table `(contrato_id, etapa)` — suporte a multi-etapa por contrato |
 | `fornecedores`, `categorias_despesa`, `formas_pagamento` | Tabelas de referência |
 
 A tabela `c_despesas` é a versão atual (substitui esquema legado). Campo `folha_id` é nullable — preenchido somente para despesas de mão de obra geradas pelo fechamento de folha.
 
-**Migrations:** arquivos em `migrations/` são executados manualmente no SQL Editor do Supabase (não há runner automático). O último arquivo é `02_empresas.sql` — nomear novos arquivos a partir de `03_`.
+**Migrations:** arquivos em `migrations/` são executados manualmente no SQL Editor do Supabase (não há runner automático). O último arquivo é `03_obra_etapas.sql` — nomear novos arquivos a partir de `04_`.
+
+**Logs:** em `logs/api.log` (gitignore). Para acompanhar em tempo real: `tail -f logs/api.log`. Para filtrar por rota: `grep "POST /api/ai" logs/api.log`.
+
+**Utilitários Windows:** `diagnostico.bat` (status da API + últimas 30 linhas de log), `restart_api.bat` (mata processo na porta 8000 e reinicia), `watchdog_api.bat` (loop de auto-restart em caso de crash).
 
 ## Design System
 

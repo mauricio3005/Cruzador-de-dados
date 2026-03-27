@@ -11,6 +11,7 @@ __pycache__/
 
 # Arquivos de log e bancos temporários
 *.log
+logs/
 *.sqlite3
 .claude
 

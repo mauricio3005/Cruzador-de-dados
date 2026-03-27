@@ -120,7 +120,7 @@
                             </button>
                         </div>
                     </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);">
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--sp-4);">
                         <div>
                             <label class="form-label">Fornecedor</label>
                             <input type="text" class="form-input" id="filtroFornecedor" placeholder="Todos">
@@ -128,6 +128,10 @@
                         <div>
                             <label class="form-label">Descrição</label>
                             <input type="text" class="form-input" id="filtroDescricao" placeholder="Todas">
+                        </div>
+                        <div>
+                            <label class="form-label">Banco</label>
+                            <input type="text" class="form-input" id="filtroBanco" placeholder="Todos">
                         </div>
                     </div>
                 </div>
@@ -178,13 +182,14 @@
                                 <th>Descrição</th>
                                 <th>Categoria</th>
                                 <th>Forma</th>
+                                <th>Banco</th>
                                 <th class="text-right">Valor (R$)</th>
                                 <th style="text-align:center;">NF</th>
                                 <th></th>
                             </tr>
                         </thead>
                         <tbody id="tabelaBody">
-                            <tr><td colspan="12" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Use os filtros acima e clique em Filtrar.</td></tr>
+                            <tr><td colspan="13" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Use os filtros acima e clique em Filtrar.</td></tr>
                         </tbody>
                     </table>
                 </div>
