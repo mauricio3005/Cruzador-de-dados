@@ -366,6 +366,10 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+    max-height: 240px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,.15) transparent;
 }
 .ai-confirm-card-registros li {
     font-size: .76rem;
@@ -602,13 +606,13 @@
         // Monta lista de registros afetados com diff
         let itensHtml = '';
         if (registros.length) {
-            const itens = registros.slice(0, 10).map(r => {
+            const itens = registros.map(r => {
                 const label = r.descricao || r.id || '';
                 const antes  = r.antes  ? Object.entries(r.antes).filter(([k]) => k in (r.depois||{})).map(([k,v]) => `${k}: ${v}`).join(' · ') : '';
                 const depois = r.depois ? Object.entries(r.depois).map(([k,v]) => `→ ${k}: ${v}`).join(' · ') : '';
                 return `<li>${label}${antes ? ' | '+antes : ''}${depois ? ' '+depois : ''}</li>`;
             }).join('');
-            itensHtml = `<ul class="ai-confirm-card-registros">${itens}${registros.length > 10 ? `<li>…e mais ${registros.length-10}</li>` : ''}</ul>`;
+            itensHtml = `<ul class="ai-confirm-card-registros">${itens}</ul>`;
         }
 
         // Serializa payload para uso inline no onclick
