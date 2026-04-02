@@ -29,6 +29,28 @@ let todosRegistros = [];   // resultado completo do filtro atual
 let paginaAtual    = 1;
 let selecionados   = new Set(); // IDs selecionados para vincular comprovante
 
+// --- REALTIME ---
+let _realtimeDebounce = null;
+
+function iniciarRealtime() {
+    if (!dbClient) return;
+    dbClient
+        .channel('historico-despesas')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'c_despesas' }, () => {
+            // Não recarrega enquanto o modal de edição estiver aberto
+            const modalAberto = document.getElementById('modalEditar').style.display === 'flex';
+            if (modalAberto) return;
+
+            clearTimeout(_realtimeDebounce);
+            _realtimeDebounce = setTimeout(() => {
+                carregarHistorico();
+                setStatus('online', 'Atualizado agora');
+                setTimeout(() => setStatus('online', 'Sistema Sincronizado'), 3000);
+            }, 800);
+        })
+        .subscribe();
+}
+
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
     carregarEnv();
@@ -43,6 +65,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('btnFiltrar').addEventListener('click', () => { paginaAtual = 1; carregarHistorico(); });
     document.getElementById('btnLimparFiltro').addEventListener('click', limparFiltros);
     document.getElementById('filtroObra').addEventListener('change', e => filtrarEtapasPorObra(e.target.value));
+    document.getElementById('btnAtualizar').addEventListener('click', () => { paginaAtual = 1; carregarHistorico(); });
     document.getElementById('btnExportarCSV').addEventListener('click', exportarCSV);
     document.getElementById('buscaTexto').addEventListener('input', () => { paginaAtual = 1; renderizarTabela(); });
 
@@ -59,8 +82,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('btnSalvarEdicao').addEventListener('click', salvarEdicao);
     document.getElementById('btnDeletarModal').addEventListener('click', deletarDespesa);
 
-    // Filtrar ao carregar
+    // Filtrar ao carregar e iniciar escuta em tempo real
     carregarHistorico();
+    iniciarRealtime();
+});
+
+window.addEventListener('jarvis:data-changed', (e) => {
+    if (e.detail?.tabela === 'c_despesas') {
+        paginaAtual = 1;
+        carregarHistorico();
+    }
 });
 
 // --- REFERÊNCIAS ---

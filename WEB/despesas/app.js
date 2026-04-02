@@ -17,13 +17,14 @@ function carregarEnv() {
 }
 
 // --- ESTADO ---
-let obras        = [];
-let etapas       = [];
-let tipos        = [];
-let categorias   = [];
-let formas       = [];
-let fornecedores = [];
-let loteArquivos = [];   // { file, nome, dados }
+let obras          = [];
+let etapas         = [];
+let obraEtapasMap  = {}; // { obra: [etapa, ...] }
+let tipos          = [];
+let categorias     = [];
+let formas         = [];
+let fornecedores   = [];
+let loteArquivos   = [];   // { file, nome, dados }
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -44,7 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             preencherCampoIA('fForma',   ia.FORMA,   formas);
             preencherCampoIA('fDespesa', ia.DESPESA, categorias);
             preencherCampoIA('fObra',    ia.OBRA,    obras);
-            preencherCampoIA('fEtapa',   ia.ETAPA,   etapas);
+            { const obraVal = document.getElementById('fObra').value; filtrarEtapasPorObra(obraVal); preencherCampoIA('fEtapa', ia.ETAPA, obraVal ? (obraEtapasMap[obraVal] || etapas) : etapas); }
             preencherFornecedorIA(ia.FORNECEDOR);
             if (ia.VALOR_TOTAL) document.getElementById('fValor').value = parseFloat(ia.VALOR_TOTAL).toFixed(2);
             if (ia.DATA)        document.getElementById('fData').value  = ia.DATA;
@@ -113,24 +114,31 @@ async function carregarReferencias() {
         return;
     }
     try {
-        const [rObras, rEtapas, rTipos, rCat, rFormas, rForn] = await Promise.all([
+        const [rObras, rEtapas, rObraEtapas, rTipos, rCat, rFormas, rForn] = await Promise.all([
             dbClient.from('obras').select('nome').order('nome'),
             dbClient.from('etapas').select('nome, ordem').order('ordem'),
+            dbClient.from('obra_etapas').select('obra, etapa'),
             dbClient.from('tipos_custo').select('nome').order('nome'),
             dbClient.from('categorias_despesa').select('nome').order('nome'),
             dbClient.from('formas_pagamento').select('nome').order('nome'),
             dbClient.from('fornecedores').select('nome').order('nome'),
         ]);
 
-        if (rObras.error)  console.error('[obras]', rObras.error);
-        if (rEtapas.error) console.error('[etapas]', rEtapas.error);
-        if (rTipos.error)  console.error('[tipos_custo]', rTipos.error);
-        if (rCat.error)    console.error('[categorias_despesa]', rCat.error);
-        if (rFormas.error) console.error('[formas_pagamento]', rFormas.error);
-        if (rForn.error)   console.error('[fornecedores]', rForn.error);
+        if (rObras.error)      console.error('[obras]', rObras.error);
+        if (rEtapas.error)     console.error('[etapas]', rEtapas.error);
+        if (rObraEtapas.error) console.error('[obra_etapas]', rObraEtapas.error);
+        if (rTipos.error)      console.error('[tipos_custo]', rTipos.error);
+        if (rCat.error)        console.error('[categorias_despesa]', rCat.error);
+        if (rFormas.error)     console.error('[formas_pagamento]', rFormas.error);
+        if (rForn.error)       console.error('[fornecedores]', rForn.error);
 
-        obras        = (rObras.data  || []).map(r => r.nome);
-        etapas       = (rEtapas.data || []).map(r => r.nome);
+        obras  = (rObras.data  || []).map(r => r.nome);
+        etapas = (rEtapas.data || []).map(r => r.nome);
+        obraEtapasMap = {};
+        (rObraEtapas.data || []).forEach(r => {
+            if (!obraEtapasMap[r.obra]) obraEtapasMap[r.obra] = [];
+            obraEtapasMap[r.obra].push(r.etapa);
+        });
         tipos        = (rTipos.data  || []).map(r => r.nome);
         categorias   = (rCat.data    || []).map(r => r.nome);
         formas       = (rFormas.data || []).map(r => r.nome);
@@ -159,11 +167,10 @@ function popularSelect(id, opcoes, placeholder, opcional) {
         opcoes.map(o => `<option value="${o}">${o}</option>`).join('');
 }
 
-async function filtrarEtapasPorObra(obra) {
+function filtrarEtapasPorObra(obra) {
     const el = document.getElementById('fEtapa');
     if (!obra) { popularSelect('fEtapa', etapas, 'Selecione a etapa...'); el.value = ''; return; }
-    const { data } = await dbClient.from('obra_etapas').select('etapa').eq('obra', obra);
-    const nomes = (data || []).map(r => r.etapa);
+    const nomes = obraEtapasMap[obra] || [];
     popularSelect('fEtapa', nomes, 'Selecione a etapa...');
     if (!nomes.includes(el.value)) el.value = '';
 }
@@ -377,7 +384,7 @@ async function extrairIATexto() {
             preencherCampoIA('fForma',   ia.FORMA,   formas);
             preencherCampoIA('fDespesa', ia.DESPESA, categorias);
             preencherCampoIA('fObra',    ia.OBRA,    obras);
-            preencherCampoIA('fEtapa',   ia.ETAPA,   etapas);
+            { const obraVal = document.getElementById('fObra').value; filtrarEtapasPorObra(obraVal); preencherCampoIA('fEtapa', ia.ETAPA, obraVal ? (obraEtapasMap[obraVal] || etapas) : etapas); }
             preencherFornecedorIA(ia.FORNECEDOR);
             if (ia.VALOR_TOTAL) document.getElementById('fValor').value = parseFloat(ia.VALOR_TOTAL).toFixed(2);
             if (ia.DATA)        document.getElementById('fData').value  = ia.DATA;
@@ -431,7 +438,7 @@ function renderizarRevisaoTexto(lista, arquivos) {
             <td>
                 <select class="form-select form-select-sm etapa-linha" data-idx="${i}" style="min-width:120px;font-size:0.8rem;padding:2px 6px;">
                     <option value="">—</option>
-                    ${etapas.map(e => `<option value="${esc(e)}"${e === (d.ETAPA || '') ? ' selected' : ''}>${esc(e)}</option>`).join('')}
+                    ${(obraVal ? (obraEtapasMap[obraVal] || []) : etapas).map(e => `<option value="${esc(e)}"${e === (d.ETAPA || '') ? ' selected' : ''}>${esc(e)}</option>`).join('')}
                 </select>
             </td>
             <td>${esc(d.DESPESA || '—')}</td>
@@ -442,11 +449,31 @@ function renderizarRevisaoTexto(lista, arquivos) {
     }).join('');
 
     popularSelect('textoObraGlobal', obras, 'Aplicar obra a todas…');
+
+    // Obra → filtrar etapas por linha
+    tbody.querySelectorAll('.obra-linha').forEach(sel => {
+        sel.addEventListener('change', e => {
+            const idx      = parseInt(e.target.dataset.idx);
+            const obra     = e.target.value;
+            const etapaSel = tbody.querySelector(`.etapa-linha[data-idx="${idx}"]`);
+            if (!etapaSel) return;
+            const etapaAtual = etapaSel.value;
+            const nomes = obra ? (obraEtapasMap[obra] || []) : etapas;
+            etapaSel.innerHTML = `<option value="">—</option>` + nomes.map(n => `<option value="${esc(n)}"${n === etapaAtual ? ' selected' : ''}>${esc(n)}</option>`).join('');
+            if (!nomes.includes(etapaAtual)) etapaSel.value = '';
+        });
+    });
 }
 
 function aplicarObraGlobal(valor) {
     if (!valor) return;
+    const nomes = obraEtapasMap[valor] || [];
     document.querySelectorAll('.obra-linha').forEach(sel => { sel.value = valor; });
+    document.querySelectorAll('.etapa-linha').forEach(sel => {
+        const etapaAtual = sel.value;
+        sel.innerHTML = `<option value="">—</option>` + nomes.map(n => `<option value="${esc(n)}"${n === etapaAtual ? ' selected' : ''}>${esc(n)}</option>`).join('');
+        if (!nomes.includes(etapaAtual)) sel.value = '';
+    });
 }
 
 async function salvarTodasDoTexto() {
@@ -586,6 +613,8 @@ async function extrairIAIndividual() {
         preencherCampoIA('fTipo',    ia.TIPO,    tipos);
         preencherCampoIA('fForma',   ia.FORMA,   formas);
         preencherCampoIA('fDespesa', ia.DESPESA, categorias);
+        preencherCampoIA('fObra',    ia.OBRA,    obras);
+        { const obraVal = document.getElementById('fObra').value; filtrarEtapasPorObra(obraVal); preencherCampoIA('fEtapa', ia.ETAPA, obraVal ? (obraEtapasMap[obraVal] || etapas) : etapas); }
         preencherFornecedorIA(ia.FORNECEDOR);
         if (ia.VALOR_TOTAL) document.getElementById('fValor').value = parseFloat(ia.VALOR_TOTAL).toFixed(2);
         if (ia.DATA)        document.getElementById('fData').value  = ia.DATA;
@@ -730,7 +759,9 @@ function limparFormIndividual() {
     document.getElementById('iaBanner').style.display = 'none';
     document.getElementById('uploadZoneText').textContent = 'Arraste ou clique para anexar NF (PDF, JPG, PNG)';
     document.getElementById('btnExtrairIA').disabled = true;
-    document.getElementById('inputNF').value = '';
+    const _inputNF = document.getElementById('inputNF');
+    _inputNF.value = '';
+    try { _inputNF.files = new DataTransfer().files; } catch(_) {}
 }
 
 // --- UPLOAD STORAGE ---
@@ -790,7 +821,13 @@ async function extrairLoteIA() {
 
 function aplicarObraLoteGlobal(valor) {
     if (!valor) return;
+    const nomes = obraEtapasMap[valor] || [];
     document.querySelectorAll('.obra-lote-linha').forEach(sel => { sel.value = valor; });
+    document.querySelectorAll('#loteTableBody [data-field="ETAPA"]').forEach(sel => {
+        const etapaAtual = sel.value;
+        sel.innerHTML = `<option value="">—</option>` + nomes.map(n => `<option value="${esc(n)}"${n === etapaAtual ? ' selected' : ''}>${esc(n)}</option>`).join('');
+        if (!nomes.includes(etapaAtual)) sel.value = '';
+    });
 }
 
 function renderizarTabeLote() {
@@ -835,7 +872,7 @@ function renderizarTabeLote() {
             <td>
                 <select class="form-select form-select-sm" data-idx="${idx}" data-field="ETAPA">
                     <option value="">—</option>
-                    ${etapas.map(e => `<option value="${e}" ${(d.ETAPA||loteEtapa)===e?'selected':''}>${e}</option>`).join('')}
+                    ${(obraVal ? (obraEtapasMap[obraVal] || []) : etapas).map(e => `<option value="${e}" ${(d.ETAPA||loteEtapa)===e?'selected':''}>${e}</option>`).join('')}
                 </select>
             </td>
             <td>
@@ -868,6 +905,20 @@ function renderizarTabeLote() {
             const idx   = parseInt(e.target.dataset.idx);
             const field = e.target.dataset.field;
             loteArquivos[idx].dados[field] = e.target.value;
+        });
+    });
+
+    // Obra → filtrar etapas por linha
+    tbody.querySelectorAll('.obra-lote-linha').forEach(sel => {
+        sel.addEventListener('change', e => {
+            const idx      = parseInt(e.target.dataset.idx);
+            const obra     = e.target.value;
+            const etapaSel = tbody.querySelector(`[data-field="ETAPA"][data-idx="${idx}"]`);
+            if (!etapaSel) return;
+            const etapaAtual = etapaSel.value;
+            const nomes = obra ? (obraEtapasMap[obra] || []) : etapas;
+            etapaSel.innerHTML = `<option value="">—</option>` + nomes.map(n => `<option value="${esc(n)}"${n === etapaAtual ? ' selected' : ''}>${esc(n)}</option>`).join('');
+            if (!nomes.includes(etapaAtual)) etapaSel.value = '';
         });
     });
 

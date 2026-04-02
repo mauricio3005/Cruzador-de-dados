@@ -34,10 +34,12 @@ Acesse em `http://localhost:8080`. O frontend **não funciona via file://** — 
 - `WEB/style.css` — design system completo via CSS custom properties (não usar inline styles)
 - `WEB/components/nav.js` — sidebar de navegação injetada em todas as páginas; também injeta automaticamente `ai-chat.js`
 - `WEB/components/ai-chat.js` — widget global de chat IA (fixo, canto inferior direito); comunica com `POST /api/ai/chat`; suporta ação `cadastrar_despesa` que salva prefill em `sessionStorage('ai_despesa_prefill')` e navega para `/despesas/`
-- Cada módulo tem sua própria pasta (`despesas/`, `historico/`, `folha/`, `recebimentos/`, `contratos/`, `configuracoes/`, `contas/`, `documentos/`, `recorrentes/`, `relatorios/`)
+- Cada módulo tem sua própria pasta (`despesas/`, `historico/`, `folha/`, `recebimentos/`, `contratos/`, `configuracoes/`, `contas/`, `documentos/`, `recorrentes/`, `relatorios/`, `remessas/`)
 - `WEB/contratos/` — CRUD de contratos com fornecedores por obra/etapas (seleção multi-etapa via checkboxes); cada pagamento registrado cria automaticamente uma entrada em `c_despesas`
 - `WEB/relatorios/` — relatórios financeiros com IA: modo único (uma obra) ou comparativo (múltiplas obras); chama `POST /api/relatorio/analisar` e exibe saúde financeira 0-100 + alertas
 - `WEB/documentos/` — galeria de comprovantes com paginação (50/página), upload drag-and-drop, múltiplos NFs por despesa, exportação CSV
+- `WEB/remessas/` — módulo de controle de remessas de caixa: registra transferências do caixa principal (Maurício) para contas controladas (Kathleen, Diego etc.); calcula saldo líquido por conta (remessas recebidas − despesas de `c_despesas`); Maurício é excluído dos cálculos de saldo controlado por ser a conta-origem; suporta upload de comprovante no bucket `comprovantes`
+- `WEB/historico/` — além do CRUD padrão, suporta seleção múltipla de despesas para vincular um único comprovante a várias entradas de uma vez (padrão: seleciona → modal upload → escreve N linhas em `comprovantes_despesa`)
 - `WEB/components/toast.js` — sistema de notificações toast global
 - `API_BASE` em todos os módulos JS: `` `http://${location.hostname}:8000` `` (não hardcode `localhost`)
 
@@ -46,7 +48,7 @@ Acesse em `http://localhost:8080`. O frontend **não funciona via file://** — 
 - `api/logger.py` — configuração centralizada de logging; use `get_logger(__name__)` em qualquer módulo; grava em console (INFO+) e em `logs/api.log` com rotação (10 MB × 5 backups, DEBUG+)
 - `api/supabase_client.py` — singleton Supabase com `@lru_cache`; use `get_supabase()` em novos routes (preferir sobre criar cliente local); `api/routes/relatorio.py` tem `_get_supabase()` próprio — exceção histórica, não replicar
 - `api/embeddings.py` — pgvector semantic search via `text-embedding-3-small`; `sync_embeddings()` é chamado automaticamente a cada `/api/ai/chat` para embeddar despesas novas; `search_despesas(query)` retorna as N despesas semanticamente mais próximas
-- `api/routes/ai.py` — múltiplos endpoints de IA: `POST /extrair` (imagem/PDF), `POST /extrair-texto` (texto livre), `POST /extrair-texto-misto` (texto+arquivos), `POST /extrair-pix` (comprovante PIX), `POST /transcrever` (Whisper), `POST /chat-despesas` (revisão), `POST /chat` (assistente geral com tool calling — loop de até 5 rounds com tools `buscar_despesas`, `buscar_totais`, `listar_referencias`), `GET /referencias` (cache 2 min)
+- `api/routes/ai.py` — múltiplos endpoints de IA: `POST /extrair` (imagem/PDF), `POST /extrair-texto` (texto livre), `POST /extrair-texto-misto` (texto+arquivos), `POST /extrair-pix` (comprovante PIX → retorna `{nome, valor}`), `POST /transcrever` (Whisper), `POST /chat-despesas` (loop de revisão iterativa de extração: recebe histórico de mensagens + array de despesas, retorna mensagem + array corrigido ou null), `POST /chat` (assistente geral com tool calling — loop de até 5 rounds; tools: `buscar_despesas`, `buscar_totais`, `listar_referencias`, `planejar_criar_despesa`, `planejar_editar_despesa`, `planejar_editar_lote_despesas`, `planejar_criar_recebimento`, `planejar_editar_recebimento`), `GET /referencias` (cache 2 min); normalização com `_normalizar()` + `_melhor_match()` para fuzzy matching de fornecedores/obras/etapas
 - `api/routes/documentos.py` — `DELETE /api/documentos/nf/{nf_id}`: remove arquivo do Storage `comprovantes`, deleta registro de `comprovantes_despesa`; se não restar NFs, atualiza `tem_nota_fiscal = False` na `c_despesas`
 - `api/routes/folha.py` — fechamento de folha de pagamento (operação atômica: cria despesas + faz upload de comprovantes)
 - `api/routes/relatorio.py` — `GET /pdf` (StreamingResponse PDF) + `POST /analisar` (análise IA com gpt-4.1-mini, retorna JSON estruturado com saúde financeira 0-100 e alertas)
@@ -72,11 +74,16 @@ Tabelas principais:
 | `obra_etapas` | Vínculo explícito entre obras e etapas (PK composta obra+etapa) |
 | `contratos` | Contratos com fornecedores; `contrato_pagamentos` registra cada pagamento |
 | `contratos_etapas` | Junction table `(contrato_id, etapa)` — suporte a multi-etapa por contrato |
+| `remessas_caixa` | Transferências entre contas; campos: conta destino, valor, data, obra, `comprovante_url` |
 | `fornecedores`, `categorias_despesa`, `formas_pagamento` | Tabelas de referência |
 
 A tabela `c_despesas` é a versão atual (substitui esquema legado). Campo `folha_id` é nullable — preenchido somente para despesas de mão de obra geradas pelo fechamento de folha.
 
-**Migrations:** arquivos em `migrations/` são executados manualmente no SQL Editor do Supabase (não há runner automático). O último arquivo é `03_obra_etapas.sql` — nomear novos arquivos a partir de `04_`.
+`folha_funcionarios` tem coluna `valor_fixo` (NUMERIC, nullable): quando preenchida, substitui o cálculo baseado em diárias/regras; o módulo `folha/` mostra o campo destacado e botão "reverter" para limpar o valor fixo.
+
+`recebimentos` suporta parcelamento: campos `parcela_num`, `total_parcelas`, `grupo_id` (timestamp de agrupamento) permitem dividir um recebimento em N parcelas com intervalo em meses.
+
+**Migrations:** arquivos em `migrations/` são executados manualmente no SQL Editor do Supabase (não há runner automático). O último arquivo aplicado é `05_folha_valor_fixo.sql` — nomear novos arquivos a partir de `06_`.
 
 **Logs:** em `logs/api.log` (gitignore). Para acompanhar em tempo real: `tail -f logs/api.log`. Para filtrar por rota: `grep "POST /api/ai" logs/api.log`.
 
@@ -101,7 +108,7 @@ Descrito em `DESIGN.md`. Princípios-chave:
 
 ## Key Patterns
 
-**Extração de IA (despesas):** O fluxo passa por `/api/ai/extrair` (arquivo único) → retorna JSON estruturado → frontend exibe tabela editável para revisão → usuário confirma → salva em `c_despesas` direto via Supabase JS SDK.
+**Extração de IA (despesas):** O fluxo passa por `/api/ai/extrair` (arquivo único) → retorna JSON estruturado → frontend exibe tabela editável para revisão → usuário pode corrigir via `POST /chat-despesas` (loop iterativo com histórico de mensagens) → confirma → salva em `c_despesas` direto via Supabase JS SDK.
 
 **Folha de pagamento:** Operação atômica em `api/routes/folha.py` — o frontend envia payload completo e o backend executa tudo: inserir despesas, upload de comprovantes em Supabase Storage, atualizar status da folha.
 

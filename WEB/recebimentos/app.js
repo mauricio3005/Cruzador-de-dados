@@ -91,6 +91,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     await carregarRecebimentos();
 });
 
+window.addEventListener('jarvis:data-changed', (e) => {
+    if (e.detail?.tabela === 'recebimentos') {
+        paginaAtual = 1;
+        carregarRecebimentos();
+    }
+});
+
 // --- REFERÊNCIAS ---
 async function carregarReferencias() {
     if (!dbClient) { setStatus('offline', 'Erro de conexão'); return; }

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remessas de Caixa — Industrial Architect</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+    <script src="../env.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+
+<body>
+<div class="app-shell">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <div class="sidebar-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+                    <polyline points="2 17 12 22 22 17"></polyline>
+                    <polyline points="2 12 12 17 22 12"></polyline>
+                </svg>
+            </div>
+            <div class="sidebar-brand-text">
+                <span class="sidebar-brand-name">Industrial Architect</span>
+                <span class="sidebar-brand-sub">Finance Suite</span>
+            </div>
+        </div>
+        <div class="sidebar-nav-wrap" id="main-nav"></div>
+        <div class="sidebar-footer">
+            <span class="status-dot online" id="connectionStatus">Sistema Sincronizado</span>
+        </div>
+    </aside>
+
+    <!-- CONTENT -->
+    <div class="content-shell">
+
+        <header class="topbar">
+            <div class="topbar-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" placeholder="Pesquisar..." disabled>
+            </div>
+            <div class="topbar-actions">
+                <div class="topbar-avatar" title="Usuário">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+
+            <!-- Hero -->
+            <div class="page-hero">
+                <div>
+                    <h1>Remessas de Caixa</h1>
+                    <p class="page-hero-sub">Controle de valores enviados e saldo por conta.</p>
+                </div>
+                <div style="display:flex;gap:var(--sp-3);">
+                    <button class="btn btn-outline" id="btnExportarCSV">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Exportar CSV
+                    </button>
+                    <button class="btn btn-primary" id="btnNovaRemessa">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Nova Remessa
+                    </button>
+                </div>
+            </div>
+
+            <!-- KPI Saldos por conta -->
+            <div class="metrics-grid" id="saldosGrid" style="margin-bottom:var(--sp-6);">
+                <div class="metric-card">
+                    <div class="metric-label">Carregando saldos…</div>
+                    <div class="metric-value">—</div>
+                </div>
+            </div>
+
+            <!-- Filtros -->
+            <div class="matrix-section" style="margin-bottom:var(--sp-4);padding:var(--sp-4) var(--sp-6);">
+                <div style="display:flex;gap:var(--sp-3);align-items:flex-end;flex-wrap:wrap;">
+                    <div>
+                        <label class="form-label">Conta</label>
+                        <select class="form-select" id="filtroBanco" style="min-width:160px;">
+                            <option value="">Todas as contas</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Data início</label>
+                        <input type="date" class="form-input" id="filtroDataInicio">
+                    </div>
+                    <div>
+                        <label class="form-label">Data fim</label>
+                        <input type="date" class="form-input" id="filtroDataFim">
+                    </div>
+                    <button class="btn btn-outline" id="btnFiltrar">Filtrar</button>
+                    <button class="btn btn-outline" id="btnLimparFiltros">Limpar</button>
+                </div>
+            </div>
+
+            <!-- Tabela de remessas -->
+            <div class="matrix-section">
+                <div class="matrix-header">
+                    <span class="matrix-title">Histórico de Remessas</span>
+                    <span id="totalRemessas" style="font-size:0.8rem;color:var(--on-surface-muted);"></span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="styled-table">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Conta</th>
+                                <th>Obra</th>
+                                <th>Descrição</th>
+                                <th class="text-right">Valor (R$)</th>
+                                <th style="text-align:center;">Comprovante</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabelaBody">
+                            <tr><td colspan="7" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Carregando…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+</div>
+
+<!-- ── MODAL NOVA REMESSA ──────────────────────────────────────────────── -->
+<div id="modalRemessa" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" onclick="fecharModalRemessa(event)">
+    <div class="matrix-section" style="width:500px;max-width:95vw;max-height:90vh;overflow-y:auto;margin:0;" onclick="event.stopPropagation()">
+        <div class="matrix-header" style="padding:var(--sp-5) var(--sp-6) var(--sp-4);">
+            <span class="matrix-title" id="modalRemessaTitulo">Nova Remessa</span>
+            <button class="btn btn-outline btn-sm" onclick="fecharModalRemessa()" style="font-size:0.8rem;padding:4px 12px;">✕ Fechar</button>
+        </div>
+        <div style="padding:0 var(--sp-6) var(--sp-6);">
+
+            <div class="form-grid-2" style="margin-bottom:var(--sp-4);">
+                <div>
+                    <label class="form-label">Conta (destino) *</label>
+                    <input type="text" class="form-input" id="rDestino" list="listaBancos" placeholder="Ex: Kathleen, Diego…" autocomplete="off">
+                    <datalist id="listaBancos"></datalist>
+                </div>
+                <div>
+                    <label class="form-label">Valor (R$) *</label>
+                    <input type="number" class="form-input" id="rValor" min="0.01" step="0.01" placeholder="0,00">
+                </div>
+            </div>
+
+            <div class="form-grid-2" style="margin-bottom:var(--sp-4);">
+                <div>
+                    <label class="form-label">Data *</label>
+                    <input type="date" class="form-input" id="rData">
+                </div>
+                <div>
+                    <label class="form-label">Obra (opcional)</label>
+                    <select class="form-select" id="rObra">
+                        <option value="">Sem obra específica</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-bottom:var(--sp-4);">
+                <label class="form-label">Descrição</label>
+                <textarea class="form-input" id="rDescricao" rows="2" placeholder="Descrição da remessa..." style="resize:vertical;"></textarea>
+            </div>
+
+            <div style="margin-bottom:var(--sp-5);">
+                <label class="form-label">Comprovante</label>
+                <div id="uploadZoneRem" style="border:2px dashed var(--surface-3);border-radius:8px;padding:var(--sp-4);text-align:center;cursor:pointer;transition:border-color .2s;"
+                     onclick="document.getElementById('inputComprovante').click()"
+                     ondragover="event.preventDefault();this.style.borderColor='var(--primary)'"
+                     ondragleave="this.style.borderColor='var(--surface-3)'"
+                     ondrop="handleDropComprovante(event)">
+                    <div id="uploadZoneRem_label" style="font-size:0.85rem;color:var(--on-surface-muted);">Clique ou arraste o comprovante (JPG, PNG, PDF)</div>
+                </div>
+                <input type="file" id="inputComprovante" accept=".jpg,.jpeg,.png,.pdf" style="display:none;" onchange="handleFileComprovante(this.files[0])">
+                <div id="comprovanteAtual" style="display:none;margin-top:var(--sp-2);font-size:0.8rem;"></div>
+            </div>
+
+            <input type="hidden" id="rId">
+            <input type="hidden" id="rComprovanteUrl">
+
+            <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);">
+                <button class="btn btn-outline" onclick="fecharModalRemessa()">Cancelar</button>
+                <button class="btn btn-primary" id="btnSalvarRemessa" style="min-width:140px;">Salvar</button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="../components/toast.js"></script>
+<script src="../components/nav.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

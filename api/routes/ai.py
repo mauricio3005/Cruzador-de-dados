@@ -8,7 +8,7 @@ import unicodedata
 from functools import lru_cache
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from api.supabase_client import get_supabase as _get_supabase
 from api.logger import get_logger
@@ -600,7 +600,6 @@ _TOOLS = [
                     "forma":           {"type": "string", "description": "PIX | Boleto | Cartão | Dinheiro | Transferência"},
                     "banco":           {"type": "string"},
                     "data":            {"type": "string", "description": "YYYY-MM-DD (default: hoje)"},
-                    "data_vencimento": {"type": "string", "description": "YYYY-MM-DD (default: hoje)"},
                 },
                 "required": ["descricao", "valor_total", "obra"],
             },
@@ -625,8 +624,6 @@ _TOOLS = [
                     "forma":           {"type": "string"},
                     "banco":           {"type": "string"},
                     "data":            {"type": "string"},
-                    "data_vencimento": {"type": "string"},
-                    "paga":            {"type": "boolean"},
                 },
                 "required": ["id"],
             },
@@ -700,6 +697,26 @@ _TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "planejar_editar_lote_recebimentos",
+            "description": "Planeja edição de MÚLTIPLOS recebimentos aplicando os mesmos campos a todos. Forneça pelo menos um campo além de ids.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ids":        {"type": "array", "items": {"type": "string"}, "description": "Lista de UUIDs dos recebimentos a editar"},
+                    "descricao":  {"type": "string"},
+                    "valor":      {"type": "number"},
+                    "obra":       {"type": "string"},
+                    "data":       {"type": "string"},
+                    "fornecedor": {"type": "string"},
+                    "forma":      {"type": "string"},
+                },
+                "required": ["ids"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "planejar_criar_conta_a_pagar",
             "description": "Planeja criação de uma conta a pagar.",
             "parameters": {
@@ -737,6 +754,25 @@ _TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "planejar_editar_lote_contas_a_pagar",
+            "description": "Planeja edição de MÚLTIPLAS contas a pagar aplicando os mesmos campos a todas. Forneça pelo menos um campo além de ids.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ids":        {"type": "array", "items": {"type": "string"}, "description": "Lista de UUIDs das contas a editar"},
+                    "descricao":  {"type": "string"},
+                    "valor":      {"type": "number"},
+                    "vencimento": {"type": "string"},
+                    "obra":       {"type": "string"},
+                    "fornecedor": {"type": "string"},
+                },
+                "required": ["ids"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "planejar_marcar_conta_paga",
             "description": "Planeja marcação de uma conta a pagar como paga.",
             "parameters": {
@@ -760,6 +796,210 @@ _TOOLS = [
                     "nome": {"type": "string"},
                 },
                 "required": ["nome"],
+            },
+        },
+    },
+    # ── Remessas de caixa ────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_saldo_bancos",
+            "description": (
+                "Retorna o saldo disponível de cada conta controlada (Kathleen, Diego, etc.) — "
+                "remessas recebidas menos despesas lançadas naquela conta. "
+                "A conta Maurício é a origem principal e não aparece nos saldos. "
+                "Use quando o usuário perguntar sobre saldo, caixa disponível ou posição de uma conta."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_remessas",
+            "description": (
+                "Lista o histórico de remessas enviadas para as contas controladas, com filtros opcionais. "
+                "Use quando o usuário perguntar sobre remessas enviadas, histórico de transferências ou valores enviados para uma conta."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "conta":       {"type": "string", "description": "Filtrar por nome da conta destino (ex: Kathleen, Diego)"},
+                    "data_inicio": {"type": "string", "description": "Data inicial YYYY-MM-DD"},
+                    "data_fim":    {"type": "string", "description": "Data final YYYY-MM-DD"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_criar_remessa",
+            "description": (
+                "Planeja o registro de uma nova remessa de caixa (valor enviado de Maurício para uma conta controlada). "
+                "Não executa — apenas prepara o payload para confirmação do usuário."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "banco_destino": {"type": "string", "description": "Conta que recebe (ex: Kathleen, Diego)"},
+                    "valor":         {"type": "number",  "description": "Valor da remessa em R$"},
+                    "data":          {"type": "string",  "description": "Data YYYY-MM-DD (padrão: hoje)"},
+                    "descricao":     {"type": "string",  "description": "Descrição opcional"},
+                    "obra":          {"type": "string",  "description": "Obra relacionada (opcional)"},
+                },
+                "required": ["banco_destino", "valor"],
+            },
+        },
+    },
+    # ── Folha de pagamento ───────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_folhas",
+            "description": (
+                "Lista folhas de pagamento cadastradas, com filtro opcional por obra. "
+                "Use para localizar o id de uma folha antes de adicionar ou editar funcionários."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "obra":   {"type": "string", "description": "Filtrar por obra (opcional)"},
+                    "status": {"type": "string", "description": "Filtrar por status: rascunho | enviada | fechada (opcional)"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_funcionarios_folha",
+            "description": (
+                "Lista os funcionários de uma folha específica pelo id da folha. "
+                "Use para consultar ou obter os ids dos registros antes de editar ou remover."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "folha_id": {"type": "integer", "description": "ID numérico da folha"},
+                },
+                "required": ["folha_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_criar_folha",
+            "description": (
+                "Planeja a criação de um novo rascunho de folha de pagamento. "
+                "Não executa — apenas prepara o payload para confirmação do usuário."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "obra":     {"type": "string", "description": "Nome da obra"},
+                    "quinzena": {"type": "string", "description": "Data da quinzena YYYY-MM-DD (ex: primeiro ou décimo sexto dia do mês)"},
+                },
+                "required": ["obra", "quinzena"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_adicionar_funcionario",
+            "description": (
+                "Planeja a adição de um funcionário a uma folha em rascunho. "
+                "Para diaristas: informe servico e diarias — o valor é calculado pelas regras da obra. "
+                "Para CLT ou salário fixo: informe valor_fixo diretamente (ignora diarias no cálculo). "
+                "Não executa — apenas prepara o payload para confirmação do usuário."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "folha_id":   {"type": "integer", "description": "ID numérico da folha (obter via buscar_folhas)"},
+                    "nome":       {"type": "string",  "description": "Nome do funcionário"},
+                    "servico":    {"type": "string",  "description": "Serviço/função exercido"},
+                    "etapa":      {"type": "string",  "description": "Etapa da obra"},
+                    "diarias":    {"type": "number",  "description": "Quantidade de diárias (para diaristas)"},
+                    "valor_fixo": {"type": "number",  "description": "Valor fixo em R$ (CLT/salário fixo — sobrepõe cálculo por diárias)"},
+                    "pix":        {"type": "string",  "description": "Chave PIX (opcional)"},
+                    "nome_conta": {"type": "string",  "description": "Nome da conta bancária (opcional)"},
+                },
+                "required": ["folha_id", "nome", "servico", "etapa"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_editar_funcionario",
+            "description": (
+                "Planeja a edição de um funcionário já lançado em uma folha. "
+                "Informe apenas os campos a alterar. Use buscar_funcionarios_folha para obter o id. "
+                "Para remover valor fixo e voltar ao cálculo automático, passe valor_fixo=null explicitamente. "
+                "Não executa — apenas prepara o payload para confirmação do usuário."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id":         {"type": "integer", "description": "ID do registro em folha_funcionarios"},
+                    "nome":       {"type": "string"},
+                    "servico":    {"type": "string"},
+                    "etapa":      {"type": "string"},
+                    "diarias":    {"type": "number"},
+                    "valor_fixo": {"type": ["number", "null"], "description": "Valor fixo em R$ (CLT). Passe null para reverter para cálculo automático por diárias."},
+                    "pix":        {"type": "string"},
+                    "nome_conta": {"type": "string"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_remover_funcionario",
+            "description": (
+                "Planeja a remoção de um funcionário de uma folha em rascunho. "
+                "Use buscar_funcionarios_folha para confirmar o id antes de remover. "
+                "Não executa — apenas prepara o payload para confirmação do usuário."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id":   {"type": "integer", "description": "ID do registro em folha_funcionarios"},
+                    "nome": {"type": "string",  "description": "Nome do funcionário (para exibição no card de confirmação)"},
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "planejar_editar_lote_funcionarios",
+            "description": (
+                "Planeja edição de MÚLTIPLOS funcionários de uma folha aplicando os mesmos campos a todos. "
+                "Use após buscar_funcionarios_folha para obter os ids[]. "
+                "Ideal para trocar etapa ou serviço de todos os funcionários de uma vez. "
+                "Não executa — apenas prepara o payload para confirmação do usuário."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ids":        {"type": "array", "items": {"type": "integer"}, "description": "Lista de IDs dos registros em folha_funcionarios"},
+                    "etapa":      {"type": "string"},
+                    "servico":    {"type": "string"},
+                    "diarias":    {"type": "number"},
+                    "valor_fixo": {"type": "number"},
+                    "pix":        {"type": "string"},
+                    "nome_conta": {"type": "string"},
+                },
+                "required": ["ids"],
             },
         },
     },
@@ -840,6 +1080,71 @@ def _exec_listar_referencias(db):
     return {"obras": obras, "etapas": etapas, "fornecedores": fornecs, "categorias": cats}
 
 
+_CONTA_PRINCIPAL = "Maurício"  # Origem das remessas — não aparece nos saldos controlados
+
+
+def _exec_buscar_saldo_bancos(db) -> dict:
+    remessas_rows = db.table("remessas_caixa").select("banco_destino, valor").execute().data or []
+    despesas_rows = db.table("c_despesas").select("banco, valor_total").not_.is_("banco", "null").execute().data or []
+
+    recebido: dict = {}
+    for r in remessas_rows:
+        recebido[r["banco_destino"]] = recebido.get(r["banco_destino"], 0) + (r["valor"] or 0)
+
+    gasto: dict = {}
+    for d in despesas_rows:
+        b = d.get("banco")
+        if b and b != _CONTA_PRINCIPAL:
+            gasto[b] = gasto.get(b, 0) + (d["valor_total"] or 0)
+
+    # Contas controladas = destinatários de remessas + contas com despesas (sem Maurício)
+    contas = set(recebido) | set(gasto)
+    saldos = [
+        {
+            "conta":              nome,
+            "remessas_recebidas": recebido.get(nome, 0),
+            "despesas":           gasto.get(nome, 0),
+            "saldo":              recebido.get(nome, 0) - gasto.get(nome, 0),
+        }
+        for nome in sorted(contas)
+    ]
+    total_recebido = sum(s["remessas_recebidas"] for s in saldos)
+    total_gasto    = sum(s["despesas"] for s in saldos)
+    return {
+        "total_contas":    len(saldos),
+        "total_enviado":   total_recebido,
+        "total_gasto":     total_gasto,
+        "saldo_geral":     total_recebido - total_gasto,
+        "saldos":          saldos,
+    }
+
+
+def _exec_buscar_remessas(db, conta=None, data_inicio=None, data_fim=None) -> dict:
+    q = db.table("remessas_caixa").select("*")
+    if conta:       q = q.ilike("banco_destino", f"%{conta}%")
+    if data_inicio: q = q.gte("data", data_inicio)
+    if data_fim:    q = q.lte("data", data_fim)
+    rows = q.order("data", desc=True).limit(100).execute().data or []
+    total = sum(r.get("valor") or 0 for r in rows)
+    return {"registros": len(rows), "total_valor": total, "remessas": rows[:50]}
+
+
+def _exec_buscar_folhas(db, obra=None, status=None) -> dict:
+    q = db.table("folhas").select("id, obra, quinzena, status")
+    if obra:   q = q.ilike("obra", f"%{obra}%")
+    if status: q = q.eq("status", status)
+    rows = q.order("quinzena", desc=True).limit(50).execute().data or []
+    return {"registros": len(rows), "folhas": rows}
+
+
+def _exec_buscar_funcionarios_folha(db, folha_id: int) -> dict:
+    folha = db.table("folhas").select("id, obra, quinzena, status").eq("id", folha_id).execute().data
+    if not folha:
+        return {"erro": f"Folha id={folha_id} não encontrada"}
+    funcs = db.table("folha_funcionarios").select("*").eq("folha_id", folha_id).order("id").execute().data or []
+    return {"folha": folha[0], "funcionarios": funcs}
+
+
 def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
     """Handler unificado para todos os tools planejar_*. Valida, faz fuzzy match e monta payload — não escreve no banco."""
     from datetime import date
@@ -858,7 +1163,6 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
         dados["fornecedor"]= fuzzy(dados.get("fornecedor"), refs["fornecedores"])
         dados["despesa"]   = fuzzy(dados.get("despesa"), refs["categorias"])
         dados.setdefault("data", hoje)
-        dados.setdefault("data_vencimento", hoje)
         return json.dumps({"tabela": "c_despesas", "operacao": "inserir", "dados": dados, "antes": None}, ensure_ascii=False)
 
     elif tool_name == "planejar_editar_despesa":
@@ -910,6 +1214,20 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
         antes = res.data[0] if res.data else {}
         return json.dumps({"tabela": "recebimentos", "operacao": "atualizar", "id": id_, "dados": campos, "antes": antes}, ensure_ascii=False)
 
+    elif tool_name == "planejar_editar_lote_recebimentos":
+        ids = args.get("ids", [])
+        if not ids:
+            return json.dumps({"erro": "ids[] obrigatório"})
+        _CAMPOS_REC = {"descricao", "valor", "obra", "data", "fornecedor", "forma"}
+        campos = {k: v for k, v in args.items() if k in _CAMPOS_REC and v is not None}
+        if not campos:
+            return json.dumps({"erro": "Nenhum campo para alterar foi fornecido. Informe pelo menos um campo além de ids."})
+        if "obra" in campos:       campos["obra"]       = fuzzy(campos["obra"], refs["obras"])
+        if "fornecedor" in campos: campos["fornecedor"] = fuzzy(campos["fornecedor"], refs["fornecedores"])
+        res = db.table("recebimentos").select("id, data, descricao, valor, obra, fornecedor").in_("id", ids).execute()
+        antes = res.data or []
+        return json.dumps({"tabela": "recebimentos", "operacao": "atualizar_lote", "ids": ids, "dados": campos, "antes": antes}, ensure_ascii=False)
+
     elif tool_name == "planejar_criar_conta_a_pagar":
         dados = {k: v for k, v in args.items() if v is not None}
         dados["obra"]      = fuzzy(dados.get("obra"), refs["obras"])
@@ -927,6 +1245,20 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
         antes = res.data[0] if res.data else {}
         return json.dumps({"tabela": "contas_a_pagar", "operacao": "atualizar", "id": id_, "dados": campos, "antes": antes}, ensure_ascii=False)
 
+    elif tool_name == "planejar_editar_lote_contas_a_pagar":
+        ids = args.get("ids", [])
+        if not ids:
+            return json.dumps({"erro": "ids[] obrigatório"})
+        _CAMPOS_CAP = {"descricao", "valor", "vencimento", "obra", "fornecedor"}
+        campos = {k: v for k, v in args.items() if k in _CAMPOS_CAP and v is not None}
+        if not campos:
+            return json.dumps({"erro": "Nenhum campo para alterar foi fornecido. Informe pelo menos um campo além de ids."})
+        if "obra" in campos:       campos["obra"]       = fuzzy(campos["obra"], refs["obras"])
+        if "fornecedor" in campos: campos["fornecedor"] = fuzzy(campos["fornecedor"], refs["fornecedores"])
+        res = db.table("contas_a_pagar").select("id, descricao, valor, vencimento, obra, fornecedor").in_("id", ids).execute()
+        antes = res.data or []
+        return json.dumps({"tabela": "contas_a_pagar", "operacao": "atualizar_lote", "ids": ids, "dados": campos, "antes": antes}, ensure_ascii=False)
+
     elif tool_name == "planejar_marcar_conta_paga":
         id_ = args.get("id")
         if not id_:
@@ -942,6 +1274,164 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
             return json.dumps({"erro": "nome obrigatório"})
         return json.dumps({"tabela": "fornecedores", "operacao": "inserir", "dados": {"nome": nome}, "antes": None}, ensure_ascii=False)
 
+    elif tool_name == "planejar_criar_remessa":
+        from datetime import date as _date
+        destino = (args.get("banco_destino") or "").strip()
+        valor   = args.get("valor")
+        if not destino or not valor:
+            return json.dumps({"erro": "banco_destino e valor são obrigatórios"})
+        if destino == _CONTA_PRINCIPAL:
+            return json.dumps({"erro": f"'{_CONTA_PRINCIPAL}' é a conta principal e não pode ser o destino"})
+        data_r = (args.get("data") or _date.today().isoformat()).strip()
+        dados  = {"banco_destino": destino, "valor": valor, "data": data_r}
+        if args.get("descricao"): dados["descricao"] = args["descricao"]
+        if args.get("obra"):      dados["obra"]      = args["obra"]
+        return json.dumps({"tabela": "remessas_caixa", "operacao": "inserir", "dados": dados, "antes": None}, ensure_ascii=False)
+
+    # ── Folha de pagamento ───────────────────────────────────────────────────
+
+    elif tool_name == "planejar_criar_folha":
+        obra = (args.get("obra") or "").strip()
+        quinzena = (args.get("quinzena") or "").strip()
+        if not obra:
+            return json.dumps({"erro": "Campo 'obra' obrigatório"})
+        if not quinzena:
+            return json.dumps({"erro": "Campo 'quinzena' obrigatório (YYYY-MM-DD)"})
+        # Valida que a obra existe
+        obra_match = fuzzy(obra, refs.get("obras", []))
+        obras_existentes = [o["nome"] for o in (db.table("obras").select("nome").execute().data or [])]
+        if obra_match not in obras_existentes:
+            return json.dumps({"erro": f"Obra '{obra}' não encontrada. Obras disponíveis: {obras_existentes[:10]}"})
+        dados = {"obra": obra_match, "quinzena": quinzena, "status": "rascunho"}
+        return json.dumps({
+            "tabela": "folhas", "operacao": "inserir", "dados": dados,
+            "antes": None,
+            "depois": dados,
+        }, ensure_ascii=False)
+
+    elif tool_name == "planejar_adicionar_funcionario":
+        folha_id = args.get("folha_id")
+        nome     = (args.get("nome") or "").strip()
+        servico  = (args.get("servico") or "").strip()
+        etapa    = (args.get("etapa") or "").strip()
+        diarias  = float(args.get("diarias") or 0)
+        if not folha_id:
+            return json.dumps({"erro": "Campo 'folha_id' obrigatório"})
+        if not nome:
+            return json.dumps({"erro": "Campo 'nome' obrigatório"})
+        if not servico:
+            return json.dumps({"erro": "Campo 'servico' obrigatório"})
+        if not etapa:
+            return json.dumps({"erro": "Campo 'etapa' obrigatório"})
+        # Valida que a folha existe e está em rascunho
+        folha_rows = db.table("folhas").select("id, obra, status").eq("id", folha_id).execute().data
+        if not folha_rows:
+            return json.dumps({"erro": f"Folha id={folha_id} não encontrada"})
+        folha_rec = folha_rows[0]
+        if folha_rec["status"] == "fechada":
+            return json.dumps({"erro": "Não é possível adicionar funcionários a uma folha fechada"})
+        # Calcula valor: valor_fixo tem prioridade sobre cálculo por diárias
+        valor_fixo = args.get("valor_fixo")
+        if valor_fixo is not None:
+            valor = round(float(valor_fixo), 2)
+        else:
+            regras = db.table("folha_regras").select("servico, tipo, valor").eq("obra", folha_rec["obra"]).execute().data or []
+            regras_map = {r["servico"]: float(r.get("valor") or 0) for r in regras}
+            valor = round(regras_map.get(servico, 0) * diarias, 2)
+        dados = {
+            "folha_id":  folha_id,
+            "nome":      nome,
+            "servico":   servico,
+            "etapa":     etapa,
+            "diarias":   diarias,
+            "valor":     valor,
+            "valor_fixo": round(float(valor_fixo), 2) if valor_fixo is not None else None,
+            "pix":        args.get("pix") or None,
+            "nome_conta": args.get("nome_conta") or None,
+        }
+        return json.dumps({
+            "tabela": "folha_funcionarios", "operacao": "inserir", "dados": dados,
+            "antes": None,
+            "depois": dados,
+        }, ensure_ascii=False)
+
+    elif tool_name == "planejar_editar_funcionario":
+        id_ = args.get("id")
+        if not id_:
+            return json.dumps({"erro": "Campo 'id' obrigatório"})
+        # Valida que o registro existe e a folha não está fechada
+        func_rows = db.table("folha_funcionarios").select("*, folhas(status)").eq("id", id_).execute().data
+        if not func_rows:
+            return json.dumps({"erro": f"Funcionário id={id_} não encontrado"})
+        func_rec = func_rows[0]
+        folha_status = (func_rec.get("folhas") or {}).get("status")
+        if folha_status == "fechada":
+            return json.dumps({"erro": "Não é possível editar funcionários de uma folha fechada"})
+        campos = {k: v for k, v in {
+            "nome":       args.get("nome"),
+            "servico":    args.get("servico"),
+            "etapa":      args.get("etapa"),
+            "diarias":    args.get("diarias"),
+            "pix":        args.get("pix"),
+            "nome_conta": args.get("nome_conta"),
+        }.items() if v is not None}
+        # valor_fixo aceita None explícito (reverter para automático) ou número
+        if "valor_fixo" in args:
+            campos["valor_fixo"] = round(float(args["valor_fixo"]), 2) if args["valor_fixo"] is not None else None
+        if not campos:
+            return json.dumps({"erro": "Nenhum campo informado para edição"})
+        # Recalcula valor efetivo
+        folha_rows = db.table("folhas").select("obra").eq("id", func_rec["folha_id"]).execute().data
+        valor_fixo_final = campos.get("valor_fixo") if "valor_fixo" in campos else func_rec.get("valor_fixo")
+        if valor_fixo_final is not None:
+            campos["valor"] = round(float(valor_fixo_final), 2)
+        elif folha_rows and ("servico" in campos or "diarias" in campos or "valor_fixo" in campos):
+            servico_final = campos.get("servico") or func_rec.get("servico")
+            diarias_final = float(campos.get("diarias") if campos.get("diarias") is not None else func_rec.get("diarias") or 0)
+            regras = db.table("folha_regras").select("servico, valor").eq("obra", folha_rows[0]["obra"]).execute().data or []
+            regras_map = {r["servico"]: float(r.get("valor") or 0) for r in regras}
+            campos["valor"] = round(regras_map.get(servico_final, 0) * diarias_final, 2)
+        antes = {k: func_rec.get(k) for k in campos}
+        return json.dumps({
+            "tabela": "folha_funcionarios", "operacao": "atualizar", "id": id_, "dados": campos,
+            "antes": antes,
+            "depois": campos,
+        }, ensure_ascii=False)
+
+    elif tool_name == "planejar_editar_lote_funcionarios":
+        ids = args.get("ids", [])
+        if not ids:
+            return json.dumps({"erro": "ids[] obrigatório"})
+        _CAMPOS_FUNC = {"etapa", "servico", "diarias", "valor_fixo", "pix", "nome_conta"}
+        campos = {k: v for k, v in args.items() if k in _CAMPOS_FUNC and v is not None}
+        if not campos:
+            return json.dumps({"erro": "Nenhum campo para alterar foi fornecido. Informe pelo menos um campo além de ids."})
+        func_rows = db.table("folha_funcionarios").select("id, nome, etapa, servico, folha_id, folhas(status)").in_("id", ids).execute().data or []
+        fechadas = [r["folha_id"] for r in func_rows if (r.get("folhas") or {}).get("status") == "fechada"]
+        if fechadas:
+            return json.dumps({"erro": f"Alguns funcionários pertencem a folhas fechadas (folha_id={fechadas}) — edição não permitida"})
+        antes = [{"id": r["id"], "nome": r["nome"], "etapa": r.get("etapa"), "servico": r.get("servico")} for r in func_rows]
+        return json.dumps({"tabela": "folha_funcionarios", "operacao": "atualizar_lote", "ids": ids, "dados": campos, "antes": antes}, ensure_ascii=False)
+
+    elif tool_name == "planejar_remover_funcionario":
+        id_ = args.get("id")
+        nome = args.get("nome") or f"Funcionário id={id_}"
+        if not id_:
+            return json.dumps({"erro": "Campo 'id' obrigatório"})
+        func_rows = db.table("folha_funcionarios").select("id, nome, folha_id, folhas(status)").eq("id", id_).execute().data
+        if not func_rows:
+            return json.dumps({"erro": f"Funcionário id={id_} não encontrado"})
+        func_rec = func_rows[0]
+        folha_status = (func_rec.get("folhas") or {}).get("status")
+        if folha_status == "fechada":
+            return json.dumps({"erro": "Não é possível remover funcionários de uma folha fechada"})
+        nome_real = func_rec.get("nome") or nome
+        return json.dumps({
+            "tabela": "folha_funcionarios", "operacao": "deletar", "id": id_,
+            "antes": {"nome": nome_real},
+            "depois": None,
+        }, ensure_ascii=False)
+
     return json.dumps({"erro": f"tool '{tool_name}' não reconhecido"})
 
 
@@ -950,18 +1440,40 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
 # ---------------------------------------------------------------------------
 
 @router.post("/chat")
-async def chat_assistente(payload: dict):
+async def chat_assistente(request: Request):
     """
-    Assistente de IA com tool calling + reasoning effort high.
-    O modelo decide quais queries executar — nunca erra por falta de dados.
+    Assistente de IA com tool calling.
+    Aceita JSON (application/json) ou multipart/form-data (com arquivos opcionais).
     """
-    mensagem      = (payload.get("mensagem") or "").strip()
-    historico     = payload.get("historico") or []
-    obra_contexto = payload.get("obra") or None
-    pagina        = payload.get("pagina") or "dashboard"
+    content_type = request.headers.get("content-type", "")
+    arquivos: list = []
 
-    if not mensagem:
+    if "multipart/form-data" in content_type or "application/x-www-form-urlencoded" in content_type:
+        form = await request.form()
+        mensagem      = (form.get("mensagem") or "").strip()
+        historico_raw = form.get("historico") or "[]"
+        try:
+            historico = json.loads(historico_raw)
+        except Exception:
+            historico = []
+        obra_contexto = form.get("obra") or None
+        pagina        = form.get("pagina") or "dashboard"
+        folha_id_ctx  = form.get("folha_id") or None
+        quinzena_ctx  = form.get("quinzena") or None
+        arquivos      = form.getlist("arquivos")
+    else:
+        body = await request.json()
+        mensagem      = (body.get("mensagem") or "").strip()
+        historico     = body.get("historico") or []
+        obra_contexto = body.get("obra") or None
+        pagina        = body.get("pagina") or "dashboard"
+        folha_id_ctx  = body.get("folha_id") or None
+        quinzena_ctx  = body.get("quinzena") or None
+
+    if not mensagem and not arquivos:
         raise HTTPException(status_code=400, detail="Campo 'mensagem' obrigatório")
+    if not mensagem:
+        mensagem = "Analise o(s) arquivo(s) em anexo."
 
     logger.info("chat: mensagem='%.80s' obra='%s' pagina='%s'", mensagem, obra_contexto, pagina)
 
@@ -982,7 +1494,7 @@ async def chat_assistente(payload: dict):
         "3. **Nunca delete registros.** Operações de exclusão não estão disponíveis e não devem ser sugeridas.\n\n"
         "4. **Nunca invente IDs, UUIDs ou dados que você não buscou.** Para edições, use primeiro `buscar_despesas` para obter os IDs reais antes de chamar qualquer tool `planejar_editar_*`.\n\n"
         "5. **Se faltar um campo obrigatório, pergunte antes de planejar.** Não tente prosseguir com dados incompletos.\n\n"
-        "6. **Para edições em lote, sempre busque os registros antes.** Fluxo: `buscar_despesas` → colete os UUIDs → `planejar_editar_lote_despesas(ids, campos)`.\n\n"
+        "6. **Para edições em lote, sempre busque os registros antes.** Despesas: `buscar_despesas` → `planejar_editar_lote_despesas(ids, campos)`. Recebimentos: `buscar_totais` ou consulta direta → `planejar_editar_lote_recebimentos(ids, campos)`. Contas a pagar: consulta → `planejar_editar_lote_contas_a_pagar(ids, campos)`. Funcionários de folha: `buscar_funcionarios_folha(folha_id)` → `planejar_editar_lote_funcionarios(ids, campos)`.\n\n"
         "7. **Aplique fuzzy match ao interpretar nomes.** Obras, etapas, fornecedores e categorias podem vir com grafia aproximada. Use correspondência aproximada — mas confirme se ambíguo.\n\n"
         "8. **Seja conciso.** Sem introduções nem frases de cortesia. Formate valores como 'R$ 1.234,56'.\n\n"
         "---\n\n"
@@ -998,13 +1510,58 @@ async def chat_assistente(payload: dict):
         "---\n\n"
         "## FLUXO DE CONSULTA\n\n"
         "Para perguntas como 'quais despesas da Obra Norte em março?' use os tools de leitura e responda em linguagem natural. Não exiba cards de confirmação para consultas.\n\n"
-        f"Página atual: {pagina}." + (f" Obra selecionada: {obra_contexto}." if obra_contexto else "")
+        "## REMESSAS E SALDO DAS CONTAS\n\n"
+        "O sistema controla remessas de caixa enviadas pela conta principal (Maurício) para as contas controladas (ex: Kathleen, Diego). "
+        "A conta Maurício é apenas a origem — não aparece nos saldos. "
+        "Use `buscar_saldo_bancos` para saldo disponível de cada conta controlada. "
+        "Use `buscar_remessas` para histórico de remessas enviadas (filtre por `conta` se necessário). "
+        "Para registrar nova remessa, use `planejar_criar_remessa` com `banco_destino` e `valor` (requer confirmação). "
+        "Saldo de uma conta = total recebido em remessas − total de despesas lançadas naquela conta em c_despesas.\n\n"
+        "## FOLHA DE PAGAMENTO\n\n"
+        "Você pode criar rascunhos de folha e editar folhas existentes que ainda não foram fechadas. "
+        "Fluxo para criar nova folha: `planejar_criar_folha(obra, quinzena)` → confirmação → folha criada com status 'rascunho'. "
+        "Fluxo para adicionar funcionário: `buscar_folhas` para obter o id → `planejar_adicionar_funcionario(folha_id, nome, servico, etapa, diarias)` → confirmação. O valor é calculado automaticamente pelas regras da obra. "
+        "Fluxo para editar funcionário único: `buscar_funcionarios_folha(folha_id)` para obter o id → `planejar_editar_funcionario(id, campos...)` → confirmação. "
+        "Fluxo para editar todos ou múltiplos funcionários: `buscar_funcionarios_folha(folha_id)` → colete os ids → `planejar_editar_lote_funcionarios(ids, campos...)` → confirmação. "
+        "Fluxo para remover funcionário: `buscar_funcionarios_folha(folha_id)` para confirmar o id → `planejar_remover_funcionario(id)` → confirmação. "
+        "**Restrições:** não é possível criar, editar ou remover funcionários de folhas com status 'fechada'. O fechamento definitivo (que gera despesas e faz upload de comprovantes) deve ser feito pela interface da folha de pagamento.\n\n"
+        f"Página atual: {pagina}."
+        + (f" Obra selecionada: {obra_contexto}." if obra_contexto else "")
+        + (f" Folha ativa: id={folha_id_ctx}, quinzena={quinzena_ctx}. Use este folha_id diretamente ao chamar buscar_funcionarios_folha ou planejar_*_funcionario." if folha_id_ctx else "")
     )
+
+    # Monta conteúdo da mensagem do usuário (text + arquivos opcionais)
+    user_content: list = [{"type": "text", "text": mensagem}]
+    for arq in (arquivos or []):
+        file_bytes = await arq.read()
+        media_type = arq.content_type or "image/jpeg"
+        if media_type == "application/pdf":
+            try:
+                import pypdf, io as _io
+                reader = pypdf.PdfReader(_io.BytesIO(file_bytes))
+                texto_pdf = "\n".join(p.extract_text() or "" for p in reader.pages).strip()
+                if texto_pdf:
+                    user_content.append({"type": "text", "text": f"[PDF: {arq.filename}]\n{texto_pdf}"})
+            except Exception:
+                b64 = base64.b64encode(file_bytes).decode()
+                user_content.append({"type": "text", "text": f"[PDF não legível: {arq.filename}]"})
+        elif media_type.startswith("image/"):
+            b64 = base64.b64encode(file_bytes).decode()
+            user_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type};base64,{b64}", "detail": "high"},
+            })
+        else:
+            try:
+                texto_arq = file_bytes.decode("utf-8", errors="replace")
+                user_content.append({"type": "text", "text": f"[{arq.filename}]\n{texto_arq}"})
+            except Exception:
+                pass
 
     messages: list = [
         {"role": "system", "content": _SYSTEM},
         *historico,
-        {"role": "user", "content": mensagem},
+        {"role": "user", "content": user_content if len(user_content) > 1 else mensagem},
     ]
 
     client = _get_openai()
@@ -1044,9 +1601,15 @@ async def chat_assistente(payload: dict):
                     _PLANEJAR_TOOLS = {
                         "planejar_criar_despesa", "planejar_editar_despesa",
                         "planejar_editar_lote_despesas", "planejar_criar_recebimento",
-                        "planejar_editar_recebimento", "planejar_criar_conta_a_pagar",
-                        "planejar_editar_conta_a_pagar", "planejar_marcar_conta_paga",
+                        "planejar_editar_recebimento", "planejar_editar_lote_recebimentos",
+                        "planejar_criar_conta_a_pagar",
+                        "planejar_editar_conta_a_pagar", "planejar_editar_lote_contas_a_pagar",
+                        "planejar_marcar_conta_paga",
                         "planejar_criar_fornecedor",
+                        "planejar_criar_remessa",
+                        "planejar_criar_folha", "planejar_adicionar_funcionario",
+                        "planejar_editar_funcionario", "planejar_editar_lote_funcionarios",
+                        "planejar_remover_funcionario",
                     }
                     if tc.function.name == "buscar_despesas":
                         result = _exec_buscar_despesas(db, **args)
@@ -1054,6 +1617,14 @@ async def chat_assistente(payload: dict):
                         result = _exec_buscar_totais(db, **args)
                     elif tc.function.name == "listar_referencias":
                         result = _exec_listar_referencias(db)
+                    elif tc.function.name == "buscar_saldo_bancos":
+                        result = _exec_buscar_saldo_bancos(db)
+                    elif tc.function.name == "buscar_remessas":
+                        result = _exec_buscar_remessas(db, **args)
+                    elif tc.function.name == "buscar_folhas":
+                        result = _exec_buscar_folhas(db, **args)
+                    elif tc.function.name == "buscar_funcionarios_folha":
+                        result = _exec_buscar_funcionarios_folha(db, **args)
                     elif tc.function.name in _PLANEJAR_TOOLS:
                         refs = _get_referencias()
                         result = _exec_planejar(db, tc.function.name, args, refs)
@@ -1091,7 +1662,10 @@ _TABELAS_PERMITIDAS = {
     "c_despesas", "recebimentos", "contas_a_pagar", "fornecedores",
     "obras", "etapas", "empresas", "orcamentos", "taxa_conclusao",
     "categorias_despesa", "formas_pagamento", "obra_etapas", "despesas_recorrentes",
+    "remessas_caixa", "folhas", "folha_funcionarios",
 }
+# Tabelas onde a operação 'deletar' é permitida (apenas registros de rascunho/linha)
+_TABELAS_DELETAR_PERMITIDAS = {"folha_funcionarios"}
 _PK_TEXTO = {"fornecedores", "obras", "etapas", "categorias_despesa", "formas_pagamento"}
 
 
@@ -1104,8 +1678,10 @@ async def executar_operacao(body: dict):
 
     if tabela not in _TABELAS_PERMITIDAS:
         raise HTTPException(400, f"Tabela '{tabela}' não permitida")
-    if operacao not in {"inserir", "atualizar", "atualizar_lote"}:
+    if operacao not in {"inserir", "atualizar", "atualizar_lote", "deletar"}:
         raise HTTPException(400, "Operação inválida")
+    if operacao == "deletar" and tabela not in _TABELAS_DELETAR_PERMITIDAS:
+        raise HTTPException(400, f"Operação 'deletar' não permitida para '{tabela}'")
 
     sb = _get_supabase()
 
@@ -1125,6 +1701,12 @@ async def executar_operacao(body: dict):
             if not ids:
                 raise HTTPException(400, "ids[] obrigatório para atualizar_lote")
             res = sb.table(tabela).update(dados).in_("id", ids).execute()
+
+        elif operacao == "deletar":
+            id_ = body.get("id")
+            if not id_:
+                raise HTTPException(400, "id obrigatório para deletar")
+            res = sb.table(tabela).delete().eq("id", id_).execute()
 
         afetados = len(res.data) if res.data else 0
         logger.info("[AI-EXEC] %s em %s | afetados=%d | dados=%s", operacao, tabela, afetados, dados)

@@ -125,6 +125,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     await carregarContratos();
 });
 
+window.addEventListener('jarvis:data-changed', (e) => {
+    if (e.detail?.tabela === 'contas_a_pagar') {
+        paginaAtual = 1;
+        carregarContratos();
+    }
+});
+
 // --- REFERÊNCIAS ---
 async function carregarReferencias() {
     if (!dbClient) { setStatus('offline', 'Erro de conexão'); return; }

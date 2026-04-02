@@ -9,6 +9,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../style.css">
+    <style>
+        #tabelaHistorico thead th { position: sticky; top: 0; z-index: 2; }
+    </style>
     <script src="../env.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -49,6 +52,13 @@
                 <input type="text" id="buscaTexto" placeholder="Buscar por fornecedor ou descrição...">
             </div>
             <div class="topbar-actions">
+                <button class="btn btn-outline" id="btnAtualizar" title="Atualizar dados" style="font-size:0.8125rem;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                    Atualizar
+                </button>
                 <button class="btn btn-outline" id="btnExportarCSV" style="font-size:0.8125rem;">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>

@@ -26,8 +26,18 @@ const STATUS_COLOR = { rascunho: 'var(--warning)', enviada: 'var(--secondary)', 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
     initSupabase();
-    await Promise.all([carregarObras(), carregarEtapas()]);
+    await carregarObras();
     setupEventListeners();
+});
+
+window.addEventListener('jarvis:data-changed', async (e) => {
+    const t = e.detail?.tabela;
+    if (t === 'folha_funcionarios' && folhaAtual?.id) {
+        await carregarFuncionarios(folhaAtual.id);
+    } else if (t === 'folhas') {
+        const obra = document.getElementById('selObra')?.value;
+        if (obra) await carregarFolhas(obra);
+    }
 });
 
 // ── Carregar dados base ───────────────────────────────────────────────────────
@@ -43,13 +53,18 @@ async function carregarObras() {
     }
 }
 
-async function carregarEtapas() {
-    if (!dbClient) return;
+async function carregarEtapasPorObra(obra) {
+    etapas = [];
+    if (!dbClient || !obra) return;
     try {
-        const { data } = await dbClient.from('etapas').select('nome').order('nome');
-        etapas = (data || []).map(e => e.nome);
+        const { data } = await dbClient
+            .from('obra_etapas')
+            .select('etapa')
+            .eq('obra', obra)
+            .order('etapa');
+        etapas = (data || []).map(e => e.etapa);
     } catch (e) {
-        console.error('Erro ao carregar etapas:', e);
+        console.error('Erro ao carregar etapas da obra:', e);
     }
 }
 
@@ -101,7 +116,7 @@ async function carregarFolhas(obra) {
 
 async function selecionarFolha(folha) {
     folhaAtual = folha;
-    await carregarRegras(folha.obra);
+    await Promise.all([carregarRegras(folha.obra), carregarEtapasPorObra(folha.obra)]);
     await carregarFuncionarios(folha.id);
     await carregarComprovantes(folha.id);
     renderizarStatusBadge();
@@ -126,6 +141,7 @@ async function carregarFuncionarios(folhaId) {
                 etapa:     f.etapa || '',
                 diarias:   parseFloat(f.diarias || 0),
                 valor:     parseFloat(f.valor || 0),
+                valor_fixo: f.valor_fixo != null ? parseFloat(f.valor_fixo) : null,
                 _deleted:  false,
             });
         });
@@ -171,6 +187,11 @@ function calcularValor(servico, diarias) {
     return regra.tipo === 'fixo' ? regra.valor : regra.valor * (parseFloat(diarias) || 0);
 }
 
+// Retorna o valor efetivo: valor_fixo tem prioridade sobre o cálculo automático
+function calcularValorFinal(l) {
+    return (l.valor_fixo != null) ? l.valor_fixo : calcularValor(l.servico, l.diarias);
+}
+
 // ── Render tabela ─────────────────────────────────────────────────────────────
 function renderizarTabela() {
     const tbody   = document.getElementById('tabelaBody');
@@ -185,8 +206,17 @@ function renderizarTabela() {
     }
 
     tbody.innerHTML = ativas.map(l => {
-        const val = calcularValor(l.servico, l.diarias);
-        const disabled = isClosed ? 'disabled' : '';
+        const valEfetivo = calcularValorFinal(l);
+        const valAuto    = calcularValor(l.servico, l.diarias);
+        const isFixo     = l.valor_fixo != null;
+        const disabled   = isClosed ? 'disabled' : '';
+        const valorStyle = isFixo
+            ? 'border-color:var(--secondary);background:rgba(var(--secondary-rgb,80,140,255),0.07);'
+            : '';
+        const clearBtn = (!isClosed && isFixo)
+            ? `<button class="btn-clear-valor" data-lid="${l._localId}" title="Reverter para automático" style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--on-surface-muted);line-height:1;padding:2px;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+               </button>` : '';
         return `
         <tr data-lid="${l._localId}">
             <td><input class="tbl-input" type="text" value="${esc(l.nome)}" data-field="nome" ${disabled} placeholder="Nome completo"></td>
@@ -204,8 +234,19 @@ function renderizarTabela() {
                     ${etapas.map(e => `<option value="${esc(e)}" ${l.etapa === e ? 'selected' : ''}>${esc(e)}</option>`).join('')}
                 </select>
             </td>
-            <td><input class="tbl-input text-right" type="number" min="0" step="0.5" value="${l.diarias || ''}" data-field="diarias" ${disabled} placeholder="0" style="max-width:90px;"></td>
-            <td class="text-right fin-num" data-valor="${val}" style="white-space:nowrap;">${formatCurrency(val)}</td>
+            <td><input class="tbl-input text-right" type="number" min="0" step="0.5" value="${l.diarias || ''}" data-field="diarias" ${disabled} placeholder="0" style="max-width:90px;${isFixo ? 'opacity:0.45;' : ''}"></td>
+            <td style="white-space:nowrap;">
+                <div style="display:flex;align-items:center;gap:3px;">
+                    <input class="tbl-input text-right fin-num" type="number" min="0" step="0.01"
+                        value="${valEfetivo || ''}"
+                        data-field="valor_fixo"
+                        data-auto="${valAuto}"
+                        ${disabled}
+                        placeholder="${valAuto > 0 ? valAuto.toFixed(2) : '0,00'}"
+                        style="max-width:110px;${valorStyle}">
+                    ${clearBtn}
+                </div>
+            </td>
             <td style="text-align:center;">
                 ${!isClosed ? `<button class="btn-row-delete" data-lid="${l._localId}" title="Remover linha">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -221,11 +262,11 @@ function renderizarTabela() {
 
 function atualizarTotal() {
     const ativas = linhasLocais.filter(l => !l._deleted);
-    const total  = ativas.reduce((s, l) => s + calcularValor(l.servico, l.diarias), 0);
+    const total  = ativas.reduce((s, l) => s + calcularValorFinal(l), 0);
     document.getElementById('totalRodape').textContent = formatCurrency(total);
 
     // Aviso de etapa faltando
-    const semEtapa = ativas.filter(l => !l.etapa && calcularValor(l.servico, l.diarias) > 0);
+    const semEtapa = ativas.filter(l => !l.etapa && calcularValorFinal(l) > 0);
     const aviso    = document.getElementById('avisoSemEtapa');
     const isClosed = folhaAtual?.status === 'fechada';
     if (semEtapa.length > 0 && !isClosed) {
@@ -242,7 +283,7 @@ function atualizarTotal() {
 // ── KPIs ──────────────────────────────────────────────────────────────────────
 function atualizarKPIs() {
     const ativas   = linhasLocais.filter(l => !l._deleted);
-    const total    = ativas.reduce((s, l) => s + calcularValor(l.servico, l.diarias), 0);
+    const total    = ativas.reduce((s, l) => s + calcularValorFinal(l), 0);
     const etapasSet = new Set(ativas.map(l => l.etapa).filter(Boolean));
     const status    = folhaAtual?.status || '—';
 
@@ -294,7 +335,8 @@ function esconderSecoes() {
 function setupEventListeners() {
     // Obra selecionada
     document.getElementById('selObra').addEventListener('change', async (e) => {
-        await carregarFolhas(e.target.value);
+        const obra = e.target.value;
+        await Promise.all([carregarFolhas(obra), carregarEtapasPorObra(obra)]);
     });
 
     // Quinzena selecionada
@@ -318,15 +360,39 @@ function setupEventListeners() {
         const field = e.target.dataset.field;
         const linha = linhasLocais.find(l => l._localId === lid);
         if (!linha || !field) return;
-        linha[field] = e.target.type === 'number' ? parseFloat(e.target.value || 0) : e.target.value;
 
-        // Recalcula valor ao mudar serviço ou diárias
-        if (field === 'servico' || field === 'diarias') {
-            const val = calcularValor(linha.servico, linha.diarias);
-            const tdVal = tr.querySelector('td[data-valor]');
-            if (tdVal) { tdVal.dataset.valor = val; tdVal.textContent = formatCurrency(val); }
+        if (field === 'valor_fixo') {
+            // String vazia = limpar fixo (reverter para automático)
+            const raw = e.target.value.trim();
+            linha.valor_fixo = raw === '' ? null : parseFloat(raw);
             atualizarTotal();
+        } else {
+            linha[field] = e.target.type === 'number' ? parseFloat(e.target.value || 0) : e.target.value;
+            // Recalcula valor automático ao mudar serviço ou diárias (só se não há fixo)
+            if (field === 'servico' || field === 'diarias') {
+                if (linha.valor_fixo == null) {
+                    const valAuto = calcularValor(linha.servico, linha.diarias);
+                    const inputValor = tr.querySelector('input[data-field="valor_fixo"]');
+                    if (inputValor) {
+                        inputValor.value = valAuto || '';
+                        inputValor.dataset.auto = valAuto;
+                        inputValor.placeholder = valAuto > 0 ? valAuto.toFixed(2) : '0,00';
+                    }
+                }
+                atualizarTotal();
+            }
         }
+    });
+
+    // Limpar valor fixo (reverter para automático)
+    document.getElementById('tabelaBody').addEventListener('click', (e) => {
+        const btn = e.target.closest('.btn-clear-valor');
+        if (!btn) return;
+        const lid   = parseInt(btn.dataset.lid);
+        const linha = linhasLocais.find(l => l._localId === lid);
+        if (!linha) return;
+        linha.valor_fixo = null;
+        renderizarTabela();
     });
 
     // Deletar linha
@@ -344,7 +410,7 @@ function setupEventListeners() {
             _localId:  ++_localIdSeq,
             id:        null,
             nome:      '', pix: '', nome_conta: '',
-            servico:   '', etapa: '', diarias: 0, valor: 0,
+            servico:   '', etapa: '', diarias: 0, valor: 0, valor_fixo: null,
             _deleted:  false,
         });
         renderizarTabela();
@@ -392,15 +458,16 @@ async function salvarFolha() {
 
     try {
         for (const l of linhasLocais) {
-            const valor = calcularValor(l.servico, l.diarias);
+            const valor = calcularValorFinal(l);
             const payload = {
-                nome: l.nome || null,
-                pix:  l.pix  || null,
+                nome:       l.nome       || null,
+                pix:        l.pix        || null,
                 nome_conta: l.nome_conta || null,
                 servico:    l.servico    || null,
                 etapa:      l.etapa      || null,
                 diarias:    l.diarias    || 0,
                 valor:      valor,
+                valor_fixo: l.valor_fixo != null ? l.valor_fixo : null,
             };
 
             if (l._deleted && l.id) {
@@ -537,7 +604,7 @@ async function criarNovaFolha() {
         // Copia funcionários da última folha se solicitado
         if (copiar && novaFolha?.id) {
             const { data: funcs } = await dbClient
-                .from('folha_funcionarios').select('nome, pix, nome_conta, servico, etapa, diarias, valor')
+                .from('folha_funcionarios').select('nome, pix, nome_conta, servico, etapa, diarias, valor, valor_fixo')
                 .eq('folha_id', _ultimaFolhaId);
 
             if (funcs?.length) {

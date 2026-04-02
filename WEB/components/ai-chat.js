@@ -10,6 +10,7 @@
     let aberto    = false;
     let mediaRecorder = null;
     let audioChunks   = [];
+    let arquivosAnexados = [];  // File[]
 
     function salvarHistorico() {
         try {
@@ -52,13 +53,18 @@
     // ── Detecta obra/página atualmente "ativa" no contexto da página ──
     function getContexto() {
         const pagina = location.pathname.split('/').filter(Boolean).pop() || 'dashboard';
-        // Tenta ler filtro de obra de selects comuns
+        // Tenta ler filtro de obra de selects comuns (inclui selObra da página de folha)
         const obraEl = document.getElementById('filtroObra')
                     || document.getElementById('fObra')
-                    || document.getElementById('obraDropdownText');
+                    || document.getElementById('obraDropdownText')
+                    || document.getElementById('selObra');
         const obra = (obraEl && obraEl.value && obraEl.value !== '' && obraEl.value !== 'Selecionar Obras')
             ? obraEl.value : null;
-        return { pagina, obra };
+        // Contexto extra da página de folha: folha ativa e quinzena
+        const folhaAtual = window.folhaAtual || null;
+        const folha_id   = folhaAtual?.id   || null;
+        const quinzena   = folhaAtual?.quinzena || null;
+        return { pagina, obra, folha_id, quinzena };
     }
 
     // ── Injeta HTML do widget ──
@@ -341,6 +347,59 @@
 @keyframes pulse-voice { 0%,100%{opacity:1} 50%{opacity:.5} }
 #ai-chat-voice.processando { opacity: .5; cursor: default; pointer-events: none; }
 
+#ai-chat-attach {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--surface-elevated, #22222e);
+    color: var(--on-surface-muted, #888);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1rem;
+    transition: background .15s, color .15s;
+}
+#ai-chat-attach:hover { color: var(--on-surface, #e8e8f0); }
+#ai-chat-attach.tem-arquivo { color: var(--primary, #7c5cbf); }
+
+.ai-attach-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 14px 0;
+}
+.ai-attach-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(124,92,191,.15);
+    border: 1px solid rgba(124,92,191,.3);
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: .75rem;
+    color: var(--on-surface, #e8e8f0);
+    max-width: 180px;
+}
+.ai-attach-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ai-attach-chip-remove {
+    background: none;
+    border: none;
+    color: var(--on-surface-muted, #888);
+    cursor: pointer;
+    font-size: .85rem;
+    line-height: 1;
+    padding: 0;
+    flex-shrink: 0;
+}
+.ai-attach-chip-remove:hover { color: #f55; }
+
 .ai-confirm-card {
     margin: 0 14px 10px;
     padding: 12px 14px;
@@ -422,7 +481,11 @@
 
     <div id="ai-action-area"></div>
 
+    <div class="ai-attach-preview" id="ai-attach-preview"></div>
+
     <div class="ai-chat-input-wrap">
+        <input type="file" id="ai-chat-file-input" multiple accept="image/*,.pdf,.txt,.csv" style="display:none">
+        <button id="ai-chat-attach" title="Anexar arquivo (imagem, PDF, texto)">📎</button>
         <textarea id="ai-chat-input" placeholder="Pergunte algo… (CTRL+Q)" rows="1"></textarea>
         <button id="ai-chat-voice" title="Gravar voz (clique para iniciar/parar)">🎤</button>
         <button id="ai-chat-send" title="Enviar">
@@ -453,6 +516,14 @@
         });
         document.getElementById('ai-chat-send').addEventListener('click', enviarMensagem);
         document.getElementById('ai-chat-voice').addEventListener('click', toggleVoz);
+        document.getElementById('ai-chat-attach').addEventListener('click', () => {
+            document.getElementById('ai-chat-file-input').click();
+        });
+        document.getElementById('ai-chat-file-input').addEventListener('change', e => {
+            for (const f of e.target.files) arquivosAnexados.push(f);
+            e.target.value = '';
+            renderAnexos();
+        });
         const input = document.getElementById('ai-chat-input');
         input.addEventListener('keydown', e => {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensagem(); }
@@ -505,37 +576,72 @@
         return div;
     }
 
+    function renderAnexos() {
+        const preview = document.getElementById('ai-attach-preview');
+        const btn = document.getElementById('ai-chat-attach');
+        if (!preview) return;
+        preview.innerHTML = '';
+        arquivosAnexados.forEach((f, i) => {
+            const chip = document.createElement('div');
+            chip.className = 'ai-attach-chip';
+            chip.innerHTML = `<span title="${f.name}">${f.name}</span><button class="ai-attach-chip-remove" title="Remover">×</button>`;
+            chip.querySelector('.ai-attach-chip-remove').addEventListener('click', () => {
+                arquivosAnexados.splice(i, 1);
+                renderAnexos();
+            });
+            preview.appendChild(chip);
+        });
+        if (btn) btn.classList.toggle('tem-arquivo', arquivosAnexados.length > 0);
+    }
+
     async function enviarMensagem() {
         const input = document.getElementById('ai-chat-input');
         const send  = document.getElementById('ai-chat-send');
         const texto = input.value.trim();
-        if (!texto) return;
+        if (!texto && arquivosAnexados.length === 0) return;
+
+        const temAnexos = arquivosAnexados.length > 0;
+        const textoExibir = texto || `📎 ${arquivosAnexados.map(f => f.name).join(', ')}`;
 
         // Limpa sugestões na primeira mensagem real
         document.getElementById('ai-chat-sugestoes').style.display = 'none';
 
-        appendMsg('user', texto);
-        historico.push({ role: 'user', content: texto });
+        appendMsg('user', textoExibir);
+        historico.push({ role: 'user', content: textoExibir });
         salvarHistorico();
         input.value = '';
         input.style.height = 'auto';
+
+        // Limpa anexos após capturar
+        const arquivosEnvio = [...arquivosAnexados];
+        arquivosAnexados = [];
+        renderAnexos();
+
         send.disabled = true;
 
         const loader = showLoading();
 
-        const { pagina, obra } = getContexto();
+        const { pagina, obra, folha_id, quinzena } = getContexto();
 
         try {
-            const res = await fetch(`${API_BASE}/api/ai/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    mensagem: texto,
-                    historico: historico.slice(-10),   // últimas 10 trocas
-                    obra,
-                    pagina,
-                }),
-            });
+            let res;
+            if (temAnexos) {
+                const fd = new FormData();
+                fd.append('mensagem', texto || 'Analise o(s) arquivo(s) em anexo.');
+                fd.append('historico', JSON.stringify(historico.slice(-10)));
+                if (obra)      fd.append('obra', obra);
+                if (folha_id)  fd.append('folha_id', folha_id);
+                if (quinzena)  fd.append('quinzena', quinzena);
+                fd.append('pagina', pagina);
+                for (const f of arquivosEnvio) fd.append('arquivos', f);
+                res = await fetch(`${API_BASE}/api/ai/chat`, { method: 'POST', body: fd });
+            } else {
+                res = await fetch(`${API_BASE}/api/ai/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mensagem: texto, historico: historico.slice(-10), obra, pagina, folha_id, quinzena }),
+                });
+            }
 
             if (!res.ok) {
                 const err = await res.text();
@@ -615,19 +721,27 @@
             itensHtml = `<ul class="ai-confirm-card-registros">${itens}</ul>`;
         }
 
-        // Serializa payload para uso inline no onclick
-        const payloadStr = JSON.stringify(payload).replace(/"/g, '&quot;');
-
         area.innerHTML = `
             <div class="ai-confirm-card">
                 <div class="ai-confirm-card-title">⚡ Confirmar operação</div>
                 <div class="ai-confirm-card-resumo">${data.resumo || ''}</div>
                 ${itensHtml}
                 <div class="ai-confirm-card-btns">
-                    <button class="ai-confirm-btn ok" onclick="aiChatConfirmar('${payloadStr}', this)">Confirmar</button>
-                    <button class="ai-confirm-btn nao" onclick="document.getElementById('ai-action-area').innerHTML=''">Cancelar</button>
+                    <button class="ai-confirm-btn ok" id="ai-confirm-ok-btn">Confirmar</button>
+                    <button class="ai-confirm-btn nao" id="ai-confirm-cancel-btn">Cancelar</button>
                 </div>
             </div>`;
+
+        // Usa closure em vez de serializar o payload no HTML (evita quebra com aspas/apostrofos)
+        document.getElementById('ai-confirm-ok-btn').addEventListener('click', async function () {
+            this.disabled = true;
+            this.textContent = '…';
+            area.innerHTML = '';
+            await executarOperacao(payload);
+        });
+        document.getElementById('ai-confirm-cancel-btn').addEventListener('click', () => {
+            area.innerHTML = '';
+        });
     }
 
     async function executarOperacao(payload) {
@@ -645,6 +759,7 @@
                 historico.push({ role: 'assistant', content: msg });
                 salvarHistorico();
                 if (window.showToast) showToast(msg, 'success');
+                window.dispatchEvent(new CustomEvent('jarvis:data-changed', { detail: { tabela: payload.tabela } }));
             } else {
                 appendMsg('assistant', '⚠️ A operação retornou sem sucesso.');
                 if (window.showToast) showToast('Erro na operação', 'error');
