@@ -3,7 +3,7 @@
  * Despesas (app.js)
  */
 
-const API_BASE = `http://${location.hostname}:8000`;
+const API_BASE = window.API_BASE || `http://${location.hostname}:8000`;
 
 // --- SUPABASE ---
 let dbClient;
@@ -55,13 +55,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (_) {}
     }
 
-    // Cursor sempre no canto esquerdo no textarea de descrição por texto
-    const textoIAEl = document.getElementById('textoIA');
-    if (textoIAEl) {
-        textoIAEl.addEventListener('mousedown', function () {
-            setTimeout(() => this.setSelectionRange(0, 0), 0);
-        });
-    }
 
     // Upload NF individual
     const inputNF   = document.getElementById('inputNF');
@@ -238,7 +231,7 @@ async function toggleVoz() {
                 const fd   = new FormData();
                 fd.append('file', blob, `audio.${ext}`);
 
-                const res = await fetch(`${API_BASE}/api/ai/transcrever`, { method: 'POST', body: fd });
+                const res = await (window.apiFetch ? window.apiFetch('/api/ai/transcrever', { method: 'POST', body: fd }) : fetch(`${API_BASE}/api/ai/transcrever`, { method: 'POST', body: fd }));
                 if (!res.ok) throw new Error(await res.text());
                 const { texto } = await res.json();
 
@@ -361,16 +354,14 @@ async function extrairIATexto() {
             fd.append('obras',        JSON.stringify(obras));
             fd.append('etapas',       JSON.stringify(etapas));
             nfsTexto.forEach(f => fd.append('files', f));
-            const res = await fetch(`${API_BASE}/api/ai/extrair-texto-misto`, { method: 'POST', body: fd });
+            const res = await (window.apiFetch ? window.apiFetch('/api/ai/extrair-texto-misto', { method: 'POST', body: fd }) : fetch(`${API_BASE}/api/ai/extrair-texto-misto`, { method: 'POST', body: fd }));
             if (!res.ok) throw new Error(await res.text());
             lista = await res.json();
         } else {
             // Só texto → endpoint original
-            const res = await fetch(`${API_BASE}/api/ai/extrair-texto`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ texto, fornecedores, categorias, obras, etapas }),
-            });
+            const res = await (window.apiFetch
+                ? window.apiFetch('/api/ai/extrair-texto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, fornecedores, categorias, obras, etapas }) })
+                : fetch(`${API_BASE}/api/ai/extrair-texto`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, fornecedores, categorias, obras, etapas }) }));
             if (!res.ok) throw new Error(await res.text());
             lista = await res.json();
         }
@@ -442,6 +433,7 @@ function renderizarRevisaoTexto(lista, arquivos) {
                 </select>
             </td>
             <td>${esc(d.DESPESA || '—')}</td>
+            <td style="font-size:0.8rem;">${esc(d.BANCO || '—')}</td>
             <td style="font-weight:600;">R$ ${d.VALOR_TOTAL ? Number(d.VALOR_TOTAL).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
             <td>${d.DATA ? d.DATA.split('-').reverse().join('/') : '—'}</td>
             <td style="font-size:0.75rem;color:var(--on-surface-muted);">${nf}</td>
@@ -590,7 +582,7 @@ async function extrairIAIndividual() {
             formData.append('obras',        JSON.stringify(obras));
             formData.append('etapas',       JSON.stringify(etapas));
             formData.append('categorias',   JSON.stringify(categorias));
-            const res = await fetch(`${API_BASE}/api/ai/extrair`, { method: 'POST', body: formData });
+            const res = await (window.apiFetch ? window.apiFetch('/api/ai/extrair', { method: 'POST', body: formData }) : fetch(`${API_BASE}/api/ai/extrair`, { method: 'POST', body: formData }));
             if (!res.ok) throw new Error(await res.text());
             resultados.push(await res.json());
         }
@@ -804,7 +796,7 @@ async function extrairLoteIA() {
         try {
             const formData = new FormData();
             formData.append('file', item.file);
-            const res = await fetch(`${API_BASE}/api/ai/extrair`, { method: 'POST', body: formData });
+            const res = await (window.apiFetch ? window.apiFetch('/api/ai/extrair', { method: 'POST', body: formData }) : fetch(`${API_BASE}/api/ai/extrair`, { method: 'POST', body: formData }));
             item.dados = res.ok ? await res.json() : {};
         } catch (_) {
             item.dados = {};
@@ -1059,15 +1051,9 @@ async function enviarMensagemChatLote() {
     }));
 
     try {
-        const res = await fetch(`${API_BASE}/api/ai/chat-despesas`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages: chatLoteHistorico,
-                despesas: despesasLote,
-                contexto: `Lote de arquivos: ${chatLoteContexto}`,
-            }),
-        });
+        const res = await (window.apiFetch
+            ? window.apiFetch('/api/ai/chat-despesas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatLoteHistorico, despesas: despesasLote, contexto: `Lote de arquivos: ${chatLoteContexto}` }) })
+            : fetch(`${API_BASE}/api/ai/chat-despesas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatLoteHistorico, despesas: despesasLote, contexto: `Lote de arquivos: ${chatLoteContexto}` }) }));
         if (!res.ok) throw new Error(await res.text());
         const { mensagem, despesas } = await res.json();
 
@@ -1146,15 +1132,9 @@ async function enviarMensagemChat() {
     }));
 
     try {
-        const res = await fetch(`${API_BASE}/api/ai/chat-despesas`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                messages:  chatHistorico,
-                despesas:  despesasTexto,
-                contexto:  chatContexto,
-            }),
-        });
+        const res = await (window.apiFetch
+            ? window.apiFetch('/api/ai/chat-despesas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatHistorico, despesas: despesasTexto, contexto: chatContexto }) })
+            : fetch(`${API_BASE}/api/ai/chat-despesas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatHistorico, despesas: despesasTexto, contexto: chatContexto }) }));
         if (!res.ok) throw new Error(await res.text());
         const { mensagem, despesas } = await res.json();
 

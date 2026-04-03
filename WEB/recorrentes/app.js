@@ -1,6 +1,6 @@
 /* Despesas Recorrentes — app.js */
 
-const API_BASE  = `http://${location.hostname}:8000`;
+const API_BASE  = window.API_BASE || `http://${location.hostname}:8000`;
 let dbClient    = null;
 let registros   = [];       // todos os templates carregados
 let filtroAtual = 'ativas'; // 'ativas' | 'todas'
@@ -59,7 +59,7 @@ function preencherSelect(id, items, campo, placeholder) {
 
 async function carregarRecorrentes() {
     try {
-        const res = await fetch(`${API_BASE}/api/recorrentes`);
+        const res = await (window.apiFetch ? window.apiFetch('/api/recorrentes') : fetch(`${API_BASE}/api/recorrentes`));
         if (!res.ok) { toast.error('Erro ao carregar recorrentes'); return; }
         registros = await res.json();
         atualizarStats();
@@ -218,9 +218,11 @@ async function salvarModal() {
     btn.disabled = true; btn.textContent = 'Salvando…';
 
     try {
-        const url    = editandoId ? `${API_BASE}/api/recorrentes/${editandoId}` : `${API_BASE}/api/recorrentes`;
+        const path   = editandoId ? `/api/recorrentes/${editandoId}` : '/api/recorrentes';
         const method = editandoId ? 'PUT' : 'POST';
-        const res    = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const res    = await (window.apiFetch
+            ? window.apiFetch(path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+            : fetch(`${API_BASE}${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }));
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -242,18 +244,16 @@ async function salvarModal() {
 async function toggleAtiva(id, ativa) {
     const r = registros.find(x => x.id === id);
     if (!r) return;
-    await fetch(`${API_BASE}/api/recorrentes/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...r, ativa: !ativa }),
-    });
+    await (window.apiFetch
+        ? window.apiFetch(`/api/recorrentes/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, ativa: !ativa }) })
+        : fetch(`${API_BASE}/api/recorrentes/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...r, ativa: !ativa }) }));
     toast.success(!ativa ? 'Recorrente ativada' : 'Recorrente desativada');
     await carregarRecorrentes();
 }
 
 async function deletar(id) {
     if (!confirm('Excluir esta despesa recorrente?')) return;
-    const res = await fetch(`${API_BASE}/api/recorrentes/${id}`, { method: 'DELETE' });
+    const res = await (window.apiFetch ? window.apiFetch(`/api/recorrentes/${id}`, { method: 'DELETE' }) : fetch(`${API_BASE}/api/recorrentes/${id}`, { method: 'DELETE' }));
     if (res.ok || res.status === 204) {
         toast.success('Excluída com sucesso');
         await carregarRecorrentes();
@@ -269,7 +269,7 @@ async function processarVencidas() {
     btn.disabled = true; btn.textContent = 'Processando…';
 
     try {
-        const res  = await fetch(`${API_BASE}/api/recorrentes/processar`, { method: 'POST' });
+        const res  = await (window.apiFetch ? window.apiFetch('/api/recorrentes/processar', { method: 'POST' }) : fetch(`${API_BASE}/api/recorrentes/processar`, { method: 'POST' }));
         const data = await res.json();
 
         if (!res.ok) throw new Error(data.detail || 'Erro ao processar');

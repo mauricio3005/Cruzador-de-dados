@@ -1,26 +1,15 @@
-import os
+from fastapi import APIRouter, Depends, HTTPException
 
-from fastapi import APIRouter, HTTPException
-
+from api.dependencies import get_current_user
 from api.logger import get_logger
+from api.supabase_client import get_supabase
 
 router = APIRouter()
 logger = get_logger(__name__)
 
 
-def _get_supabase():
-    from dotenv import load_dotenv
-    from supabase import create_client
-    load_dotenv()
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
-    if not url or not key:
-        raise HTTPException(status_code=500, detail="Supabase não configurado")
-    return create_client(url, key)
-
-
 @router.delete("/nf/{nf_id}")
-def remover_nf(nf_id: int):
+def remover_nf(nf_id: int, user=Depends(get_current_user)):
     """
     Remove uma NF de comprovantes_despesa:
     1. Busca o registro para obter URL e despesa_id
@@ -28,7 +17,7 @@ def remover_nf(nf_id: int):
     3. Remove o registro de comprovantes_despesa
     4. Se não restam NFs para a despesa, seta tem_nota_fiscal=False em c_despesas
     """
-    sb = _get_supabase()
+    sb = get_supabase()
 
     res = sb.table("comprovantes_despesa") \
             .select("id, url, nome_arquivo, despesa_id") \

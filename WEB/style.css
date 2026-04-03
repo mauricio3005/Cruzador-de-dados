@@ -285,6 +285,37 @@ body {
     transition-delay: 0.1s;
 }
 
+/* Logout button in sidebar */
+.nav-logout {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3, 10px);
+    width: calc(100% - 20px);
+    margin: 4px 10px 10px;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    border-radius: var(--r-md, 8px);
+    color: var(--on-surface-muted, rgba(232,237,245,0.5));
+    font-family: var(--font-body, 'Inter', sans-serif);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s, color 0.15s;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.nav-logout::before {
+    content: '↪';
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.nav-logout:hover {
+    background: rgba(248, 113, 113, 0.1);
+    color: #f87171;
+}
+
 /* Filter Section */
 .sidebar-filters {
     margin: 4px 10px 10px;

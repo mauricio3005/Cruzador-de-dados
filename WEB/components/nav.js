@@ -29,6 +29,29 @@ function getAppBase() {
     return '';
 }
 
+// Verificação de auth + exposição do cliente Supabase
+async function initAuth() {
+    if (!window.ENV || !window.supabase) return;
+    const appBase = getAppBase();
+    // Não verificar na própria página de auth
+    if (window.location.pathname.endsWith('/auth/') || window.location.pathname.endsWith('/auth/index.html')) return;
+
+    const sb = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY);
+    window._supabaseClient = sb;
+
+    window.getAuthToken = async function() {
+        const { data: { session } } = await sb.auth.getSession();
+        return session?.access_token || null;
+    };
+
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+        window.location.replace(appBase + '/auth/');
+        return false;
+    }
+    return true;
+}
+
 function renderNav() {
     const container = document.getElementById("main-nav");
     if (!container) return;
@@ -58,12 +81,20 @@ function renderNav() {
                         ${!item.done ? '<span class="nav-badge">Em breve</span>' : ""}
                     </a>`;
             }).join("")}
-        </nav>`;
+        </nav>
+        <button class="nav-logout" id="nav-logout-btn">Sair</button>`;
 
     container.innerHTML = html;
+
+    document.getElementById('nav-logout-btn')?.addEventListener('click', async () => {
+        if (window._supabaseClient) await window._supabaseClient.auth.signOut();
+        const appBase = getAppBase();
+        window.location.replace(appBase + '/auth/');
+    });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+    await initAuth();
     renderNav();
 
     // Filtro global com tecla Enter
@@ -97,6 +128,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const base = getAiChatBase();
     if (base) {
+        // Injeta api-client.js primeiro (disponibiliza apiFetch antes do ai-chat.js)
+        const apiClient = document.createElement('script');
+        apiClient.src = base + 'api-client.js';
+        document.head.appendChild(apiClient);
+
         const s = document.createElement('script');
         s.src = base + 'ai-chat.js';
         document.head.appendChild(s);

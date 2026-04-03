@@ -8,6 +8,8 @@ Fluxo:
     despesas mais semanticamente similares via pgvector.
 """
 import os
+from functools import lru_cache
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,6 +19,7 @@ _EMBED_DIMS  = 1536
 _BATCH_SIZE  = 100   # limite seguro da API de embeddings
 
 
+@lru_cache(maxsize=1)
 def _get_openai():
     from openai import OpenAI
     api_key = os.getenv("OPENAI_API_KEY")
@@ -47,6 +50,9 @@ def _embed_texts(texts: list[str]) -> list[list[float]]:
     return [item.embedding for item in resp.data]
 
 
+MAX_SYNC_PER_RUN = int(os.getenv("EMBEDDING_SYNC_LIMIT", "200"))
+
+
 def sync_embeddings(db=None) -> int:
     """
     Detecta despesas sem embedding e as processa.
@@ -70,6 +76,7 @@ def sync_embeddings(db=None) -> int:
     )
 
     pending = [r for r in rows if r["id"] not in existing_ids]
+    pending = pending[:MAX_SYNC_PER_RUN]
     if not pending:
         return 0
 

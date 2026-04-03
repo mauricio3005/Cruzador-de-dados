@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Industrial Architect</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../style.css">
+    <script src="../env.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--surface-base); }
+        .auth-card { background: var(--surface-card); border-radius: var(--r-xl); padding: 48px; width: 100%; max-width: 400px; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
+        .auth-title { font-family: Manrope, sans-serif; font-size: 1.5rem; font-weight: 800; color: var(--on-surface); margin-bottom: 4px; }
+        .auth-sub { font-size: 0.875rem; color: var(--on-surface-muted); margin-bottom: 32px; }
+        .auth-field { margin-bottom: 16px; }
+        .auth-field label { display: block; font-size: 0.8125rem; font-weight: 500; color: var(--on-surface-muted); margin-bottom: 6px; }
+        .auth-field input { width: 100%; padding: 10px 14px; background: var(--surface-low); border: none; border-radius: var(--r-md); color: var(--on-surface); font-size: 0.9375rem; font-family: Inter, sans-serif; box-sizing: border-box; }
+        .auth-field input:focus { outline: 2px solid var(--accent); }
+        .auth-btn { width: 100%; padding: 12px; background: var(--accent); color: #fff; border: none; border-radius: var(--r-md); font-size: 0.9375rem; font-weight: 600; font-family: Inter, sans-serif; cursor: pointer; margin-top: 8px; }
+        .auth-btn:hover { background: var(--accent-hover); }
+        .auth-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .auth-error { color: #f87171; font-size: 0.8125rem; margin-top: 12px; display: none; }
+    </style>
+</head>
+<body>
+<div class="auth-card">
+    <div class="auth-title">Industrial Architect</div>
+    <div class="auth-sub">Gestão Financeira de Obras</div>
+    <div class="auth-field">
+        <label for="email">E-mail</label>
+        <input type="email" id="email" autocomplete="email" placeholder="seu@email.com">
+    </div>
+    <div class="auth-field">
+        <label for="senha">Senha</label>
+        <input type="password" id="senha" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button class="auth-btn" id="btn-login">Entrar</button>
+    <div class="auth-error" id="auth-error"></div>
+</div>
+<script>
+(async function() {
+    const sb = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY);
+
+    // Se já logado, redireciona
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) { window.location.replace('../'); return; }
+
+    const btn   = document.getElementById('btn-login');
+    const err   = document.getElementById('auth-error');
+    const email = document.getElementById('email');
+    const senha = document.getElementById('senha');
+
+    async function login() {
+        err.style.display = 'none';
+        btn.disabled = true;
+        btn.textContent = 'Entrando…';
+        const { error } = await sb.auth.signInWithPassword({
+            email: email.value.trim(),
+            password: senha.value,
+        });
+        if (error) {
+            err.textContent = error.message === 'Invalid login credentials'
+                ? 'E-mail ou senha incorretos.'
+                : error.message;
+            err.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'Entrar';
+        } else {
+            window.location.replace('../');
+        }
+    }
+
+    btn.addEventListener('click', login);
+    senha.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+    email.addEventListener('keydown', e => { if (e.key === 'Enter') senha.focus(); });
+})();
+</script>
+</body>
+</html>

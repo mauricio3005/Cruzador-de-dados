@@ -12,12 +12,13 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from api.supabase_client import get_supabase
+from api.dependencies import get_current_user
 from api.logger import get_logger
+from api.supabase_client import get_supabase
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -58,14 +59,14 @@ def _avancar_data(d: date, frequencia: str) -> date:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("")
-def listar():
+def listar(_user=Depends(get_current_user)):
     db = get_supabase()
     res = db.table("despesas_recorrentes").select("*").order("proxima_data").execute()
     return res.data or []
 
 
 @router.post("", status_code=201)
-def criar(body: RecorrenteIn):
+def criar(body: RecorrenteIn, _user=Depends(get_current_user)):
     import traceback
     db = get_supabase()
     try:
@@ -86,7 +87,7 @@ def criar(body: RecorrenteIn):
 
 
 @router.put("/{rec_id}")
-def atualizar(rec_id: int, body: RecorrenteIn):
+def atualizar(rec_id: int, body: RecorrenteIn, _user=Depends(get_current_user)):
     db = get_supabase()
     payload = body.model_dump()
     payload["proxima_data"] = payload["proxima_data"].isoformat()
@@ -99,13 +100,13 @@ def atualizar(rec_id: int, body: RecorrenteIn):
 
 
 @router.delete("/{rec_id}", status_code=204)
-def deletar(rec_id: int):
+def deletar(rec_id: int, _user=Depends(get_current_user)):
     db = get_supabase()
     db.table("despesas_recorrentes").delete().eq("id", rec_id).execute()
 
 
 @router.post("/processar")
-def processar():
+def processar(_user=Depends(get_current_user)):
     """
     Para cada template ativo com proxima_data <= hoje:
       1. Cria uma linha em c_despesas com a data de vencimento

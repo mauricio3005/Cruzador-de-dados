@@ -37,15 +37,12 @@
         const msgs = document.getElementById('ai-chat-messages');
         if (!msgs) return;
         try {
-            const v = sessionStorage.getItem(VISUAL_KEY);
-            if (v) {
-                msgs.innerHTML = v;
-                msgs.scrollTop = msgs.scrollHeight;
-                // Oculta sugestões se já há conversa
-                if (historico.length > 0) {
-                    const sug = document.getElementById('ai-chat-sugestoes');
-                    if (sug) sug.style.display = 'none';
-                }
+            const hist = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '[]');
+            hist.forEach(m => appendMsg(m.role, m.content));
+            msgs.scrollTop = msgs.scrollHeight;
+            if (hist.length > 0) {
+                const sug = document.getElementById('ai-chat-sugestoes');
+                if (sug) sug.style.display = 'none';
             }
         } catch (_) {}
     }
@@ -634,13 +631,13 @@
                 if (quinzena)  fd.append('quinzena', quinzena);
                 fd.append('pagina', pagina);
                 for (const f of arquivosEnvio) fd.append('arquivos', f);
-                res = await fetch(`${API_BASE}/api/ai/chat`, { method: 'POST', body: fd });
+                res = window.apiFetch
+                    ? await window.apiFetch('/api/ai/chat', { method: 'POST', body: fd })
+                    : await fetch(`${API_BASE}/api/ai/chat`, { method: 'POST', body: fd });
             } else {
-                res = await fetch(`${API_BASE}/api/ai/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mensagem: texto, historico: historico.slice(-10), obra, pagina, folha_id, quinzena }),
-                });
+                res = window.apiFetch
+                    ? await window.apiFetch('/api/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mensagem: texto, historico: historico.slice(-10), obra, pagina, folha_id, quinzena }) })
+                    : await fetch(`${API_BASE}/api/ai/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mensagem: texto, historico: historico.slice(-10), obra, pagina, folha_id, quinzena }) });
             }
 
             if (!res.ok) {
@@ -684,24 +681,48 @@
     function mostrarAcaoCadastro(despesa) {
         const area = document.getElementById('ai-action-area');
         const linhas = [
-            despesa.FORNECEDOR ? `Fornecedor: ${despesa.FORNECEDOR}` : '',
-            despesa.DESCRICAO  ? `Descrição: ${despesa.DESCRICAO}`   : '',
+            despesa.FORNECEDOR  ? `Fornecedor: ${despesa.FORNECEDOR}` : '',
+            despesa.DESCRICAO   ? `Descrição: ${despesa.DESCRICAO}`   : '',
             despesa.VALOR_TOTAL ? `Valor: R$ ${Number(despesa.VALOR_TOTAL).toLocaleString('pt-BR', {minimumFractionDigits:2})}` : '',
-            despesa.DATA       ? `Data: ${despesa.DATA.split('-').reverse().join('/')}` : '',
-            despesa.OBRA       ? `Obra: ${despesa.OBRA}`             : '',
-            despesa.ETAPA      ? `Etapa: ${despesa.ETAPA}`           : '',
-            despesa.BANCO      ? `Banco: ${despesa.BANCO}`           : '',
+            despesa.DATA        ? `Data: ${despesa.DATA.split('-').reverse().join('/')}` : '',
+            despesa.OBRA        ? `Obra: ${despesa.OBRA}`             : '',
+            despesa.ETAPA       ? `Etapa: ${despesa.ETAPA}`           : '',
+            despesa.BANCO       ? `Banco: ${despesa.BANCO}`           : '',
         ].filter(Boolean);
 
-        area.innerHTML = `
-            <div class="ai-action-banner">
-                <strong>💡 Despesa identificada</strong>
-                ${linhas.join(' · ')}
-                <div class="ai-action-btns">
-                    <button class="ai-action-btn primary" onclick="aiChatAbrirDespesas(${JSON.stringify(despesa).replace(/"/g,'&quot;')})">Abrir em Despesas</button>
-                    <button class="ai-action-btn" onclick="document.getElementById('ai-action-area').innerHTML=''">Dispensar</button>
-                </div>
-            </div>`;
+        // Constrói o banner sem innerHTML com dados dinâmicos (evita XSS)
+        area.innerHTML = '';
+        const banner = document.createElement('div');
+        banner.className = 'ai-action-banner';
+
+        const titulo = document.createElement('strong');
+        titulo.textContent = '💡 Despesa identificada';
+        banner.appendChild(titulo);
+
+        const resumo = document.createElement('span');
+        resumo.textContent = linhas.join(' · ');
+        banner.appendChild(resumo);
+
+        const btns = document.createElement('div');
+        btns.className = 'ai-action-btns';
+
+        const btnAbrir = document.createElement('button');
+        btnAbrir.className = 'ai-action-btn primary';
+        btnAbrir.textContent = 'Abrir em Despesas';
+        btnAbrir.dataset.despesa = JSON.stringify(despesa);
+        btnAbrir.addEventListener('click', () => {
+            try { aiChatAbrirDespesas(JSON.parse(btnAbrir.dataset.despesa)); } catch (_) {}
+        });
+
+        const btnDispensar = document.createElement('button');
+        btnDispensar.className = 'ai-action-btn';
+        btnDispensar.textContent = 'Dispensar';
+        btnDispensar.addEventListener('click', () => { area.innerHTML = ''; });
+
+        btns.appendChild(btnAbrir);
+        btns.appendChild(btnDispensar);
+        banner.appendChild(btns);
+        area.appendChild(banner);
     }
 
     function mostrarConfirmacao(data) {
@@ -746,11 +767,9 @@
 
     async function executarOperacao(payload) {
         try {
-            const res = await fetch(`${API_BASE}/api/ai/executar`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
+            const res = window.apiFetch
+                ? await window.apiFetch('/api/ai/executar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                : await fetch(`${API_BASE}/api/ai/executar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             const result = await res.json();
             if (result.sucesso) {
                 const n = result.afetados || 1;
@@ -796,7 +815,9 @@
                     const blob = new Blob(audioChunks, { type: 'audio/webm' });
                     const fd = new FormData();
                     fd.append('arquivo', blob, 'voz.webm');
-                    const res  = await fetch(`${API_BASE}/api/ai/transcrever`, { method: 'POST', body: fd });
+                    const res  = window.apiFetch
+                        ? await window.apiFetch('/api/ai/transcrever', { method: 'POST', body: fd })
+                        : await fetch(`${API_BASE}/api/ai/transcrever`, { method: 'POST', body: fd });
                     const data = await res.json();
                     const texto = (data.texto || '').trim();
                     if (texto) {

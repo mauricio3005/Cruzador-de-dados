@@ -3,7 +3,7 @@
  * Histórico de Despesas (app.js)
  */
 
-const API_BASE = `http://${location.hostname}:8000`;
+const API_BASE = window.API_BASE || `http://${location.hostname}:8000`;
 const PAGE_SIZE = 50;
 
 // --- SUPABASE ---

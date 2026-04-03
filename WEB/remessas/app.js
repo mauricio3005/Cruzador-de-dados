@@ -6,7 +6,7 @@
  * Kathleen, Diego (e qualquer outro que receber remessa) = contas controladas.
  */
 
-const API_BASE = `http://${location.hostname}:8000`;
+const API_BASE = window.API_BASE || `http://${location.hostname}:8000`;
 
 // Nome da conta principal — valores enviados DAQUI, não são rastreados como saldo
 const CONTA_PRINCIPAL = 'Maurício';
@@ -237,11 +237,11 @@ async function salvarRemessa() {
     const descricao = document.getElementById('rDescricao').value.trim() || null;
 
     if (!destino || !valor || !data) {
-        showToast('Preencha os campos obrigatórios: Conta, Valor e Data.', 'error');
+        toast.error('Preencha os campos obrigatórios: Conta, Valor e Data.');
         return;
     }
     if (destino === CONTA_PRINCIPAL) {
-        showToast(`"${CONTA_PRINCIPAL}" é a conta principal — não pode ser o destino.`, 'error');
+        toast.error(`"${CONTA_PRINCIPAL}" é a conta principal — não pode ser o destino.`);
         return;
     }
 
@@ -270,9 +270,9 @@ async function salvarRemessa() {
     btn.disabled = false;
     btn.textContent = 'Salvar';
 
-    if (error) { showToast('Erro ao salvar: ' + error.message, 'error'); return; }
+    if (error) { toast.error('Erro ao salvar: ' + error.message); return; }
 
-    showToast(id ? 'Remessa atualizada.' : 'Remessa registrada.', 'success');
+    toast.success(id ? 'Remessa atualizada.' : 'Remessa registrada.');
     document.getElementById('modalRemessa').style.display = 'none';
     await carregarRemessas(filtrosAtivos());
     await renderSaldos();
@@ -281,8 +281,8 @@ async function salvarRemessa() {
 async function excluirRemessa(id) {
     if (!confirm('Excluir esta remessa?')) return;
     const { error } = await dbClient.from('remessas_caixa').delete().eq('id', id);
-    if (error) { showToast('Erro ao excluir: ' + error.message, 'error'); return; }
-    showToast('Remessa excluída.', 'success');
+    if (error) { toast.error('Erro ao excluir: ' + error.message); return; }
+    toast.success('Remessa excluída.');
     await carregarRemessas(filtrosAtivos());
     await renderSaldos();
 }
@@ -360,14 +360,14 @@ async function uploadComprovante(file) {
         const url  = `${base}/storage/v1/object/public/comprovantes/${nome}`;
         return { url, nome };
     } catch (e) {
-        showToast('Erro no upload do comprovante: ' + e.message, 'error');
+        toast.error('Erro no upload do comprovante: ' + e.message);
         return null;
     }
 }
 
 // --- EXPORT CSV ---
 function exportarCSV() {
-    if (!remessas.length) { showToast('Nenhuma remessa para exportar.', 'error'); return; }
+    if (!remessas.length) { toast.error('Nenhuma remessa para exportar.'); return; }
     const header = ['data', 'conta', 'valor', 'obra', 'descricao'];
     const linhas = remessas.map(r =>
         [r.data, r.banco_destino, r.valor, r.obra || '', r.descricao || '']

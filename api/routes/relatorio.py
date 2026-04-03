@@ -6,22 +6,17 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from api.config import OPENAI_MINI_MODEL
+from api.dependencies import get_current_user
+from api.logger import get_logger
+from api.supabase_client import get_supabase
+
 router = APIRouter()
-
-
-def _get_supabase():
-    from dotenv import load_dotenv
-    from supabase import create_client
-    load_dotenv()
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
-    if not url or not key:
-        raise HTTPException(status_code=500, detail="Supabase não configurado")
-    return create_client(url, key)
+logger = get_logger(__name__)
 
 
 def _importar_relatorio():
@@ -39,9 +34,10 @@ def gerar_pdf(
     data_ini: str = Query(None, description="Data inicial YYYY-MM-DD (só administrativo)"),
     data_fim: str = Query(None, description="Data final YYYY-MM-DD (só administrativo)"),
     por_etapa: bool = Query(True, description="Detalhamento por etapa (detalhado/administrativo)"),
+    _user=Depends(get_current_user),
 ):
     """Gera relatório PDF da obra e retorna como download."""
-    sb  = _get_supabase()
+    sb  = get_supabase()
     rel = _importar_relatorio()
 
     try:
@@ -159,7 +155,8 @@ def gerar_pdf(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("gerar_pdf error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -181,20 +178,18 @@ def _parse_json_ia(text: str):
 
 
 @router.post("/analisar")
-def analisar_relatorio(payload: AnalisarPayload):
+def analisar_relatorio(payload: AnalisarPayload, _user=Depends(get_current_user)):
     """
     Analisa dados financeiros de uma ou mais obras com GPT e retorna insights.
     Modo comparativo quando len(obras) > 1.
     """
-    from dotenv import load_dotenv
     from openai import OpenAI
 
-    load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY não configurada")
 
-    sb = _get_supabase()
+    sb = get_supabase()
     obras_list = payload.obras
     data_ini   = payload.data_ini
     data_fim   = payload.data_fim
@@ -336,7 +331,7 @@ Limite: máximo 3 alertas, 3 recomendações, 3 destaques. Seja conciso e espec�
 
         client = OpenAI(api_key=api_key)
         resp = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model=OPENAI_MINI_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_msg},
@@ -357,4 +352,5 @@ Limite: máximo 3 alertas, 3 recomendações, 3 destaques. Seja conciso e espec�
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("analisar_relatorio error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")

@@ -8,10 +8,15 @@ import unicodedata
 from functools import lru_cache
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
+from api.config import OPENAI_CHAT_MODEL, OPENAI_MINI_MODEL, OPENAI_WHISPER_MODEL
+from api.dependencies import get_current_user
 from api.supabase_client import get_supabase as _get_supabase
 from api.logger import get_logger
+
+MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # 20 MB
+ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -119,12 +124,13 @@ _SYSTEM_EXTRACAO = (
 # ---------------------------------------------------------------------------
 
 @router.get("/referencias")
-def referencias():
+def referencias(_user=Depends(get_current_user)):
     """Retorna obras, etapas, fornecedores e categorias do banco de dados."""
     try:
         return _get_referencias()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("referencias: erro — %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -135,14 +141,19 @@ def referencias():
 async def extrair_nota(
     file: UploadFile = File(...),
     fornecedores: str = Form("[]"),
-    obras: str       = Form("[]"),
-    etapas: str      = Form("[]"),
-    categorias: str  = Form("[]"),
+    obras: str        = Form("[]"),
+    etapas: str       = Form("[]"),
+    categorias: str   = Form("[]"),
+    _user=Depends(get_current_user),
 ):
     """Extrai dados de uma nota fiscal ou comprovante usando GPT-4 Vision."""
     logger.info("extrair_nota: arquivo='%s' tipo='%s'", file.filename, file.content_type)
-    file_bytes = await file.read()
+    file_bytes = await file.read(MAX_UPLOAD_SIZE + 1)
+    if len(file_bytes) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="Arquivo maior que 20 MB")
     media_type = file.content_type or "image/jpeg"
+    if media_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=415, detail=f"Tipo de arquivo não permitido: {media_type}")
 
     # Resolve referências: usa as enviadas pelo frontend; se vazias, busca no banco
     forn_list = json.loads(fornecedores) if fornecedores else []
@@ -207,13 +218,15 @@ async def extrair_nota(
                 ]},
             ]
 
-        resp = client.chat.completions.create(model="gpt-5.4", max_completion_tokens=1024, messages=messages)
+        resp = client.chat.completions.create(model=OPENAI_CHAT_MODEL, max_completion_tokens=1024, messages=messages)
         result = _parse_json_response(resp.choices[0].message.content)
         logger.info("extrair_nota: concluído tokens=%s", resp.usage.total_tokens if resp.usage else "?")
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("extrair_nota: erro — %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +234,7 @@ async def extrair_nota(
 # ---------------------------------------------------------------------------
 
 @router.post("/extrair-texto")
-async def extrair_texto(payload: dict):
+async def extrair_texto(payload: dict, _user=Depends(get_current_user)):
     """Extrai uma ou mais despesas a partir de texto livre, com matching de fornecedor e categoria."""
     texto = (payload.get("texto") or "").strip()
     if not texto:
@@ -279,7 +292,7 @@ async def extrair_texto(payload: dict):
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-5.4",
+            model=OPENAI_CHAT_MODEL,
             max_completion_tokens=1024,
             messages=[
                 {"role": "system", "content": _SYSTEM_EXTRACAO},
@@ -291,7 +304,8 @@ async def extrair_texto(payload: dict):
             resultado = [resultado]
         return resultado
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("extrair_texto: erro — %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +320,7 @@ async def extrair_texto_misto(
     categorias: str   = Form("[]"),
     obras: str        = Form("[]"),
     etapas: str       = Form("[]"),
+    _user=Depends(get_current_user),
 ):
     """Extrai despesas combinando texto livre + imagens/PDFs de NFs em uma única chamada."""
     forn_list  = json.loads(fornecedores) if fornecedores else []
@@ -382,7 +397,7 @@ async def extrair_texto_misto(
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-5.4",
+            model=OPENAI_CHAT_MODEL,
             max_completion_tokens=2048,
             messages=[
                 {"role": "system", "content": _SYSTEM_EXTRACAO},
@@ -394,7 +409,8 @@ async def extrair_texto_misto(
             resultado = [resultado]
         return resultado
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("extrair_texto_misto: erro — %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +418,7 @@ async def extrair_texto_misto(
 # ---------------------------------------------------------------------------
 
 @router.post("/transcrever")
-async def transcrever_audio(file: UploadFile = File(...)):
+async def transcrever_audio(file: UploadFile = File(...), _user=Depends(get_current_user)):
     """Transcreve áudio usando Whisper."""
     file_bytes = await file.read()
     filename   = file.filename or "audio.webm"
@@ -411,7 +427,7 @@ async def transcrever_audio(file: UploadFile = File(...)):
     client = _get_openai()
     try:
         transcript = client.audio.transcriptions.create(
-            model="whisper-1",
+            model=OPENAI_WHISPER_MODEL,
             file=(filename, file_bytes, media_type),
             language="pt",
         )
@@ -419,7 +435,7 @@ async def transcrever_audio(file: UploadFile = File(...)):
         return {"texto": transcript.text}
     except Exception as e:
         logger.error("transcrever: erro — %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +443,7 @@ async def transcrever_audio(file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 
 @router.post("/chat-despesas")
-async def chat_despesas(payload: dict):
+async def chat_despesas(payload: dict, _user=Depends(get_current_user)):
     """Chat contextual para revisar e corrigir despesas extraídas por IA."""
     messages_hist = payload.get("messages", [])
     despesas      = payload.get("despesas", [])
@@ -460,13 +476,14 @@ async def chat_despesas(payload: dict):
     client = _get_openai()
     try:
         resp = client.chat.completions.create(
-            model="gpt-5.4",
+            model=OPENAI_CHAT_MODEL,
             max_completion_tokens=2000,
             messages=full_messages,
         )
         return _parse_json_response(resp.choices[0].message.content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("chat_despesas: erro — %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +491,7 @@ async def chat_despesas(payload: dict):
 # ---------------------------------------------------------------------------
 
 @router.post("/extrair-pix")
-async def extrair_pix(file: UploadFile = File(...)):
+async def extrair_pix(file: UploadFile = File(...), _user=Depends(get_current_user)):
     """Extrai nome do beneficiário e valor de um comprovante PIX."""
     file_bytes = await file.read()
     media_type = file.content_type or "image/jpeg"
@@ -506,10 +523,11 @@ async def extrair_pix(file: UploadFile = File(...)):
                 ]},
             ]
 
-        resp = client.chat.completions.create(model="gpt-5.4", max_completion_tokens=100, messages=messages)
+        resp = client.chat.completions.create(model=OPENAI_CHAT_MODEL, max_completion_tokens=100, messages=messages)
         return _parse_json_response(resp.choices[0].message.content)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("extrair_pix: erro — %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -521,14 +539,15 @@ async def extrair_pix(file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 
 @router.post("/embeddings/sync")
-async def embeddings_sync():
+async def embeddings_sync(_user=Depends(get_current_user)):
     """Gera embeddings para todas as despesas que ainda não possuem um."""
     try:
         from api.embeddings import sync_embeddings
         total = await asyncio.to_thread(sync_embeddings)
         return {"ok": True, "embedados": total}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("embeddings_sync: erro — %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -1440,7 +1459,7 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
 # ---------------------------------------------------------------------------
 
 @router.post("/chat")
-async def chat_assistente(request: Request):
+async def chat_assistente(request: Request, _user=Depends(get_current_user)):
     """
     Assistente de IA com tool calling.
     Aceita JSON (application/json) ou multipart/form-data (com arquivos opcionais).
@@ -1480,7 +1499,8 @@ async def chat_assistente(request: Request):
     try:
         db = _get_supabase()
     except Exception as err:
-        raise HTTPException(status_code=500, detail=f"Erro no banco: {type(err).__name__}: {str(err)}")
+        logger.error("chat: erro ao conectar ao banco — %s", err, exc_info=True)
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
     _SYSTEM = (
         "Você é a IA de bordo de um sistema de gestão de obras. Você tem acesso a ferramentas de leitura e planejamento de operações no banco de dados. Seu comportamento segue regras rígidas descritas abaixo.\n\n"
@@ -1571,7 +1591,7 @@ async def chat_assistente(request: Request):
         for _ in range(5):
             resp = await asyncio.to_thread(
                 client.chat.completions.create,
-                model="gpt-5.4-mini",
+                model=OPENAI_CHAT_MODEL,
                 max_completion_tokens=2000,
                 tools=_TOOLS,
                 tool_choice="auto",
@@ -1634,7 +1654,7 @@ async def chat_assistente(request: Request):
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(result, ensure_ascii=False),
+                        "content": result if isinstance(result, str) else json.dumps(result, ensure_ascii=False),
                     })
             else:
                 # Resposta final
@@ -1651,7 +1671,7 @@ async def chat_assistente(request: Request):
         return {"resposta": "Não foi possível completar a consulta."}
     except Exception as e:
         logger.error("chat: erro — %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -1670,7 +1690,7 @@ _PK_TEXTO = {"fornecedores", "obras", "etapas", "categorias_despesa", "formas_pa
 
 
 @router.post("/executar")
-async def executar_operacao(body: dict):
+async def executar_operacao(body: dict, _user=Depends(get_current_user)):
     """Executa operação de escrita no banco após confirmação do usuário no frontend."""
     tabela   = body.get("tabela")
     operacao = body.get("operacao")
@@ -1716,4 +1736,4 @@ async def executar_operacao(body: dict):
         raise
     except Exception as e:
         logger.error("[AI-EXEC] erro — %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Erro interno. Consulte os logs.")

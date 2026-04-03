@@ -17,7 +17,7 @@ let obras        = [];
 let etapas       = [];
 let regrasObra   = {};   // { servico: { tipo, valor } }
 let folhaAtual   = null; // { id, obra, quinzena, status }
-let linhasLocais = [];   // [{ _localId, id?, nome, pix, nome_conta, servico, etapa, diarias, valor, _deleted }]
+let linhasLocais = [];   // [{ _localId, id?, nome, pix, nome_conta, banco, forma_pagamento, servico, etapa, diarias, valor, _deleted }]
 let _localIdSeq  = 0;
 
 const STATUS_LABEL = { rascunho: 'Rascunho', enviada: 'Enviada', fechada: 'Fechada' };
@@ -137,6 +137,8 @@ async function carregarFuncionarios(folhaId) {
                 nome:      f.nome || '',
                 pix:       f.pix || '',
                 nome_conta: f.nome_conta || '',
+                banco:     f.banco || '',
+                forma_pagamento: f.forma_pagamento || '',
                 servico:   f.servico || '',
                 etapa:     f.etapa || '',
                 diarias:   parseFloat(f.diarias || 0),
@@ -200,7 +202,7 @@ function renderizarTabela() {
     const servicos = Object.keys(regrasObra);
 
     if (ativas.length === 0) {
-        tbody.innerHTML = `<tr id="trVazio"><td colspan="8" style="text-align:center;padding:var(--sp-8);color:var(--on-surface-muted);font-size:0.875rem;">Nenhum funcionário cadastrado nesta folha.</td></tr>`;
+        tbody.innerHTML = `<tr id="trVazio"><td colspan="10" style="text-align:center;padding:var(--sp-8);color:var(--on-surface-muted);font-size:0.875rem;">Nenhum funcionário cadastrado nesta folha.</td></tr>`;
         atualizarTotal();
         return;
     }
@@ -222,6 +224,13 @@ function renderizarTabela() {
             <td><input class="tbl-input" type="text" value="${esc(l.nome)}" data-field="nome" ${disabled} placeholder="Nome completo"></td>
             <td><input class="tbl-input" type="text" value="${esc(l.pix)}" data-field="pix" ${disabled} placeholder="Chave PIX"></td>
             <td><input class="tbl-input" type="text" value="${esc(l.nome_conta)}" data-field="nome_conta" ${disabled} placeholder="Titular da conta"></td>
+            <td><input class="tbl-input" type="text" value="${esc(l.banco)}" data-field="banco" ${disabled} placeholder="Ex: Nubank, Caixa…" style="min-width:90px;"></td>
+            <td>
+                <select class="tbl-select" data-field="forma_pagamento" ${disabled}>
+                    <option value="">—</option>
+                    ${['PIX','TED','DOC','Depósito','Dinheiro'].map(f => `<option value="${f}" ${l.forma_pagamento === f ? 'selected' : ''}>${f}</option>`).join('')}
+                </select>
+            </td>
             <td>
                 <select class="tbl-select" data-field="servico" ${disabled}>
                     <option value="">— Serviço —</option>
@@ -409,7 +418,7 @@ function setupEventListeners() {
         linhasLocais.push({
             _localId:  ++_localIdSeq,
             id:        null,
-            nome:      '', pix: '', nome_conta: '',
+            nome:      '', pix: '', nome_conta: '', banco: '', forma_pagamento: '',
             servico:   '', etapa: '', diarias: 0, valor: 0, valor_fixo: null,
             _deleted:  false,
         });
@@ -460,14 +469,16 @@ async function salvarFolha() {
         for (const l of linhasLocais) {
             const valor = calcularValorFinal(l);
             const payload = {
-                nome:       l.nome       || null,
-                pix:        l.pix        || null,
-                nome_conta: l.nome_conta || null,
-                servico:    l.servico    || null,
-                etapa:      l.etapa      || null,
-                diarias:    l.diarias    || 0,
-                valor:      valor,
-                valor_fixo: l.valor_fixo != null ? l.valor_fixo : null,
+                nome:            l.nome            || null,
+                pix:             l.pix             || null,
+                nome_conta:      l.nome_conta      || null,
+                banco:           l.banco           || null,
+                forma_pagamento: l.forma_pagamento || null,
+                servico:         l.servico         || null,
+                etapa:           l.etapa           || null,
+                diarias:         l.diarias         || 0,
+                valor:           valor,
+                valor_fixo:      l.valor_fixo != null ? l.valor_fixo : null,
             };
 
             if (l._deleted && l.id) {
@@ -502,12 +513,14 @@ function gerarMensagem() {
         const pix  = l.pix  || '—';
         const nome = l.nome || '—';
         const conta = l.nome_conta || '—';
-        const val   = calcularValor(l.servico, l.diarias);
-        if (!grupos[pix]) grupos[pix] = { nome, conta, valor: 0 };
+        const banco = l.banco || '';
+        const forma = l.forma_pagamento || '';
+        const val   = calcularValorFinal(l);
+        if (!grupos[pix]) grupos[pix] = { nome, conta, banco, forma, valor: 0 };
         grupos[pix].valor += val;
     });
 
-    const total = ativas.reduce((s, l) => s + calcularValor(l.servico, l.diarias), 0);
+    const total = ativas.reduce((s, l) => s + calcularValorFinal(l), 0);
     const linhas = [
         '📋 FOLHA DE PAGAMENTO',
         `Obra: ${folhaAtual.obra}`,
@@ -516,7 +529,9 @@ function gerarMensagem() {
     ];
     Object.entries(grupos).forEach(([pix, d], i) => {
         linhas.push(`${i + 1}. ${d.nome}`);
+        if (d.forma) linhas.push(`   Forma: ${d.forma}`);
         linhas.push(`   PIX: ${pix}`);
+        if (d.banco) linhas.push(`   Banco: ${d.banco}`);
         linhas.push(`   Conta: ${d.conta}`);
         linhas.push(`   Valor: ${formatCurrency(d.valor)}`);
         linhas.push('');
@@ -604,7 +619,7 @@ async function criarNovaFolha() {
         // Copia funcionários da última folha se solicitado
         if (copiar && novaFolha?.id) {
             const { data: funcs } = await dbClient
-                .from('folha_funcionarios').select('nome, pix, nome_conta, servico, etapa, diarias, valor, valor_fixo')
+                .from('folha_funcionarios').select('nome, pix, nome_conta, banco, forma_pagamento, servico, etapa, diarias, valor, valor_fixo')
                 .eq('folha_id', _ultimaFolhaId);
 
             if (funcs?.length) {
@@ -632,7 +647,7 @@ async function criarNovaFolha() {
 // ── Modal: Fechar Folha ───────────────────────────────────────────────────────
 function abrirModalFechar() {
     if (!folhaAtual) return;
-    const ativas    = linhasLocais.filter(l => !l._deleted && calcularValor(l.servico, l.diarias) > 0);
+    const ativas    = linhasLocais.filter(l => !l._deleted && calcularValorFinal(l) > 0);
 
     // Valida que todos os funcionários ativos têm etapa
     const semEtapa = ativas.filter(l => !l.etapa);
@@ -645,7 +660,7 @@ function abrirModalFechar() {
     const porEtapa  = {};
     ativas.forEach(l => {
         const e = l.etapa;
-        porEtapa[e] = (porEtapa[e] || 0) + calcularValor(l.servico, l.diarias);
+        porEtapa[e] = (porEtapa[e] || 0) + calcularValorFinal(l);
     });
     const total = Object.values(porEtapa).reduce((s, v) => s + v, 0);
 
@@ -692,17 +707,16 @@ async function confirmarFecharFolha() {
             compTipos.push(file.type);
         }
 
-        const res = await fetch(`http://${location.hostname}:8000/api/folha/fechar`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-                folha_id:           folhaAtual.id,
-                obra:               folhaAtual.obra,
-                quinzena:           folhaAtual.quinzena,
-                comprovantes:       comprovantes,
-                comprovantes_tipos: compTipos,
-            }),
+        const _folhaPayload = JSON.stringify({
+            folha_id:           folhaAtual.id,
+            obra:               folhaAtual.obra,
+            quinzena:           folhaAtual.quinzena,
+            comprovantes:       comprovantes,
+            comprovantes_tipos: compTipos,
         });
+        const res = await (window.apiFetch
+            ? window.apiFetch('/api/folha/fechar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: _folhaPayload })
+            : fetch(`http://${location.hostname}:8000/api/folha/fechar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: _folhaPayload }));
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({ detail: 'Erro desconhecido' }));

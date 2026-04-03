@@ -1,0 +1,21 @@
+-- migrations/07_consolidar_despesas.sql
+-- Etapa A: Identificar tabelas de despesas legadas.
+-- INSTRUÇÃO: Execute a query abaixo manualmente para verificar quais tabelas existem
+-- antes de prosseguir com o restante deste arquivo.
+--
+-- SELECT table_name FROM information_schema.tables
+-- WHERE table_schema = 'public' AND table_name LIKE '%despesa%'
+-- ORDER BY table_name;
+--
+-- Se existir uma tabela legada (ex: 'despesas' sem o prefixo 'c_'),
+-- execute o bloco abaixo SOMENTE após confirmar que c_despesas contém
+-- todos os dados relevantes:
+--
+-- ALTER TABLE despesas RENAME TO despesas_legado_backup;
+--
+-- Aguarde 30 dias sem incidentes e então execute migrations/08_drop_despesas_legado.sql.
+--
+-- NOTA: Este arquivo é informativo. Não executar cegamente.
+-- Verifique os counts antes de renomear:
+--   SELECT COUNT(*) FROM despesas;       -- legado
+--   SELECT COUNT(*) FROM c_despesas;     -- atual
