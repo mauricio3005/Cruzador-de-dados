@@ -39,23 +39,9 @@
     <div class="content-shell">
 
         <header class="topbar">
-            <div class="topbar-search">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <input type="text" id="buscaTexto" placeholder="Buscar por fornecedor ou descrição...">
-            </div>
-            <div class="topbar-actions">
-                <button class="btn btn-outline" id="btnExportarCSV" style="font-size:0.8125rem;">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    Exportar CSV
-                </button>
-                <div class="topbar-avatar" title="Usuário">
+            <span class="status-dot online" id="connectionStatusTop" style="color:var(--on-surface-muted);font-size:0.72rem;font-weight:500;">Sistema Sincronizado</span>
+            <div style="position:relative;">
+                <div class="topbar-avatar" id="userAvatarBtn" title="Conta" style="cursor:pointer;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                         <circle cx="12" cy="7" r="4"></circle>
@@ -63,6 +49,7 @@
                 </div>
             </div>
         </header>
+        <div style="display:none"><input type="text" id="buscaTexto"><button id="btnExportarCSV"></button></div>
 
         <main class="main-content">
 

@@ -370,7 +370,8 @@ async function salvarEdicao() {
     try {
         // Upsert fornecedor se novo
         if (isNovo && fornecedor) {
-            await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            const { error: fErr } = await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            if (fErr) throw fErr;
             if (!fornecedores.includes(fornecedor)) {
                 fornecedores.push(fornecedor);
                 popularFornecedorModal();

@@ -14,8 +14,7 @@ const NAV_ITEMS = [
     { icon: "📝", label: "Contratos",        path: "/contratos/",        done: true  },
     { icon: "🔁", label: "Recorrentes",      path: "/recorrentes/",      done: true  },
     { icon: "🏦", label: "Remessas",         path: "/remessas/",         done: true  },
-    { icon: "📈", label: "Relatórios",       path: "/?tab=relatorio",    done: true  },
-    { icon: "⚙️", label: "Configurações",    path: "/configuracoes/",    done: true  },
+{ icon: "⚙️", label: "Configurações",    path: "/configuracoes/",    done: true  },
 ];
 
 // Detecta o base path (ex: "/WEB" se servido de diretório pai)
@@ -50,6 +49,58 @@ async function initAuth() {
         return false;
     }
     return true;
+}
+
+function iniciarUserDropdown(sb, appBase) {
+    const avatarBtn = document.getElementById('userAvatarBtn');
+    if (!avatarBtn) return;
+
+    // Injeta o dropdown se ainda não existir no HTML
+    if (!document.getElementById('userDropdown')) {
+        const wrapper = avatarBtn.parentElement;
+        wrapper.style.position = 'relative';
+        const dd = document.createElement('div');
+        dd.id = 'userDropdown';
+        dd.style.cssText = 'display:none;position:fixed;top:52px;right:16px;z-index:999;background:var(--surface-card);border-radius:var(--r-xl);box-shadow:var(--shadow-lg);min-width:210px;padding:var(--sp-2) 0;overflow:hidden;';
+        dd.innerHTML = `
+            <div style="padding:var(--sp-4) var(--sp-5) var(--sp-3);border-bottom:1px solid var(--outline-ghost);">
+                <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:2px;">Conectado como</div>
+                <div id="userEmail" style="font-size:0.875rem;font-weight:600;color:var(--on-surface);word-break:break-all;">—</div>
+            </div>
+            <button id="logoutBtn" style="width:100%;text-align:left;padding:var(--sp-3) var(--sp-5);background:none;border:none;cursor:pointer;font-size:0.875rem;color:var(--error);font-weight:500;display:flex;align-items:center;gap:var(--sp-3);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Sair
+            </button>`;
+        wrapper.appendChild(dd);
+    }
+
+    const dropdown = document.getElementById('userDropdown');
+    const emailEl  = document.getElementById('userEmail');
+
+    // Preencher e-mail
+    sb.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user?.email && emailEl) emailEl.textContent = session.user.email;
+    });
+
+    avatarBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!avatarBtn.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.style.display = 'none';
+        }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await sb.auth.signOut();
+        window.location.replace(appBase + '/auth/');
+    });
 }
 
 function renderNav() {
@@ -96,6 +147,7 @@ function renderNav() {
 document.addEventListener("DOMContentLoaded", async () => {
     await initAuth();
     renderNav();
+    if (window._supabaseClient) iniciarUserDropdown(window._supabaseClient, getAppBase());
 
     // Filtro global com tecla Enter
     document.addEventListener('keydown', e => {

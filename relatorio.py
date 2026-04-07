@@ -1,5 +1,7 @@
 import io
 import os
+import tempfile
+import urllib.request
 from datetime import datetime
 
 import pandas as pd
@@ -174,10 +176,12 @@ def _linha_separadora(largura: float) -> Table:
 
 
 def _timbrado_simples(obra_nome: str, largura: float, obra_info: dict = None) -> Table:
-    info      = obra_info or {}
-    descricao = info.get('descricao') or obra_nome
-    contrato  = info.get('contrato')  or '—'
-    art       = info.get('art')       or '—'
+    info          = obra_info or {}
+    descricao     = info.get('descricao')    or obra_nome
+    contrato      = info.get('contrato')     or '—'
+    art           = info.get('art')          or '—'
+    empresa_nome  = info.get('empresa_nome') or ''
+    empresa_logo  = info.get('empresa_logo') or ''
 
     st_label = ParagraphStyle('TimLabel', fontSize=7.5, textColor=C_ON_VAR,     fontName='Helvetica')
     st_valor = ParagraphStyle('TimValor', fontSize=9,   textColor=C_ON_SURFACE, fontName='Helvetica-Bold')
@@ -187,19 +191,32 @@ def _timbrado_simples(obra_nome: str, largura: float, obra_info: dict = None) ->
     col_info = largura * 0.60
     col_data = largura * 0.20
 
-    if os.path.exists(LOGO_PATH):
-        logo_cel = Image(LOGO_PATH, width=col_logo * 0.85, height=2.2 * cm, kind='proportional')
-    else:
-        logo_cel = Paragraph("MM Reformas<br/>&amp; Serviços", st_valor)
+    logo_cel = None
 
-    info_interna = Table(
-        [
-            [Paragraph("OBRA:",      st_label), Paragraph(descricao, st_valor)],
-            [Paragraph("CONTRATO:",  st_label), Paragraph(contrato,  st_valor)],
-            [Paragraph("ART:",       st_label), Paragraph(art,       st_valor)],
-        ],
-        colWidths=[col_info * 0.22, col_info * 0.78],
-    )
+    # 1) Logo da empresa no banco (URL do Supabase Storage)
+    if empresa_logo:
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+                urllib.request.urlretrieve(empresa_logo, tmp.name)
+                logo_cel = Image(tmp.name, width=col_logo * 0.85, height=2.2 * cm, kind='proportional')
+        except Exception:
+            logo_cel = None
+
+    # 2) Fallback: logo local
+    if logo_cel is None and os.path.exists(LOGO_PATH):
+        logo_cel = Image(LOGO_PATH, width=col_logo * 0.85, height=2.2 * cm, kind='proportional')
+
+    # 3) Fallback: nome da empresa em texto
+    if logo_cel is None:
+        logo_cel = Paragraph(empresa_nome or '—', st_valor)
+
+    rows = [
+        [Paragraph("OBRA:",      st_label), Paragraph(descricao,    st_valor)],
+        [Paragraph("CONTRATO:",  st_label), Paragraph(contrato,     st_valor)],
+        [Paragraph("ART:",       st_label), Paragraph(art,          st_valor)],
+    ]
+
+    info_interna = Table(rows, colWidths=[col_info * 0.22, col_info * 0.78])
     info_interna.setStyle(TableStyle([
         ('TOPPADDING',    (0, 0), (-1, -1), 2),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 2),

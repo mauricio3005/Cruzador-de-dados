@@ -23,7 +23,15 @@ let todosRegistros = [];
 let paginaAtual    = 1;
 const PAGE_SIZE    = 50;
 
-let editandoId = null;
+let editandoId   = null;
+let confirmarId  = null;
+
+function statusBadge(r) {
+    if (r.recebido) {
+        return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.7rem;font-weight:700;color:var(--success);background:rgba(46,125,50,0.1);">Confirmado</span>`;
+    }
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.7rem;font-weight:700;color:var(--warning);background:rgba(180,83,9,0.1);">Pendente</span>`;
+}
 
 // --- HELPERS ---
 function esc(s) {
@@ -71,6 +79,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('modalRecebimento').addEventListener('click', e => {
         if (e.target === e.currentTarget) fecharModal();
     });
+    document.getElementById('modalConfirmar').addEventListener('click', e => {
+        if (e.target === e.currentTarget) fecharModalConfirmar();
+    });
+    document.getElementById('btnConfirmarRecebimento').addEventListener('click', confirmarRecebimento);
 
     document.getElementById('rUsarParcelas').addEventListener('change', e => {
         document.getElementById('parcelasConfig').style.display = e.target.checked ? 'grid' : 'none';
@@ -110,14 +122,18 @@ async function carregarReferencias() {
         } catch (e) { return []; }
     };
 
-    [obras, formas] = await Promise.all([
+    let bancos;
+    [obras, formas, bancos] = await Promise.all([
         safe(dbClient.from('obras').select('nome').order('nome')),
         safe(dbClient.from('formas_pagamento').select('nome').order('nome')),
+        safe(dbClient.from('bancos').select('nome').order('nome')),
     ]);
 
-    popularSelect('filtroObra', obras, 'Todas as obras');
+    popularSelect('filtroObra',  obras,  'Todas as obras');
+    popularSelect('filtroBanco', bancos, 'Todos');
     popularSelect('rObra',  obras,  '—');
     popularSelect('rForma', formas, '—');
+    popularSelect('rBanco', bancos, '— Sem banco —');
 
     setStatus('online', 'Sistema Sincronizado');
 }
@@ -147,7 +163,8 @@ async function carregarRecebimentos() {
         const dataFim    = document.getElementById('filtroDataFim').value;
         const obra       = document.getElementById('filtroObra').value;
         const fornecedor = document.getElementById('filtroFornecedor').value.trim();
-        const banco      = document.getElementById('filtroBanco').value.trim();
+        const banco      = document.getElementById('filtroBanco').value;
+        const status     = document.getElementById('filtroStatus').value;
 
         let q = dbClient
             .from('recebimentos')
@@ -155,11 +172,13 @@ async function carregarRecebimentos() {
             .order('data', { ascending: false })
             .order('id',   { ascending: false });
 
-        if (dataIni)    q = q.gte('data', dataIni);
-        if (dataFim)    q = q.lte('data', dataFim);
-        if (obra)       q = q.eq('obra', obra);
-        if (fornecedor) q = q.ilike('fornecedor', `%${fornecedor}%`);
-        if (banco)      q = q.ilike('banco',      `%${banco}%`);
+        if (dataIni)              q = q.gte('data', dataIni);
+        if (dataFim)              q = q.lte('data', dataFim);
+        if (obra)                 q = q.eq('obra', obra);
+        if (fornecedor)           q = q.ilike('fornecedor', `%${fornecedor}%`);
+        if (banco)                q = q.eq('banco', banco);
+        if (status === 'pendente')   q = q.eq('recebido', false);
+        if (status === 'confirmado') q = q.eq('recebido', true);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -196,7 +215,7 @@ function renderizarTabela() {
     const paginacaoWrap = document.getElementById('paginacaoWrap');
 
     if (!pagina.length) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum recebimento encontrado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum recebimento encontrado.</td></tr>`;
         paginacaoWrap.style.display = 'none';
         return;
     }
@@ -216,6 +235,10 @@ function renderizarTabela() {
                 </svg></a>`
             : '—';
 
+        const confirmarCol = r.recebido
+            ? `<span style="font-size:0.72rem;color:var(--on-surface-muted);">${formatarData(r.data_recebimento)}</span>`
+            : `<button class="btn btn-outline" onclick="abrirModalConfirmar(${r.id})" style="font-size:0.72rem;padding:3px 10px;color:var(--success);border-color:var(--success);" title="Confirmar recebimento">Confirmar</button>`;
+
         return `<tr>
             <td style="white-space:nowrap;">${formatarData(r.data)}</td>
             <td>${esc(r.obra || '—')}</td>
@@ -227,10 +250,12 @@ function renderizarTabela() {
             <td>${esc(r.banco || '—')}</td>
             <td class="text-right" style="font-weight:600;">R$ ${valor}</td>
             <td style="text-align:center;">${nfIcon}</td>
+            <td style="text-align:center;">${statusBadge(r)}</td>
             <td style="text-align:center;white-space:nowrap;">
-                <button class="btn btn-outline" onclick="abrirModal(${r.id})" style="font-size:0.72rem;padding:3px 8px;" title="Editar">
+                ${confirmarCol}
+                <button class="btn btn-outline" onclick="abrirModal(${r.id})" style="font-size:0.72rem;padding:3px 8px;margin-left:4px;" title="Editar">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"></path>
                         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                     </svg>
                 </button>
@@ -257,28 +282,19 @@ function renderizarTabela() {
 
 // --- KPIs ---
 function atualizarKPIs() {
-    // Total geral
-    const totalGeral = todosRegistros.reduce((s, r) => s + Number(r.valor || 0), 0);
+    const confirmado  = todosRegistros.filter(r => r.recebido).reduce((s, r) => s + Number(r.valor || 0), 0);
+    const aConfirmar  = todosRegistros.filter(r => !r.recebido).reduce((s, r) => s + Number(r.valor || 0), 0);
 
-    // Total por obra
     const porObra = {};
     for (const r of todosRegistros) {
         const o = r.obra || '(sem obra)';
         porObra[o] = (porObra[o] || 0) + Number(r.valor || 0);
     }
-    const obraTop = Object.entries(porObra).sort((a, b) => b[1] - a[1])[0];
-
-    // Mês atual
-    const mes = hoje().substring(0, 7);
-    const totalMes = todosRegistros
-        .filter(r => (r.data || '').startsWith(mes))
-        .reduce((s, r) => s + Number(r.valor || 0), 0);
-
-    // Quantidade de obras distintas
+    const obraTop  = Object.entries(porObra).sort((a, b) => b[1] - a[1])[0];
     const qtdObras = Object.keys(porObra).length;
 
-    document.getElementById('kpiTotal').textContent   = `R$ ${formatarValor(totalGeral)}`;
-    document.getElementById('kpiMes').textContent     = totalMes > 0 ? `R$ ${formatarValor(totalMes)}` : '—';
+    document.getElementById('kpiTotal').textContent   = confirmado > 0 ? `R$ ${formatarValor(confirmado)}` : '—';
+    document.getElementById('kpiMes').textContent     = aConfirmar > 0 ? `R$ ${formatarValor(aConfirmar)}` : '—';
     document.getElementById('kpiObraTop').textContent = obraTop ? `${obraTop[0]}: R$ ${formatarValor(obraTop[1])}` : '—';
     document.getElementById('kpiObras').textContent   = qtdObras > 0 ? `${qtdObras} obra${qtdObras > 1 ? 's' : ''}` : '—';
 }
@@ -288,6 +304,7 @@ function limparFiltros() {
     ['filtroDataIni','filtroDataFim','filtroObra'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('filtroFornecedor').value = '';
     document.getElementById('filtroBanco').value      = '';
+    document.getElementById('filtroStatus').value     = '';
     document.getElementById('buscaTexto').value = '';
     paginaAtual = 1;
     carregarRecebimentos();
@@ -375,7 +392,7 @@ async function salvarRecebimento() {
         valor:      Math.round(valor * 100) / 100,
         obra:       document.getElementById('rObra').value    || null,
         forma:      document.getElementById('rForma').value   || null,
-        banco:      document.getElementById('rBanco').value.trim()      || null,
+        banco:      document.getElementById('rBanco').value              || null,
         descricao:  document.getElementById('rDescricao').value.trim()  || null,
     };
 
@@ -392,7 +409,7 @@ async function salvarRecebimento() {
 
         if (editandoId) {
             const payload = { ...base, data };
-            if (comprovanteUrl) payload.comprovante_url = comprovanteUrl;
+            if (comprovanteUrl) { payload.comprovante_url = comprovanteUrl; payload.tem_comprovante = true; }
             const { error } = await dbClient.from('recebimentos').update(payload).eq('id', editandoId);
             if (error) throw error;
             toast.success('Recebimento atualizado.');
@@ -410,7 +427,7 @@ async function salvarRecebimento() {
             toast.success(`${totalParc} parcelas criadas!`);
         } else {
             const payload = { ...base, data, parcela_num: 1, total_parcelas: 1 };
-            if (comprovanteUrl) payload.comprovante_url = comprovanteUrl;
+            if (comprovanteUrl) { payload.comprovante_url = comprovanteUrl; payload.tem_comprovante = true; }
             const { error } = await dbClient.from('recebimentos').insert(payload);
             if (error) throw error;
             toast.success('Recebimento cadastrado.');
@@ -444,12 +461,61 @@ async function excluir(id) {
     }
 }
 
+// --- CONFIRMAR RECEBIMENTO ---
+function abrirModalConfirmar(id) {
+    const r = todosRegistros.find(x => x.id === id);
+    if (!r) return;
+    confirmarId = id;
+    const desc = [r.fornecedor, r.descricao, r.obra].filter(Boolean).join(' — ');
+    document.getElementById('modalConfirmarDesc').textContent =
+        `${desc} · R$ ${formatarValor(r.valor)} · ${formatarData(r.data)}`;
+    document.getElementById('confirmarData').value = hoje();
+    document.getElementById('modalConfirmar').style.display = 'flex';
+}
+
+function fecharModalConfirmar() {
+    document.getElementById('modalConfirmar').style.display = 'none';
+    confirmarId = null;
+}
+
+async function confirmarRecebimento() {
+    if (!confirmarId) return;
+    const dataRec = document.getElementById('confirmarData').value;
+    if (!dataRec) { toast.warning('Informe a data do recebimento.'); return; }
+
+    const btn = document.getElementById('btnConfirmarRecebimento');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+
+    try {
+        const { error } = await dbClient.from('recebimentos').update({
+            recebido: true,
+            data_recebimento: dataRec,
+        }).eq('id', confirmarId);
+        if (error) throw error;
+
+        const idx = todosRegistros.findIndex(x => x.id === confirmarId);
+        if (idx !== -1) {
+            todosRegistros[idx].recebido        = true;
+            todosRegistros[idx].data_recebimento = dataRec;
+        }
+
+        fecharModalConfirmar();
+        renderizarTabela();
+        atualizarKPIs();
+        toast.success('Recebimento confirmado.');
+    } catch (e) {
+        toast.error('Erro ao confirmar: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Confirmar';
+    }
+}
+
 // --- EXPORT CSV ---
 function exportarCSV() {
     const dados = filtrarRegistros();
     if (!dados.length) { toast.warning('Nenhum dado para exportar.'); return; }
 
-    const cab  = ['Data','Obra','Fornecedor','Descrição','Forma','Valor','Parcela'];
+    const cab  = ['Data','Obra','Fornecedor','Descrição','Forma','Valor','Parcela','Status','Data Recebimento'];
     const rows = dados.map(r => [
         r.data        || '',
         r.obra        || '',
@@ -458,6 +524,8 @@ function exportarCSV() {
         r.forma       || '',
         r.valor       || 0,
         r.total_parcelas > 1 ? `${r.parcela_num}/${r.total_parcelas}` : '',
+        r.recebido ? 'Confirmado' : 'Pendente',
+        r.data_recebimento || '',
     ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
 
     const csv  = [cab.join(','), ...rows].join('\n');

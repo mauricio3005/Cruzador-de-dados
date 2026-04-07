@@ -1054,7 +1054,7 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
         if destino == _CONTA_PRINCIPAL:
             return json.dumps({"erro": f"'{_CONTA_PRINCIPAL}' é a conta principal e não pode ser o destino"})
         data_r = (args.get("data") or _date.today().isoformat()).strip()
-        dados  = {"banco_destino": destino, "valor": valor, "data": data_r}
+        dados  = {"banco_origem": _CONTA_PRINCIPAL, "banco_destino": destino, "valor": valor, "data": data_r}
         if args.get("descricao"): dados["descricao"] = args["descricao"]
         if args.get("obra"):      dados["obra"]      = args["obra"]
         return json.dumps({"tabela": "remessas_caixa", "operacao": "inserir", "dados": dados, "antes": None}, ensure_ascii=False)

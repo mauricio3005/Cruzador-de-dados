@@ -31,9 +31,9 @@ CREATE INDEX IF NOT EXISTS idx_contratos_obra
 CREATE INDEX IF NOT EXISTS idx_comprovantes_despesa_id
   ON comprovantes_despesa (despesa_id);
 
--- Remessas por conta destino
-CREATE INDEX IF NOT EXISTS idx_remessas_conta_destino
-  ON remessas_caixa (conta_destino);
+-- Remessas por banco destino
+CREATE INDEX IF NOT EXISTS idx_remessas_banco_destino
+  ON remessas_caixa (banco_destino);
 
 -- Despesas recorrentes por próxima data (processamento)
 CREATE INDEX IF NOT EXISTS idx_recorrentes_proxima_data

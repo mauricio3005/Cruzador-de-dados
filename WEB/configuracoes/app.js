@@ -21,6 +21,8 @@ let tiposCusto = [];
 let formas     = [];
 let categorias = [];
 let fornecedores = [];
+let bancos     = []; // { id, nome, tipo, descricao }
+let bancosObras = {}; // banco_id → string[] (nomes das obras)
 
 // --- HELPERS ---
 function esc(s) {
@@ -119,6 +121,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('obraRegras').addEventListener('change', carregarRegras);
     document.getElementById('btnAdicionarRegra').addEventListener('click', adicionarRegra);
 
+    // Bancos
+    document.getElementById('btnAdicionarBanco').addEventListener('click', adicionarBanco);
+    document.getElementById('inputNovoBanco').addEventListener('keydown', e => { if (e.key === 'Enter') adicionarBanco(); });
+
     await carregarReferencias();
     setStatus('online', 'Sistema Sincronizado');
 });
@@ -133,7 +139,7 @@ async function carregarReferencias() {
         } catch { return []; }
     };
 
-    const [resObras, resEmpresas, resEtapas, resTipos, resFormas, resCats, resForn] = await Promise.all([
+    const [resObras, resEmpresas, resEtapas, resTipos, resFormas, resCats, resForn, resBancos] = await Promise.all([
         safe(db.from('obras').select('*').order('nome')),
         safe(db.from('empresas').select('*').order('nome')),
         safe(db.from('etapas').select('nome,ordem').order('ordem')),
@@ -141,6 +147,7 @@ async function carregarReferencias() {
         safe(db.from('formas_pagamento').select('nome').order('nome')),
         safe(db.from('categorias_despesa').select('nome').order('nome')),
         safe(db.from('fornecedores').select('nome').order('nome')),
+        safe(db.from('bancos').select('id,nome,tipo,descricao').order('tipo').order('nome')),
     ]);
 
     obras        = resObras;
@@ -150,6 +157,17 @@ async function carregarReferencias() {
     formas       = resFormas.map(r => r.nome);
     categorias   = resCats.map(r => r.nome);
     fornecedores = resForn.map(r => r.nome);
+    bancos       = resBancos;
+
+    // banco_obras em query separada: tabela pode não existir (migration pendente)
+    bancosObras = {};
+    try {
+        const resBancoObras = await safe(db.from('banco_obras').select('banco_id,obra'));
+        for (const bo of resBancoObras) {
+            if (!bancosObras[bo.banco_id]) bancosObras[bo.banco_id] = [];
+            bancosObras[bo.banco_id].push(bo.obra);
+        }
+    } catch (_) { /* tabela ainda não existe — segue sem restrições */ }
 
     renderizarObras();
     renderizarEmpresas();
@@ -160,6 +178,8 @@ async function carregarReferencias() {
     renderizarFormas();
     renderizarCategorias();
     renderizarFornecedores();
+    renderizarBancos();
+    popularCheckboxesNovoBanco();
 }
 
 function popularSelectObra(id) {
@@ -1013,6 +1033,166 @@ async function removerRegra(obra, servico) {
         await carregarRegras();
     } catch (e) {
         toast.error('Erro: ' + e.message);
+    }
+}
+
+// ============================================================
+// BANCOS
+// ============================================================
+function renderizarBancos() {
+    const tbody = document.getElementById('tabelaBancos');
+    if (!bancos.length) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Nenhum banco cadastrado.</td></tr>`;
+        return;
+    }
+    const badgePrincipal = `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.7rem;font-weight:700;background:color-mix(in srgb,var(--warning,#f59e0b) 20%,transparent);color:var(--warning,#b45309);">Principal</span>`;
+    const badgeFilho     = `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.7rem;font-weight:700;background:color-mix(in srgb,var(--primary) 15%,transparent);color:var(--primary);">Filho</span>`;
+    const badgeTodas     = `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.7rem;font-weight:600;background:var(--surface-low);color:var(--on-surface-muted);">Todas</span>`;
+    tbody.innerHTML = bancos.map(b => {
+        const obras = bancosObras[b.id] || [];
+        const obrasHtml = obras.length
+            ? obras.map(o => `<span style="display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.7rem;font-weight:600;background:color-mix(in srgb,var(--success,#16a34a) 12%,transparent);color:var(--success,#16a34a);margin:1px;">${esc(o)}</span>`).join('')
+            : badgeTodas;
+        return `
+        <tr>
+            <td style="font-weight:500;">${esc(b.nome)}</td>
+            <td style="text-align:center;">${b.tipo === 'principal' ? badgePrincipal : badgeFilho}</td>
+            <td>
+                <div style="display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;">
+                    ${obrasHtml}
+                    <button class="btn btn-outline" onclick="abrirModalObras(${b.id}, '${esc(b.nome)}')" style="font-size:0.7rem;padding:2px 8px;" title="Configurar obras">⚙</button>
+                </div>
+            </td>
+            <td style="text-align:center;">
+                <button class="btn btn-outline" onclick="removerBanco(${b.id}, '${esc(b.nome)}')" style="font-size:0.72rem;padding:3px 8px;color:var(--error);border-color:var(--error);" title="Remover">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"></polyline>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>
+                    </svg>
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function popularCheckboxesNovoBanco() {
+    const container = document.getElementById('novoBancoObrasCheckboxes');
+    if (!container) return;
+    if (!obras.length) {
+        container.innerHTML = '<span style="color:var(--on-surface-muted);font-size:0.8rem;">Nenhuma obra cadastrada.</span>';
+        return;
+    }
+    container.innerHTML = obras.map(o => `
+        <label style="display:flex;align-items:center;gap:var(--sp-2);cursor:pointer;font-size:0.875rem;">
+            <input type="checkbox" value="${esc(o.nome)}" style="accent-color:var(--primary);">
+            ${esc(o.nome)}
+        </label>`).join('');
+}
+
+async function adicionarBanco() {
+    const nome      = document.getElementById('inputNovoBanco').value.trim();
+    const tipo      = document.getElementById('selectTipoBanco').value;
+    const descricao = document.getElementById('inputDescricaoBanco').value.trim() || null;
+    if (!nome) { toast.warning('Informe um nome.'); return; }
+
+    const obrasChecked = [...document.querySelectorAll('#novoBancoObrasCheckboxes input[type=checkbox]:checked')]
+        .map(el => el.value);
+
+    try {
+        const { data, error } = await db.from('bancos').insert({ nome, tipo, descricao }).select('id').single();
+        if (error) throw error;
+
+        if (obrasChecked.length) {
+            const { error: errOb } = await db.from('banco_obras')
+                .insert(obrasChecked.map(o => ({ banco_id: data.id, obra: o })));
+            if (errOb && errOb.code !== '42P01') throw errOb;
+        }
+
+        toast.success(`Banco "${nome}" adicionado.`);
+        document.getElementById('inputNovoBanco').value      = '';
+        document.getElementById('inputDescricaoBanco').value = '';
+        // Desmarca todos os checkboxes
+        document.querySelectorAll('#novoBancoObrasCheckboxes input[type=checkbox]')
+            .forEach(el => { el.checked = false; });
+        await recarregarBancos();
+    } catch (e) {
+        toast.error('Erro: ' + e.message);
+    }
+}
+
+async function removerBanco(id, nome) {
+    if (!confirm(`Remover o banco "${nome}"?`)) return;
+    try {
+        const { error } = await db.from('bancos').delete().eq('id', id);
+        if (error) throw error;
+        toast.success(`"${nome}" removido.`);
+        await recarregarBancos();
+    } catch (e) {
+        toast.error('Erro: ' + e.message);
+    }
+}
+
+async function recarregarBancos() {
+    const { data: dataBancos } = await db.from('bancos').select('id,nome,tipo,descricao').order('tipo').order('nome');
+    bancos = dataBancos || [];
+
+    bancosObras = {};
+    try {
+        const { data: dataObrasBanco } = await db.from('banco_obras').select('banco_id,obra');
+        for (const bo of (dataObrasBanco || [])) {
+            if (!bancosObras[bo.banco_id]) bancosObras[bo.banco_id] = [];
+            bancosObras[bo.banco_id].push(bo.obra);
+        }
+    } catch (_) { /* tabela ainda não existe */ }
+
+    renderizarBancos();
+}
+
+// --- Modal obras por banco ---
+async function abrirModalObras(bancoId, bancoNome) {
+    document.getElementById('modalObrasBancoId').value = bancoId;
+    document.getElementById('modalObrasBancoTitulo').textContent = `Obras — ${bancoNome}`;
+
+    const associadas = new Set(bancosObras[bancoId] || []);
+    const container  = document.getElementById('modalObrasCheckboxes');
+    container.innerHTML = obras.length
+        ? obras.map(o => `
+            <label style="display:flex;align-items:center;gap:var(--sp-2);cursor:pointer;padding:var(--sp-2);border-radius:var(--radius-sm);transition:background .12s;" onmouseover="this.style.background='var(--surface-low)'" onmouseout="this.style.background='transparent'">
+                <input type="checkbox" value="${esc(o.nome)}" ${associadas.has(o.nome) ? 'checked' : ''} style="accent-color:var(--primary);width:16px;height:16px;">
+                <span style="font-size:0.875rem;">${esc(o.nome)}</span>
+            </label>`).join('')
+        : '<p style="color:var(--on-surface-muted);font-size:0.875rem;">Nenhuma obra cadastrada.</p>';
+
+    document.getElementById('modalObrasBanco').style.display = 'flex';
+}
+
+function fecharModalObras() {
+    document.getElementById('modalObrasBanco').style.display = 'none';
+}
+
+async function salvarObrasDoBanco() {
+    const bancoId = parseInt(document.getElementById('modalObrasBancoId').value);
+    const checked = [...document.querySelectorAll('#modalObrasCheckboxes input[type=checkbox]:checked')]
+        .map(el => el.value);
+
+    try {
+        const { error: errDel } = await db.from('banco_obras').delete().eq('banco_id', bancoId);
+        if (errDel) {
+            if (errDel.code === '42P01') {
+                toast.error('Execute a migration 12_banco_obras.sql no Supabase antes de usar esta função.');
+                return;
+            }
+            throw errDel;
+        }
+        if (checked.length) {
+            const { error } = await db.from('banco_obras').insert(checked.map(o => ({ banco_id: bancoId, obra: o })));
+            if (error) throw error;
+        }
+        toast.success('Obras atualizadas.');
+        fecharModalObras();
+        await recarregarBancos();
+    } catch (e) {
+        toast.error('Erro ao salvar obras: ' + e.message);
     }
 }
 

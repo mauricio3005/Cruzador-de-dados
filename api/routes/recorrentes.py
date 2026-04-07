@@ -59,7 +59,7 @@ def _avancar_data(d: date, frequencia: str) -> date:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("")
-def listar(_user=Depends(get_current_user)):
+def listar():
     db = get_supabase()
     res = db.table("despesas_recorrentes").select("*").order("proxima_data").execute()
     return res.data or []

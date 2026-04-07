@@ -92,15 +92,9 @@
     <div class="content-shell">
 
         <header class="topbar">
-            <div class="topbar-search">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <input type="text" id="buscaTexto" placeholder="Buscar...">
-            </div>
-            <div class="topbar-actions">
-                <div class="topbar-avatar" title="Usuário">
+            <span class="status-dot online" id="connectionStatusTop" style="color:var(--on-surface-muted);font-size:0.72rem;font-weight:500;">Sistema Sincronizado</span>
+            <div style="position:relative;">
+                <div class="topbar-avatar" id="userAvatarBtn" title="Conta" style="cursor:pointer;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                         <circle cx="12" cy="7" r="4"></circle>
@@ -129,6 +123,7 @@
                 <button class="sub-tab-btn" data-tab="categorias">Categorias de Despesa</button>
                 <button class="sub-tab-btn" data-tab="fornecedores">Fornecedores</button>
                 <button class="sub-tab-btn" data-tab="regras">Regras de Serviço</button>
+                <button class="sub-tab-btn" data-tab="bancos">Bancos</button>
             </div>
 
             <!-- ── TAB: OBRAS ──────────────────────────────────────────────── -->
@@ -407,6 +402,59 @@
                 </div>
             </div>
 
+            <!-- ── TAB: BANCOS ────────────────────────────────────────────── -->
+            <div class="sub-tab-pane" id="pane-bancos">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-6);align-items:start;">
+                    <div class="matrix-section">
+                        <div class="matrix-header">
+                            <span class="matrix-title">Bancos cadastrados</span>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="styled-table">
+                                <thead>
+                                    <tr>
+                                        <th>Nome</th>
+                                        <th style="text-align:center;">Tipo</th>
+                                        <th>Obras</th>
+                                        <th style="text-align:center;">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tabelaBancos">
+                                    <tr><td colspan="4" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-8);">Carregando…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="matrix-section" style="padding:var(--sp-6);">
+                        <h3 style="font-size:0.9375rem;font-weight:600;margin-bottom:var(--sp-4);">Novo Banco</h3>
+                        <div style="display:grid;gap:var(--sp-3);">
+                            <div>
+                                <label class="form-label">Nome *</label>
+                                <input type="text" class="form-input" id="inputNovoBanco" placeholder="Ex: Itaú, Kathleen Thais…">
+                            </div>
+                            <div>
+                                <label class="form-label">Tipo *</label>
+                                <select class="form-select" id="selectTipoBanco">
+                                    <option value="filho">Filho — controlado (usa remessas)</option>
+                                    <option value="principal">Principal — fonte (dinheiro ilimitado)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label">Descrição</label>
+                                <input type="text" class="form-input" id="inputDescricaoBanco" placeholder="Observação opcional…">
+                            </div>
+                            <div>
+                                <label class="form-label">Obras <span style="font-weight:400;color:var(--on-surface-muted);">(sem seleção = todas)</span></label>
+                                <div id="novoBancoObrasCheckboxes" style="display:flex;flex-direction:column;gap:var(--sp-2);max-height:180px;overflow-y:auto;padding:var(--sp-2) var(--sp-3);background:var(--surface-low);border-radius:8px;">
+                                    <span style="color:var(--on-surface-muted);font-size:0.8rem;">Carregando obras…</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary" id="btnAdicionarBanco">Adicionar Banco</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </main>
     </div>
 
@@ -675,6 +723,28 @@
         <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);margin-top:var(--sp-5);">
             <button class="btn btn-outline" onclick="fecharModalEtapa()">Cancelar</button>
             <button class="btn btn-primary" id="btnSalvarEtapa" style="min-width:100px;">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: OBRAS DO BANCO ──────────────────────────────────── -->
+<div id="modalObrasBanco" style="display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.55);align-items:center;justify-content:center;">
+    <div class="matrix-section" style="width:480px;max-width:95vw;max-height:85vh;overflow-y:auto;margin:0;" onclick="event.stopPropagation()">
+        <div class="matrix-header" style="padding:var(--sp-5) var(--sp-6) var(--sp-4);">
+            <span class="matrix-title" id="modalObrasBancoTitulo">Obras do banco</span>
+            <button class="btn btn-outline btn-sm" onclick="fecharModalObras()" style="font-size:0.8rem;padding:4px 12px;">✕ Fechar</button>
+        </div>
+        <div style="padding:0 var(--sp-6) var(--sp-6);">
+            <p style="font-size:0.8125rem;color:var(--on-surface-muted);margin-bottom:var(--sp-4);">
+                Selecione as obras onde este banco atua.<br>
+                <strong>Sem seleção</strong> = banco disponível em todas as obras.
+            </p>
+            <div id="modalObrasCheckboxes" style="display:flex;flex-direction:column;gap:var(--sp-2);margin-bottom:var(--sp-5);max-height:320px;overflow-y:auto;"></div>
+            <input type="hidden" id="modalObrasBancoId">
+            <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);">
+                <button class="btn btn-outline" onclick="fecharModalObras()">Cancelar</button>
+                <button class="btn btn-primary" onclick="salvarObrasDoBanco()">Salvar</button>
+            </div>
         </div>
     </div>
 </div>

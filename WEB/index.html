@@ -165,30 +165,9 @@
     <div class="content-shell">
 
         <header class="topbar">
-            <div class="topbar-search">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <input type="text" placeholder="Pesquisar projetos..." disabled>
-            </div>
-            <div class="topbar-actions">
-                <span class="status-dot online" id="connectionStatusTop" style="color:var(--on-surface-muted);font-size:0.72rem;font-weight:500;">Sistema Sincronizado</span>
-                <button class="topbar-icon-btn" title="Notificações" style="position:relative">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-                    </svg>
-                    <span class="topbar-notif-badge"></span>
-                </button>
-                <button class="topbar-icon-btn" title="Ajuda">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                    </svg>
-                </button>
-                <div class="topbar-avatar" title="Usuário">
+            <span class="status-dot online" id="connectionStatusTop" style="color:var(--on-surface-muted);font-size:0.72rem;font-weight:500;">Sistema Sincronizado</span>
+            <div style="position:relative;">
+                <div class="topbar-avatar" id="userAvatarBtn" title="Conta" style="cursor:pointer;">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                         <circle cx="12" cy="7" r="4"></circle>
@@ -213,14 +192,6 @@
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
                         </svg>
                         Atualizar
-                    </button>
-                    <button class="btn btn-outline" id="btnExportar" style="display:none;" onclick="window.print()">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="6 9 6 2 18 2 18 9"></polyline>
-                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-                            <rect x="6" y="14" width="12" height="8"></rect>
-                        </svg>
-                        Imprimir / PDF
                     </button>
                 </div>
             </div>
@@ -403,81 +374,46 @@
             <!-- ═══════════════ TAB: RELATÓRIO ═══════════════ -->
             <div id="tab-relatorio" style="display:none;">
 
-                <!-- Filtros -->
                 <div class="rel-filtros">
                     <div class="form-group">
-                        <label class="form-label">Modo</label>
-                        <div class="rel-modo-toggle">
-                            <input type="radio" name="relModo" id="relModoUnico" value="unico" checked>
-                            <label for="relModoUnico">Obra única</label>
-                            <input type="radio" name="relModo" id="relModoComparativo" value="comparativo">
-                            <label for="relModoComparativo">Comparativo</label>
-                        </div>
-                    </div>
-                    <div class="form-group" id="relGrupoObraUnica">
                         <label class="form-label">Obra</label>
-                        <select class="form-select" id="relSelectObra" style="min-width:220px;">
+                        <select class="form-select" id="relSelectObra" style="min-width:240px;">
                             <option value="">— Selecione —</option>
                         </select>
                     </div>
-                    <div class="form-group" id="relGrupoObraComparativo" style="display:none;">
-                        <label class="form-label">Obras (selecione 2+)</label>
-                        <select class="form-select" id="relSelectObrasMulti" multiple style="min-width:260px;height:80px;"></select>
-                    </div>
                     <div class="form-group">
+                        <label class="form-label">Tipo de Relatório</label>
+                        <div class="rel-modo-toggle">
+                            <input type="radio" name="relTipo" id="relTipoSimples" value="simples" checked>
+                            <label for="relTipoSimples">Simples</label>
+                            <input type="radio" name="relTipo" id="relTipoDetalhado" value="detalhado">
+                            <label for="relTipoDetalhado">Detalhado</label>
+                            <input type="radio" name="relTipo" id="relTipoAdm" value="administrativo">
+                            <label for="relTipoAdm">Administrativo</label>
+                        </div>
+                    </div>
+                    <div class="form-group" id="relPorEtapaWrap" style="display:none;">
+                        <label style="display:flex;align-items:center;gap:var(--sp-3);cursor:pointer;font-size:0.875rem;color:var(--on-surface);margin-top:22px;">
+                            <input type="checkbox" id="relPorEtapa" style="width:16px;height:16px;cursor:pointer;accent-color:var(--primary);">
+                            Detalhar por etapa
+                        </label>
+                    </div>
+                    <div class="form-group" id="relAdmDatas" style="display:none;">
                         <label class="form-label">Data início</label>
                         <input type="date" class="form-input" id="relDataIni">
                     </div>
-                    <div class="form-group">
+                    <div class="form-group" id="relAdmDatasFim" style="display:none;">
                         <label class="form-label">Data fim</label>
                         <input type="date" class="form-input" id="relDataFim">
                     </div>
                     <button class="btn btn-primary" id="btnGerarRelatorio">
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
                         </svg>
-                        Gerar Relatório
+                        Baixar PDF
                     </button>
-                </div>
-
-                <!-- Loading -->
-                <div id="loadingArea" style="display:none;text-align:center;padding:var(--sp-10);color:var(--on-surface-muted);">
-                    <div class="spinner" style="margin:0 auto var(--sp-4);"></div>
-                    <p id="loadingMsg" style="font-size:0.875rem;">Carregando dados…</p>
-                </div>
-
-                <!-- Relatório gerado -->
-                <div id="relatorioArea">
-                    <div id="relEmpresaHeaders"></div>
-                    <div class="rel-kpis" id="relKpisGrid"></div>
-                    <div class="matrix-section" style="margin-bottom:var(--sp-5);">
-                        <div class="matrix-header">
-                            <span class="matrix-title">Fluxo de Caixa</span>
-                        </div>
-                        <div id="fluxoRelGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-5);padding:var(--sp-5) var(--sp-6);text-align:center;"></div>
-                    </div>
-                    <div class="matrix-section" style="margin-bottom:var(--sp-5);">
-                        <div class="matrix-header">
-                            <span class="matrix-title">Detalhamento por Etapa</span>
-                        </div>
-                        <div class="table-wrapper">
-                            <table class="styled-table">
-                                <thead>
-                                    <tr>
-                                        <th></th>
-                                        <th>Obra</th>
-                                        <th>Etapa</th>
-                                        <th class="text-right">Orçado</th>
-                                        <th class="text-right">Realizado</th>
-                                        <th class="text-right">Saldo</th>
-                                        <th class="text-right">% Consumo</th>
-                                        <th class="text-right">% Conclusão</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="relTabelaEtapas"></tbody>
-                            </table>
-                        </div>
-                    </div>
                 </div>
 
             </div>

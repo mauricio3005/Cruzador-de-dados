@@ -25,6 +25,8 @@ let categorias     = [];
 let formas         = [];
 let fornecedores   = [];
 let loteArquivos   = [];   // { file, nome, dados }
+let todosBancos    = [];   // { id, nome, tipo } — lista completa
+let bancosObraMap  = {};   // banco_id → string[] (obras associadas)
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
@@ -45,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             preencherCampoIA('fForma',   ia.FORMA,   formas);
             preencherCampoIA('fDespesa', ia.DESPESA, categorias);
             preencherCampoIA('fObra',    ia.OBRA,    obras);
-            { const obraVal = document.getElementById('fObra').value; filtrarEtapasPorObra(obraVal); preencherCampoIA('fEtapa', ia.ETAPA, obraVal ? (obraEtapasMap[obraVal] || etapas) : etapas); }
+            { const obraVal = document.getElementById('fObra').value; filtrarEtapasPorObra(obraVal); filtrarBancosPorObra(obraVal); preencherCampoIA('fEtapa', ia.ETAPA, obraVal ? (obraEtapasMap[obraVal] || etapas) : etapas); }
             preencherFornecedorIA(ia.FORNECEDOR);
             if (ia.VALOR_TOTAL) document.getElementById('fValor').value = parseFloat(ia.VALOR_TOTAL).toFixed(2);
             if (ia.DATA)        document.getElementById('fData').value  = ia.DATA;
@@ -80,7 +82,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Submit individual
     document.getElementById('btnCadastrar').addEventListener('click', cadastrarDespesa);
-    document.getElementById('fObra').addEventListener('change', e => filtrarEtapasPorObra(e.target.value));
+    document.getElementById('fObra').addEventListener('change', e => {
+        filtrarEtapasPorObra(e.target.value);
+        filtrarBancosPorObra(e.target.value);
+    });
 
     // Lote — upload
     const inputLote   = document.getElementById('inputLoteNFs');
@@ -107,7 +112,7 @@ async function carregarReferencias() {
         return;
     }
     try {
-        const [rObras, rEtapas, rObraEtapas, rTipos, rCat, rFormas, rForn] = await Promise.all([
+        const [rObras, rEtapas, rObraEtapas, rTipos, rCat, rFormas, rForn, rBancos, rBancoObras] = await Promise.all([
             dbClient.from('obras').select('nome').order('nome'),
             dbClient.from('etapas').select('nome, ordem').order('ordem'),
             dbClient.from('obra_etapas').select('obra, etapa'),
@@ -115,6 +120,8 @@ async function carregarReferencias() {
             dbClient.from('categorias_despesa').select('nome').order('nome'),
             dbClient.from('formas_pagamento').select('nome').order('nome'),
             dbClient.from('fornecedores').select('nome').order('nome'),
+            dbClient.from('bancos').select('id, nome, tipo').order('tipo').order('nome'),
+            dbClient.from('banco_obras').select('banco_id, obra'),
         ]);
 
         if (rObras.error)      console.error('[obras]', rObras.error);
@@ -136,6 +143,15 @@ async function carregarReferencias() {
         categorias   = (rCat.data    || []).map(r => r.nome);
         formas       = (rFormas.data || []).map(r => r.nome);
         fornecedores = (rForn.data   || []).map(r => r.nome);
+
+        // Bancos: estado completo + mapa obra-banco
+        todosBancos = rBancos.data || [];
+        bancosObraMap = {};
+        for (const bo of (rBancoObras.data || [])) {
+            if (!bancosObraMap[bo.banco_id]) bancosObraMap[bo.banco_id] = [];
+            bancosObraMap[bo.banco_id].push(bo.obra);
+        }
+        renderizarSelectBancos(todosBancos);
 
         console.log('[despesas] refs:', { obras: obras.length, etapas: etapas.length, tipos: tipos.length, categorias: categorias.length, formas: formas.length, fornecedores: fornecedores.length });
 
@@ -168,6 +184,27 @@ function filtrarEtapasPorObra(obra) {
     if (!nomes.includes(el.value)) el.value = '';
 }
 
+function renderizarSelectBancos(lista) {
+    const sel = document.getElementById('fBanco');
+    if (!sel) return;
+    const valorAtual = sel.value;
+    sel.innerHTML = '<option value="">— Sem banco —</option>' +
+        lista.map(b =>
+            `<option value="${b.nome}">${b.nome}${b.tipo === 'principal' ? ' (Principal)' : ''}</option>`
+        ).join('');
+    if (valorAtual && lista.some(b => b.nome === valorAtual)) sel.value = valorAtual;
+}
+
+function filtrarBancosPorObra(obra) {
+    if (!obra) { renderizarSelectBancos(todosBancos); return; }
+    // Bancos sem nenhuma obra cadastrada em banco_obras aparecem sempre (sem restrição)
+    const bancosComRestricao = new Set(Object.keys(bancosObraMap).map(Number));
+    const filtrados = todosBancos.filter(b =>
+        !bancosComRestricao.has(b.id) || (bancosObraMap[b.id] || []).includes(obra)
+    );
+    renderizarSelectBancos(filtrados);
+}
+
 function popularFornecedor() {
     const sel = document.getElementById('fFornecedor');
     sel.innerHTML =
@@ -178,10 +215,8 @@ function popularFornecedor() {
 // --- MODO TABS ---
 function setModo(modo) {
     document.getElementById('modoIndividual').style.display = modo === 'individual' ? '' : 'none';
-    document.getElementById('modoLote').style.display       = modo === 'lote'       ? '' : 'none';
     document.getElementById('modoTexto').style.display      = modo === 'texto'      ? '' : 'none';
     document.getElementById('tabIndividual').classList.toggle('active', modo === 'individual');
-    document.getElementById('tabLote').classList.toggle('active',       modo === 'lote');
     document.getElementById('tabTexto').classList.toggle('active',      modo === 'texto');
 }
 
@@ -507,7 +542,10 @@ async function salvarTodasDoTexto() {
         if (!valor || valor <= 0) { erros++; continue; }
         try {
             const fornecedor = (d.FORNECEDOR || '').trim();
-            if (fornecedor) await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            if (fornecedor) {
+                const { error: fErr } = await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+                if (fErr) throw fErr;
+            }
 
             const { data: inserted, error } = await dbClient.from('c_despesas').insert({
                 obra,
@@ -674,7 +712,7 @@ async function cadastrarDespesa() {
     const descricao  = document.getElementById('fDescricao').value.trim();
     const despesa    = document.getElementById('fDespesa').value;
     const forma      = document.getElementById('fForma').value;
-    const banco      = document.getElementById('fBanco').value.trim();
+    const banco      = document.getElementById('fBanco').value;
 
     // Validação
     const erros = [];
@@ -693,7 +731,8 @@ async function cadastrarDespesa() {
     try {
         // Upsert fornecedor
         if (fornecedor) {
-            await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            const { error: fErr } = await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            if (fErr) throw fErr;
             if (!fornecedores.includes(fornecedor)) {
                 fornecedores.push(fornecedor);
                 popularFornecedor();
@@ -971,7 +1010,8 @@ async function salvarLote() {
         try {
             const fornecedor = (d.FORNECEDOR || '').trim();
             if (fornecedor) {
-                await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+                const { error: fErr } = await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+                if (fErr) throw fErr;
             }
 
             // Insert despesa → obtém ID para vincular NF

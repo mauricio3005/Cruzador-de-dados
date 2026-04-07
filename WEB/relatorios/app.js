@@ -51,9 +51,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('input[name="modo"]').forEach(radio => {
         radio.addEventListener('change', () => {
             const comparativo = radio.value === 'comparativo';
-            document.getElementById('grupoObraUnica').style.display      = comparativo ? 'none' : '';
-            document.getElementById('grupoObraComparativo').style.display = comparativo ? ''    : 'none';
+            document.getElementById('grupoObraUnica').style.display       = comparativo ? 'none' : '';
+            document.getElementById('grupoObraComparativo').style.display  = comparativo ? ''    : 'none';
+            document.getElementById('grupoBanco').style.display            = comparativo ? 'none' : '';
         });
+    });
+
+    document.getElementById('selectObra').addEventListener('change', async () => {
+        await carregarBancos(document.getElementById('selectObra').value);
     });
 
     document.getElementById('btnGerarRelatorio').addEventListener('click', gerarRelatorio);
@@ -61,6 +66,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     await Promise.all([carregarObras(), carregarOrdemEtapas()]);
     setStatus('online', 'Sistema Sincronizado');
 });
+
+// --- CARREGAR BANCOS ---
+async function carregarBancos(obra) {
+    const sel = document.getElementById('selectBancos');
+    sel.innerHTML = '<option value="" selected>Todos</option>';
+    if (!obra) return;
+    const { data } = await db
+        .from('c_despesas')
+        .select('banco')
+        .eq('obra', obra)
+        .not('banco', 'is', null);
+    if (!data) return;
+    const bancos = [...new Set(data.map(d => d.banco).filter(Boolean))].sort();
+    bancos.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b;
+        opt.textContent = b;
+        sel.appendChild(opt);
+    });
+}
 
 // --- CARREGAR ORDEM DE ETAPAS ---
 async function carregarOrdemEtapas() {
@@ -105,10 +130,13 @@ async function gerarRelatorio() {
     const dataFim = document.getElementById('filtroDataFim').value || null;
 
     let obrasSelecionadas = [];
+    let bancosSel = [];
     if (modo === 'unico') {
         const val = document.getElementById('selectObra').value;
         if (!val) { toast.warning('Selecione uma obra.'); return; }
         obrasSelecionadas = [val];
+        bancosSel = Array.from(document.getElementById('selectBancos').selectedOptions)
+            .map(o => o.value).filter(Boolean);
     } else {
         const opts = document.getElementById('selectObrasMulti').selectedOptions;
         obrasSelecionadas = Array.from(opts).map(o => o.value);
@@ -119,7 +147,7 @@ async function gerarRelatorio() {
 
     try {
         // 1. Buscar dados do Supabase (frontend direto)
-        const dadosObras = await buscarDadosObras(obrasSelecionadas, dataIni, dataFim);
+        const dadosObras = await buscarDadosObras(obrasSelecionadas, dataIni, dataFim, bancosSel);
 
         document.getElementById('loadingMsg').textContent = 'Renderizando relatório…';
 
@@ -148,7 +176,7 @@ async function gerarRelatorio() {
 }
 
 // --- BUSCAR DADOS DO SUPABASE ---
-async function buscarDadosObras(obrasList, dataIni, dataFim) {
+async function buscarDadosObras(obrasList, dataIni, dataFim, bancosFilter = []) {
     const resultado = [];
 
     for (const obraNome of obrasList) {
@@ -165,6 +193,7 @@ async function buscarDadosObras(obrasList, dataIni, dataFim) {
             .eq('obra', obraNome);
         if (dataIni) qDesp = qDesp.gte('data', dataIni);
         if (dataFim) qDesp = qDesp.lte('data', dataFim);
+        if (bancosFilter.length > 0) qDesp = qDesp.in('banco', bancosFilter);
         const { data: despData } = await qDesp;
 
         // Recebimentos

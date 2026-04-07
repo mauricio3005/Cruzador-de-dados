@@ -2,14 +2,11 @@
  * INDUSTRIAL ARCHITECT — Finance Suite
  * Remessas de Caixa (app.js)
  *
- * Maurício = conta principal de origem (não aparece nos saldos controlados).
- * Kathleen, Diego (e qualquer outro que receber remessa) = contas controladas.
+ * banco_destino_id → FK para bancos(id)  [tipo='filho']
+ * obra             → FK para obras(nome) [nullable]
  */
 
 const API_BASE = window.API_BASE || `http://${location.hostname}:8000`;
-
-// Nome da conta principal — valores enviados DAQUI, não são rastreados como saldo
-const CONTA_PRINCIPAL = 'Maurício';
 
 // --- SUPABASE ---
 let dbClient;
@@ -25,8 +22,9 @@ function carregarEnv() {
 // --- ESTADO ---
 let obras        = [];
 let remessas     = [];
-let contasUsadas = []; // nomes únicos de banco_destino já registrados
-let arquivoComprovante = null; // file pendente de upload no modal
+let bancosFilhos = []; // { id, nome } — contas controladas (tipo='filho')
+let bancosObras  = {}; // banco_id → string[] (obras associadas; vazio = todas)
+let arquivoComprovante = null;
 
 // --- FORMATAÇÃO ---
 function fmtMoeda(v) {
@@ -52,7 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('rData').value = hoje();
 
-    await Promise.all([carregarObras(), carregarRemessas()]);
+    await Promise.all([carregarObras(), carregarBancos(), carregarRemessas()]);
     await renderSaldos();
 
     document.getElementById('btnNovaRemessa').addEventListener('click', abrirModalNovaRemessa);
@@ -66,98 +64,134 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function carregarObras() {
     const { data } = await dbClient.from('obras').select('nome').order('nome');
     obras = (data || []).map(o => o.nome);
+    popularSelectObra(obras);
+}
+
+function popularSelectObra(lista) {
     const sel = document.getElementById('rObra');
+    const atual = sel.value;
     sel.innerHTML = '<option value="">Sem obra específica</option>' +
-        obras.map(o => `<option value="${o}">${o}</option>`).join('');
+        lista.map(o => `<option value="${o}">${o}</option>`).join('');
+    if (lista.includes(atual)) sel.value = atual;
+}
+
+async function carregarBancos() {
+    const [{ data: dataBancos }, { data: dataObrasBanco }] = await Promise.all([
+        dbClient.from('bancos').select('id, nome, tipo').eq('tipo', 'filho').order('nome'),
+        dbClient.from('banco_obras').select('banco_id, obra'),
+    ]);
+
+    bancosFilhos = dataBancos || [];
+
+    bancosObras = {};
+    for (const bo of (dataObrasBanco || [])) {
+        if (!bancosObras[bo.banco_id]) bancosObras[bo.banco_id] = [];
+        bancosObras[bo.banco_id].push(bo.obra);
+    }
+
+    // Modal: value = id numérico
+    const selDestino = document.getElementById('rDestino');
+    selDestino.innerHTML = bancosFilhos.map(b => `<option value="${b.id}">${b.nome}</option>`).join('');
+    selDestino.addEventListener('change', () => filtrarObrasPorDestino(selDestino.value));
+
+    // Filtro de banco
+    atualizarFiltroBanco();
+}
+
+// bancoId: ID numérico do banco destino — filtra obras disponíveis no modal
+function filtrarObrasPorDestino(bancoId) {
+    const id = parseInt(bancoId, 10);
+    const permitidas = bancosObras[id] || [];
+    // sem restrição configurada → mostra todas
+    const lista = permitidas.length ? obras.filter(o => permitidas.includes(o)) : obras;
+    popularSelectObra(lista);
 }
 
 async function carregarRemessas(filtros = {}) {
-    let q = dbClient.from('remessas_caixa').select('*');
+    // Join embutido: banco_destino retorna { id, nome }
+    let q = dbClient.from('remessas_caixa').select(
+        '*, banco_destino:bancos!banco_destino_id(id,nome)'
+    );
 
-    if (filtros.banco)      q = q.eq('banco_destino', filtros.banco);
+    if (filtros.banco)      q = q.eq('banco_destino_id', filtros.banco);
+    if (filtros.obra)       q = q.eq('obra', filtros.obra);
     if (filtros.dataInicio) q = q.gte('data', filtros.dataInicio);
     if (filtros.dataFim)    q = q.lte('data', filtros.dataFim);
 
     const { data, error } = await q.order('data', { ascending: false }).limit(500);
     if (error) { console.error('Erro ao carregar remessas:', error); return; }
     remessas = data || [];
-
-    // Atualiza lista de contas usadas para datalist e filtro
-    contasUsadas = [...new Set(remessas.map(r => r.banco_destino))].sort();
-    atualizarDatalist();
-    atualizarFiltroBanco();
     renderTabela();
 }
 
 // --- SALDOS ---
+let _cardAtivo = null; // banco_id selecionado via card interativo
+
 async function renderSaldos() {
     const grid = document.getElementById('saldosGrid');
+    grid.innerHTML = '<div class="metric-card"><div class="metric-label">Carregando saldos…</div><div class="metric-value">—</div></div>';
 
-    const [{ data: remData }, { data: despData }] = await Promise.all([
-        dbClient.from('remessas_caixa').select('banco_destino, valor'),
-        dbClient.from('c_despesas').select('banco, valor_total').not('banco', 'is', null),
-    ]);
-
-    // Soma remessas recebidas por conta
-    const recebido = {};
-    for (const r of (remData || [])) {
-        recebido[r.banco_destino] = (recebido[r.banco_destino] || 0) + (r.valor || 0);
+    const { data, error } = await dbClient.rpc('saldo_bancos');
+    if (error) {
+        grid.innerHTML = `<div class="metric-card"><div class="metric-label" style="color:var(--danger);">Erro ao carregar saldos</div><div class="metric-value">—</div></div>`;
+        console.error('saldo_bancos RPC error:', error);
+        return;
     }
 
-    // Soma despesas por conta — exclui Maurício (conta principal)
-    const gasto = {};
-    for (const d of (despData || [])) {
-        const b = d.banco;
-        if (b && b !== CONTA_PRINCIPAL) {
-            gasto[b] = (gasto[b] || 0) + (d.valor_total || 0);
-        }
-    }
-
-    // Contas controladas = todos os banco_destino + contas com despesas (exclui Maurício)
-    const contas = new Set([...Object.keys(recebido), ...Object.keys(gasto)]);
-
-    if (contas.size === 0) {
+    const saldos = data || [];
+    if (!saldos.length) {
         grid.innerHTML = '<div class="metric-card"><div class="metric-label">Nenhuma remessa registrada ainda</div><div class="metric-value">—</div></div>';
         return;
     }
 
-    const saldos = [...contas].sort().map(nome => ({
-        nome,
-        recebido: recebido[nome] || 0,
-        gasto:    gasto[nome]    || 0,
-        saldo:    (recebido[nome] || 0) - (gasto[nome] || 0),
-    }));
-
-    // Total geral
-    const totalRecebido = saldos.reduce((s, x) => s + x.recebido, 0);
-    const totalGasto    = saldos.reduce((s, x) => s + x.gasto, 0);
+    const totalRecebido = saldos.reduce((s, x) => s + (x.total_recebido || 0), 0);
+    const totalGasto    = saldos.reduce((s, x) => s + (x.total_gasto    || 0), 0);
     const totalSaldo    = totalRecebido - totalGasto;
 
-    grid.innerHTML = saldos.map(s => `
-        <div class="metric-card" style="${s.saldo < 0 ? 'border-left:3px solid var(--danger);' : ''}">
-            <div class="metric-label">${s.nome}</div>
+    grid.innerHTML = saldos.map(s => {
+        const isAtivo = _cardAtivo === s.banco_id;
+        const ultimaStr = s.ultima_remessa ? `Última: ${fmtData(s.ultima_remessa)}` : '';
+        return `
+        <div class="metric-card" onclick="filtrarPorCard(${s.banco_id})" style="cursor:pointer;transition:border .15s;${s.saldo < 0 ? 'border-left:3px solid var(--danger);' : ''}${isAtivo ? 'border-left:3px solid var(--primary);' : ''}">
+            <div class="metric-label">${s.banco}</div>
             <div class="metric-value" style="color:${s.saldo < 0 ? 'var(--danger)' : 'var(--success)'};">${fmtMoeda(s.saldo)}</div>
             <div style="font-size:0.72rem;color:var(--on-surface-muted);margin-top:4px;">
-                Recebido: ${fmtMoeda(s.recebido)} &nbsp;|&nbsp; Despesas: ${fmtMoeda(s.gasto)}
+                Recebido: ${fmtMoeda(s.total_recebido)} &nbsp;|&nbsp; Despesas: ${fmtMoeda(s.total_gasto)}
+                ${ultimaStr ? `<br>${ultimaStr}` : ''}
             </div>
-        </div>
-    `).join('') + `
-        <div class="metric-card" style="border-top:2px solid var(--surface-3);">
+        </div>`;
+    }).join('') + `
+        <div class="metric-card">
             <div class="metric-label" style="font-weight:600;">Total Geral</div>
             <div class="metric-value" style="color:${totalSaldo < 0 ? 'var(--danger)' : 'var(--success)'};">${fmtMoeda(totalSaldo)}</div>
             <div style="font-size:0.72rem;color:var(--on-surface-muted);margin-top:4px;">
                 Enviado: ${fmtMoeda(totalRecebido)} &nbsp;|&nbsp; Gasto: ${fmtMoeda(totalGasto)}
             </div>
-        </div>
-    `;
+        </div>`;
+}
+
+function filtrarPorCard(bancoId) {
+    const sel = document.getElementById('filtroBanco');
+    if (_cardAtivo === bancoId) {
+        _cardAtivo = null;
+        sel.value = '';
+    } else {
+        _cardAtivo = bancoId;
+        sel.value = bancoId;
+    }
+    aplicarFiltros();
+    renderSaldos();
 }
 
 // --- TABELA ---
 function renderTabela() {
     const tbody = document.getElementById('tabelaBody');
     const total = remessas.reduce((s, r) => s + (r.valor || 0), 0);
-    document.getElementById('totalRemessas').textContent =
-        `${remessas.length} remessa(s) — Total: ${fmtMoeda(total)}`;
+    const limiteBadge = remessas.length >= 500
+        ? ' &nbsp;<span style="font-size:0.72rem;background:color-mix(in srgb,var(--warning,#f59e0b) 20%,transparent);color:var(--warning,#b45309);padding:2px 8px;border-radius:12px;">⚠ limite 500 — use filtros</span>'
+        : '';
+    document.getElementById('totalRemessas').innerHTML =
+        `${remessas.length} remessa(s) — Total: ${fmtMoeda(total)}${limiteBadge}`;
 
     if (!remessas.length) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Nenhuma remessa encontrada.</td></tr>';
@@ -167,7 +201,7 @@ function renderTabela() {
     tbody.innerHTML = remessas.map(r => `
         <tr>
             <td>${fmtData(r.data)}</td>
-            <td><strong>${r.banco_destino}</strong></td>
+            <td><strong>${r.banco_destino?.nome || '—'}</strong></td>
             <td style="color:var(--on-surface-muted);">${r.obra || '—'}</td>
             <td style="color:var(--on-surface-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.descricao || '—'}</td>
             <td class="text-right"><strong>${fmtMoeda(r.valor)}</strong></td>
@@ -190,7 +224,10 @@ function renderTabela() {
 // --- MODAL REMESSA ---
 function abrirModalNovaRemessa() {
     document.getElementById('rId').value = '';
-    document.getElementById('rDestino').value = '';
+    if (bancosFilhos.length) {
+        document.getElementById('rDestino').value = bancosFilhos[0].id;
+        filtrarObrasPorDestino(bancosFilhos[0].id);
+    }
     document.getElementById('rValor').value = '';
     document.getElementById('rData').value = hoje();
     document.getElementById('rObra').value = '';
@@ -211,7 +248,8 @@ function editarRemessa(id) {
     const r = remessas.find(x => x.id === id);
     if (!r) return;
     document.getElementById('rId').value = id;
-    document.getElementById('rDestino').value = r.banco_destino;
+    document.getElementById('rDestino').value = r.banco_destino_id || '';
+    filtrarObrasPorDestino(r.banco_destino_id || '');
     document.getElementById('rValor').value = r.valor;
     document.getElementById('rData').value = r.data;
     document.getElementById('rObra').value = r.obra || '';
@@ -229,19 +267,15 @@ function editarRemessa(id) {
 }
 
 async function salvarRemessa() {
-    const id      = document.getElementById('rId').value;
-    const destino = document.getElementById('rDestino').value.trim();
-    const valor   = parseFloat(document.getElementById('rValor').value);
-    const data    = document.getElementById('rData').value;
-    const obra    = document.getElementById('rObra').value || null;
+    const id        = document.getElementById('rId').value;
+    const destinoId = parseInt(document.getElementById('rDestino').value, 10) || null;
+    const valor     = parseFloat(document.getElementById('rValor').value);
+    const data      = document.getElementById('rData').value;
+    const obra      = document.getElementById('rObra').value || null;
     const descricao = document.getElementById('rDescricao').value.trim() || null;
 
-    if (!destino || !valor || !data) {
-        toast.error('Preencha os campos obrigatórios: Conta, Valor e Data.');
-        return;
-    }
-    if (destino === CONTA_PRINCIPAL) {
-        toast.error(`"${CONTA_PRINCIPAL}" é a conta principal — não pode ser o destino.`);
+    if (!destinoId || !valor || !data) {
+        toast.error('Preencha os campos obrigatórios: Destino, Valor e Data.');
         return;
     }
 
@@ -249,7 +283,6 @@ async function salvarRemessa() {
     btn.disabled = true;
     btn.textContent = 'Salvando…';
 
-    // Upload do comprovante (se houver arquivo novo selecionado)
     let comprovanteUrl = document.getElementById('rComprovanteUrl').value || null;
     if (arquivoComprovante) {
         const res = await uploadComprovante(arquivoComprovante);
@@ -258,7 +291,14 @@ async function salvarRemessa() {
         arquivoComprovante = null;
     }
 
-    const payload = { banco_destino: destino, valor, data, obra, descricao, comprovante_url: comprovanteUrl };
+    const payload = {
+        banco_destino_id: destinoId,
+        valor,
+        data,
+        obra,
+        descricao,
+        comprovante_url: comprovanteUrl,
+    };
 
     let error;
     if (id) {
@@ -291,6 +331,7 @@ async function excluirRemessa(id) {
 function filtrosAtivos() {
     return {
         banco:      document.getElementById('filtroBanco').value || '',
+        obra:       document.getElementById('filtroObra').value  || '',
         dataInicio: document.getElementById('filtroDataInicio').value || '',
         dataFim:    document.getElementById('filtroDataFim').value || '',
     };
@@ -302,23 +343,28 @@ async function aplicarFiltros() {
 
 async function limparFiltros() {
     document.getElementById('filtroBanco').value = '';
+    document.getElementById('filtroObra').value  = '';
     document.getElementById('filtroDataInicio').value = '';
     document.getElementById('filtroDataFim').value = '';
+    _cardAtivo = null;
     await carregarRemessas();
+    await renderSaldos();
 }
 
-// --- DATALIST / FILTRO CONTA ---
-function atualizarDatalist() {
-    document.getElementById('listaBancos').innerHTML =
-        contasUsadas.map(c => `<option value="${c}">`).join('');
-}
-
+// --- FILTRO CONTA ---
 function atualizarFiltroBanco() {
     const sel = document.getElementById('filtroBanco');
     const atual = sel.value;
     sel.innerHTML = '<option value="">Todas as contas</option>' +
-        contasUsadas.map(c => `<option value="${c}">${c}</option>`).join('');
+        bancosFilhos.map(b => `<option value="${b.id}">${b.nome}</option>`).join('');
     if (atual) sel.value = atual;
+
+    // Filtro de obra (estático, todas as obras)
+    const selObra = document.getElementById('filtroObra');
+    if (selObra) {
+        selObra.innerHTML = '<option value="">Todas as obras</option>' +
+            obras.map(o => `<option value="${o}">${o}</option>`).join('');
+    }
 }
 
 // --- COMPROVANTE UPLOAD ---
@@ -356,9 +402,8 @@ async function uploadComprovante(file) {
         const nome = `rem_${crypto.randomUUID().replace(/-/g,'').slice(0,12)}.${ext}`;
         const { error } = await dbClient.storage.from('comprovantes').upload(nome, file, { contentType: file.type });
         if (error) throw error;
-        const base = window.ENV.SUPABASE_URL.replace(/\/$/, '');
-        const url  = `${base}/storage/v1/object/public/comprovantes/${nome}`;
-        return { url, nome };
+        const { data: { publicUrl } } = dbClient.storage.from('comprovantes').getPublicUrl(nome);
+        return { url: publicUrl, nome };
     } catch (e) {
         toast.error('Erro no upload do comprovante: ' + e.message);
         return null;
@@ -368,9 +413,9 @@ async function uploadComprovante(file) {
 // --- EXPORT CSV ---
 function exportarCSV() {
     if (!remessas.length) { toast.error('Nenhuma remessa para exportar.'); return; }
-    const header = ['data', 'conta', 'valor', 'obra', 'descricao'];
+    const header = ['data', 'destino', 'valor', 'obra', 'descricao'];
     const linhas = remessas.map(r =>
-        [r.data, r.banco_destino, r.valor, r.obra || '', r.descricao || '']
+        [r.data, r.banco_destino?.nome || '', r.valor, r.obra || '', r.descricao || '']
         .map(v => `"${String(v).replace(/"/g, '""')}"`)
         .join(',')
     );

@@ -42,12 +42,15 @@ def gerar_pdf(
 
     try:
         # ── Dados da obra ────────────────────────────────────────────────────
-        res_obras = sb.table("obras").select("nome, descricao, contrato, art").eq("nome", obra).execute()
+        res_obras = sb.table("obras").select("nome, descricao, contrato, art, empresa_id, empresas(nome, logo_url)").eq("nome", obra).execute()
         obra_row  = (res_obras.data or [{}])[0]
+        empresa   = obra_row.get("empresas") or {}
         obra_info = {
-            "descricao": obra_row.get("descricao") or obra,
-            "contrato":  obra_row.get("contrato"),
-            "art":       obra_row.get("art"),
+            "descricao":      obra_row.get("descricao") or obra,
+            "contrato":       obra_row.get("contrato"),
+            "art":            obra_row.get("art"),
+            "empresa_nome":   empresa.get("nome"),
+            "empresa_logo":   empresa.get("logo_url"),
         }
 
         # ── Orçamentos ───────────────────────────────────────────────────────

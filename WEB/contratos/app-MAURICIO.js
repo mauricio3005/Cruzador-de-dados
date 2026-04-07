@@ -478,7 +478,8 @@ async function salvarContrato() {
 
     try {
         if (fornecedor) {
-            await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            const { error: fErr } = await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            if (fErr) throw fErr;
         }
         let contratoId = editandoContratoId;
 

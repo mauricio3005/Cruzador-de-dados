@@ -404,7 +404,9 @@ async function removerNFItem(nfId, despesaId) {
 
     try {
         // Deleta via backend (service key tem permissão no bucket)
-        const res = await fetch(`http://${location.hostname}:8000/api/documentos/nf/${nfId}`, { method: 'DELETE' });
+        const token = window.getAuthToken ? await window.getAuthToken() : null;
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const res = await fetch(`http://${location.hostname}:8000/api/documentos/nf/${nfId}`, { method: 'DELETE', headers });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || `HTTP ${res.status}`);

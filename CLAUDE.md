@@ -38,13 +38,14 @@ Acesse em `http://localhost:8080`. O frontend **não funciona via file://** — 
 - `WEB/contratos/` — CRUD de contratos com fornecedores por obra/etapas (seleção multi-etapa via checkboxes); cada pagamento registrado cria automaticamente uma entrada em `c_despesas`
 - `WEB/relatorios/` — relatórios financeiros com IA: modo único (uma obra) ou comparativo (múltiplas obras); chama `POST /api/relatorio/analisar` e exibe saúde financeira 0-100 + alertas
 - `WEB/documentos/` — galeria de comprovantes com paginação (50/página), upload drag-and-drop, múltiplos NFs por despesa, exportação CSV
-- `WEB/remessas/` — módulo de controle de remessas de caixa: registra transferências do caixa principal (Maurício) para contas controladas (Kathleen, Diego etc.); calcula saldo líquido por conta (remessas recebidas − despesas de `c_despesas`); Maurício é excluído dos cálculos de saldo controlado por ser a conta-origem; suporta upload de comprovante no bucket `comprovantes`
+- `WEB/remessas/` — módulo de controle de remessas de caixa: registra transferências do caixa principal (Maurício) para contas controladas (Kathleen, Diego etc.); contas são gerenciadas pela tabela `bancos` (`tipo='principal'` = fontes, excluídas do saldo controlado; `tipo='filho'` = contas que recebem remessas); saldo líquido por conta via RPC `saldo_bancos()`; suporta upload de comprovante no bucket `comprovantes`
 - `WEB/historico/` — além do CRUD padrão, suporta seleção múltipla de despesas para vincular um único comprovante a várias entradas de uma vez (padrão: seleciona → modal upload → escreve N linhas em `comprovantes_despesa`)
 - `WEB/components/toast.js` — sistema de notificações toast global
 - `API_BASE` em todos os módulos JS: `` `http://${location.hostname}:8000` `` (não hardcode `localhost`)
 
 ### Backend (api/)
-- `api/main.py` — bootstrap FastAPI, CORS aberto (`allow_origins=["*"]`), middleware HTTP de log (método + path + status + ms), registra os 5 routers: `ai`, `documentos`, `folha`, `relatorio`, `recorrentes`; expõe `/api/health` e endpoints de debug (`/api/debug/supabase`, `/api/debug/chat-context`); Swagger em `http://localhost:8000/docs`
+- `api/main.py` — bootstrap FastAPI; CORS configurado via `ALLOWED_ORIGINS` (default `http://localhost:8080`); middleware HTTP de log (método + path + status + ms); registra os 5 routers: `ai`, `documentos`, `folha`, `relatorio`, `recorrentes`; expõe `/api/health` e endpoints de debug (`/api/debug/supabase`, `/api/debug/chat-context`) protegidos por auth e por flag `DEBUG_ENDPOINTS=true`; Swagger em `http://localhost:8000/docs`
+- `api/dependencies.py` — `get_current_user(authorization)`: valida JWT Bearer via `supabase.auth.get_user()`; retorna o objeto `user` ou lança 401; use `Depends(get_current_user)` em qualquer endpoint que requer autenticação (operações de escrita: POST/PUT/DELETE)
 - `api/logger.py` — configuração centralizada de logging; use `get_logger(__name__)` em qualquer módulo; grava em console (INFO+) e em `logs/api.log` com rotação (10 MB × 5 backups, DEBUG+)
 - `api/supabase_client.py` — singleton Supabase com `@lru_cache`; use `get_supabase()` em novos routes (preferir sobre criar cliente local); `api/routes/relatorio.py` tem `_get_supabase()` próprio — exceção histórica, não replicar
 - `api/embeddings.py` — pgvector semantic search via `text-embedding-3-small`; `sync_embeddings()` é chamado automaticamente a cada `/api/ai/chat` para embeddar despesas novas; `search_despesas(query)` retorna as N despesas semanticamente mais próximas
@@ -74,16 +75,18 @@ Tabelas principais:
 | `obra_etapas` | Vínculo explícito entre obras e etapas (PK composta obra+etapa) |
 | `contratos` | Contratos com fornecedores; `contrato_pagamentos` registra cada pagamento |
 | `contratos_etapas` | Junction table `(contrato_id, etapa)` — suporte a multi-etapa por contrato |
-| `remessas_caixa` | Transferências entre contas; campos: conta destino, valor, data, obra, `comprovante_url` |
+| `remessas_caixa` | Transferências entre contas; campos: `banco_destino_id` (FK → `bancos.id`), valor, data, obra (FK → `obras.nome`), `comprovante_url` |
+| `bancos` | Cadastro de contas com `tipo` = `'principal'` (fontes de caixa, ex: Maurício) ou `'filho'` (contas controladas, ex: Kathleen, Diego) |
+| `banco_obras` | Junction table `(banco_id, obra)` — obras que um banco atende; sem linhas = atua em todas |
 | `fornecedores`, `categorias_despesa`, `formas_pagamento` | Tabelas de referência |
 
 A tabela `c_despesas` é a versão atual (substitui esquema legado). Campo `folha_id` é nullable — preenchido somente para despesas de mão de obra geradas pelo fechamento de folha.
 
-`folha_funcionarios` tem coluna `valor_fixo` (NUMERIC, nullable): quando preenchida, substitui o cálculo baseado em diárias/regras; o módulo `folha/` mostra o campo destacado e botão "reverter" para limpar o valor fixo.
+`folha_funcionarios` tem coluna `valor_fixo` (NUMERIC, nullable): quando preenchida, substitui o cálculo baseado em diárias/regras; o módulo `folha/` mostra o campo destacado e botão "reverter" para limpar o valor fixo. Também tem `forma_pagamento` e `banco` (migration 06).
 
 `recebimentos` suporta parcelamento: campos `parcela_num`, `total_parcelas`, `grupo_id` (timestamp de agrupamento) permitem dividir um recebimento em N parcelas com intervalo em meses.
 
-**Migrations:** arquivos em `migrations/` são executados manualmente no SQL Editor do Supabase (não há runner automático). O último arquivo aplicado é `05_folha_valor_fixo.sql` — nomear novos arquivos a partir de `06_`.
+**Migrations:** arquivos em `migrations/` são executados manualmente no SQL Editor do Supabase (não há runner automático). Migrations `00`–`09` aplicadas. Arquivos `10` a `14` ainda **não aplicados** (pendentes — aplicar em ordem): `10_rls_tabelas_referencia_write.sql`, `11_bancos.sql`, `12_banco_obras.sql`, `13_fix_bancos_rls.sql`, `14_link_remessas_bancos.sql`. Próximo arquivo: `15_`. RPC `saldo_bancos()` (criada em `12_`, atualizada em `14_` para usar FK join) agrega saldos de bancos filhos server-side — preferir sobre full-table scans no cliente.
 
 **Logs:** em `logs/api.log` (gitignore). Para acompanhar em tempo real: `tail -f logs/api.log`. Para filtrar por rota: `grep "POST /api/ai" logs/api.log`.
 
@@ -105,6 +108,8 @@ Descrito em `DESIGN.md`. Princípios-chave:
 | `SUPABASE_SERVICE_KEY` | backend (`.env`) | Chave admin — nunca no frontend |
 | `SUPABASE_ANON_KEY` | frontend (`WEB/env.js`) | Chave pública |
 | `OPENAI_API_KEY` | backend (`.env`) | GPT-4 Vision + Whisper |
+| `ALLOWED_ORIGINS` | backend (`.env`) | CORS origins aceitas (default: `http://localhost:8080`; separados por vírgula para múltiplos) |
+| `DEBUG_ENDPOINTS` | backend (`.env`) | `true` para habilitar `/api/debug/*` (default: `false`) |
 
 ## Key Patterns
 
@@ -135,6 +140,6 @@ Para debug de contexto do chat IA: `GET /api/debug/chat-context` (requer API rod
 
 - **Sem transações reais** — o fechamento de folha executa operações sequenciais sem rollback; falha parcial deixa estado inconsistente
 - **Duas tabelas de despesas** — `c_despesas` (atual) e schema legado coexistem; sempre usar `c_despesas` em código novo
-- **CORS aberto** — `allow_origins=["*"]` em `api/main.py`; adequado apenas para desenvolvimento local
+- **CORS** — controlado via `ALLOWED_ORIGINS` (default `http://localhost:8080`); adicionar origens extras via env var se necessário
 - **Migrations não são idempotentes** — executar novamente pode duplicar dados históricos; nunca re-executar arquivos já aplicados
 - **`relatorio.py` usa `_get_supabase()` próprio** — exceção histórica; novos routes devem usar `get_supabase()` de `api/supabase_client.py`

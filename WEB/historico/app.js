@@ -67,7 +67,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('filtroObra').addEventListener('change', e => filtrarEtapasPorObra(e.target.value));
     document.getElementById('btnAtualizar').addEventListener('click', () => { paginaAtual = 1; carregarHistorico(); });
     document.getElementById('btnExportarCSV').addEventListener('click', exportarCSV);
-    document.getElementById('buscaTexto').addEventListener('input', () => { paginaAtual = 1; renderizarTabela(); });
 
     document.getElementById('btnPagAnterior').addEventListener('click', () => { if (paginaAtual > 1) { paginaAtual--; renderizarTabela(); } });
     document.getElementById('btnPagProxima').addEventListener('click',  () => { if (paginaAtual * PAGE_SIZE < todosRegistros.length) { paginaAtual++; renderizarTabela(); } });
@@ -98,13 +97,14 @@ window.addEventListener('jarvis:data-changed', (e) => {
 async function carregarReferencias() {
     if (!dbClient) return;
     try {
-        const [rObras, rEtapas, rTipos, rCat, rFormas, rForn] = await Promise.all([
+        const [rObras, rEtapas, rTipos, rCat, rFormas, rForn, rBancos] = await Promise.all([
             dbClient.from('obras').select('nome').order('nome'),
             dbClient.from('etapas').select('nome, ordem').order('ordem'),
             dbClient.from('tipos_custo').select('nome').order('nome'),
             dbClient.from('categorias_despesa').select('nome').order('nome'),
             dbClient.from('formas_pagamento').select('nome').order('nome'),
             dbClient.from('fornecedores').select('nome').order('nome'),
+            dbClient.from('bancos').select('nome').order('nome'),
         ]);
 
         obras        = (rObras.data  || []).map(r => r.nome);
@@ -113,17 +113,20 @@ async function carregarReferencias() {
         categorias   = (rCat.data    || []).map(r => r.nome);
         formas       = (rFormas.data || []).map(r => r.nome);
         fornecedores = (rForn.data   || []).map(r => r.nome);
+        const bancos = (rBancos.data || []).map(r => r.nome);
 
         popularSelect('filtroObra',       obras,      'Todas as obras');
         popularSelect('filtroEtapa',      etapas,     'Todas as etapas');
         popularSelect('filtroTipo',       tipos,      'Todos os tipos');
         popularSelect('filtroCategoria',  categorias, 'Todas as categorias');
+        popularSelect('filtroBanco',      bancos,     'Todos');
 
         popularSelectModal('editObra',    obras,      'Selecione...');
         popularSelectModal('editEtapa',   etapas,     'Selecione...');
         popularSelectModal('editTipo',    tipos,      'Selecione...');
         popularSelectModal('editDespesa', categorias, '—');
         popularSelectModal('editForma',   formas,     '—');
+        popularSelectModal('editBanco',   bancos,     '— Sem banco —');
         popularFornecedorModal();
 
         setStatus('online', 'Sistema Sincronizado');
@@ -174,7 +177,7 @@ async function carregarHistorico() {
     const categoria  = document.getElementById('filtroCategoria').value;
     const fornecedor = document.getElementById('filtroFornecedor').value.trim();
     const descricao  = document.getElementById('filtroDescricao').value.trim();
-    const banco      = document.getElementById('filtroBanco').value.trim();
+    const banco      = document.getElementById('filtroBanco').value;
 
     document.getElementById('tabelaLoading').style.display = 'flex';
 
@@ -194,7 +197,7 @@ async function carregarHistorico() {
         if (categoria)  q = q.eq('despesa', categoria);
         if (fornecedor) q = q.ilike('fornecedor', `%${fornecedor}%`);
         if (descricao)  q = q.ilike('descricao',  `%${descricao}%`);
-        if (banco)      q = q.ilike('banco',      `%${banco}%`);
+        if (banco)      q = q.eq('banco', banco);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -214,14 +217,7 @@ async function carregarHistorico() {
 
 // --- RENDERIZAR TABELA ---
 function renderizarTabela() {
-    const busca = document.getElementById('buscaTexto').value.trim().toLowerCase();
-
-    const filtrado = busca
-        ? todosRegistros.filter(r =>
-            (r.fornecedor || '').toLowerCase().includes(busca) ||
-            (r.descricao  || '').toLowerCase().includes(busca)
-          )
-        : todosRegistros;
+    const filtrado = todosRegistros;
 
     const totalFiltrado = filtrado.length;
     const inicio = (paginaAtual - 1) * PAGE_SIZE;
@@ -325,7 +321,6 @@ function limparFiltros() {
     document.getElementById('filtroFornecedor').value = '';
     document.getElementById('filtroDescricao').value  = '';
     document.getElementById('filtroBanco').value      = '';
-    document.getElementById('buscaTexto').value       = '';
     paginaAtual = 1;
     carregarHistorico();
 }
@@ -383,7 +378,7 @@ async function salvarEdicao() {
     const descricao  = document.getElementById('editDescricao').value.trim();
     const despesa    = document.getElementById('editDespesa').value;
     const forma      = document.getElementById('editForma').value;
-    const banco      = document.getElementById('editBanco').value.trim();
+    const banco      = document.getElementById('editBanco').value;
 
     const erros = [];
     if (!obra)              erros.push('Obra é obrigatória.');
@@ -401,7 +396,8 @@ async function salvarEdicao() {
     try {
         // Upsert fornecedor se novo
         if (isNovo && fornecedor) {
-            await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            const { error: fErr } = await dbClient.from('fornecedores').upsert({ nome: fornecedor }, { onConflict: 'nome' });
+            if (fErr) throw fErr;
             if (!fornecedores.includes(fornecedor)) {
                 fornecedores.push(fornecedor);
                 popularFornecedorModal();
@@ -455,13 +451,7 @@ async function deletarDespesa() {
 function exportarCSV() {
     if (!todosRegistros.length) { toast.warning('Nenhum dado para exportar.'); return; }
 
-    const busca = document.getElementById('buscaTexto').value.trim().toLowerCase();
-    const dados = busca
-        ? todosRegistros.filter(r =>
-            (r.fornecedor || '').toLowerCase().includes(busca) ||
-            (r.descricao  || '').toLowerCase().includes(busca)
-          )
-        : todosRegistros;
+    const dados = todosRegistros;
 
     const cabecalho = ['Data','Obra','Etapa','Tipo','Fornecedor','Descrição','Categoria','Forma','Banco','Valor Total','Tem NF'];
     const linhas = dados.map(r => [

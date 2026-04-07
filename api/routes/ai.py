@@ -824,9 +824,9 @@ _TOOLS = [
         "function": {
             "name": "buscar_saldo_bancos",
             "description": (
-                "Retorna o saldo disponível de cada conta controlada (Kathleen, Diego, etc.) — "
+                "Retorna o saldo disponível de cada conta controlada (bancos filhos, ex: Kathleen Thais, Diego estagiário) — "
                 "remessas recebidas menos despesas lançadas naquela conta. "
-                "A conta Maurício é a origem principal e não aparece nos saldos. "
+                "Bancos principais (ex: Maurício, Marcos Cabelinho) são fontes e não aparecem nos saldos. "
                 "Use quando o usuário perguntar sobre saldo, caixa disponível ou posição de uma conta."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -856,7 +856,7 @@ _TOOLS = [
         "function": {
             "name": "planejar_criar_remessa",
             "description": (
-                "Planeja o registro de uma nova remessa de caixa (valor enviado de Maurício para uma conta controlada). "
+                "Planeja o registro de uma nova remessa de caixa (valor enviado de um banco principal para uma conta controlada). "
                 "Não executa — apenas prepara o payload para confirmação do usuário."
             ),
             "parameters": {
@@ -1092,19 +1092,32 @@ def _exec_buscar_totais(db, obra=None):
 
 
 def _exec_listar_referencias(db):
-    obras  = [r["nome"] for r in (db.table("obras").select("nome").execute().data or [])]
-    etapas = [r["nome"] for r in (db.table("etapas").select("nome").execute().data or [])]
+    obras   = [r["nome"] for r in (db.table("obras").select("nome").execute().data or [])]
+    etapas  = [r["nome"] for r in (db.table("etapas").select("nome").execute().data or [])]
     fornecs = [r["nome"] for r in (db.table("fornecedores").select("nome").execute().data or [])]
-    cats   = [r["nome"] for r in (db.table("categorias_despesa").select("nome").execute().data or [])]
-    return {"obras": obras, "etapas": etapas, "fornecedores": fornecs, "categorias": cats}
+    cats    = [r["nome"] for r in (db.table("categorias_despesa").select("nome").execute().data or [])]
+    bancos_raw     = db.table("bancos").select("id, nome, tipo").order("tipo").order("nome").execute().data or []
+    banco_obras_raw = db.table("banco_obras").select("banco_id, obra").execute().data or []
+    obras_por_banco: dict = {}
+    for bo in banco_obras_raw:
+        obras_por_banco.setdefault(bo["banco_id"], []).append(bo["obra"])
+    bancos = [
+        {"nome": b["nome"], "tipo": b["tipo"], "obras": obras_por_banco.get(b["id"], [])}
+        for b in bancos_raw
+    ]
+    return {"obras": obras, "etapas": etapas, "fornecedores": fornecs, "categorias": cats, "bancos": bancos}
 
 
-_CONTA_PRINCIPAL = "Maurício"  # Origem das remessas — não aparece nos saldos controlados
+def _get_bancos_principais(db) -> set:
+    """Retorna nomes dos bancos classificados como 'principal' na tabela bancos."""
+    rows = db.table("bancos").select("nome").eq("tipo", "principal").execute().data or []
+    return {r["nome"] for r in rows}
 
 
 def _exec_buscar_saldo_bancos(db) -> dict:
     remessas_rows = db.table("remessas_caixa").select("banco_destino, valor").execute().data or []
     despesas_rows = db.table("c_despesas").select("banco, valor_total").not_.is_("banco", "null").execute().data or []
+    principais    = _get_bancos_principais(db)
 
     recebido: dict = {}
     for r in remessas_rows:
@@ -1113,11 +1126,11 @@ def _exec_buscar_saldo_bancos(db) -> dict:
     gasto: dict = {}
     for d in despesas_rows:
         b = d.get("banco")
-        if b and b != _CONTA_PRINCIPAL:
+        if b and b not in principais:
             gasto[b] = gasto.get(b, 0) + (d["valor_total"] or 0)
 
-    # Contas controladas = destinatários de remessas + contas com despesas (sem Maurício)
-    contas = set(recebido) | set(gasto)
+    # Contas controladas = destinatários de remessas + contas com despesas (exceto principais)
+    contas = (set(recebido) | set(gasto)) - principais
     saldos = [
         {
             "conta":              nome,
@@ -1299,10 +1312,18 @@ def _exec_planejar(db, tool_name: str, args: dict, refs: dict) -> str:
         valor   = args.get("valor")
         if not destino or not valor:
             return json.dumps({"erro": "banco_destino e valor são obrigatórios"})
-        if destino == _CONTA_PRINCIPAL:
-            return json.dumps({"erro": f"'{_CONTA_PRINCIPAL}' é a conta principal e não pode ser o destino"})
+        principais = _get_bancos_principais(db)
+        if destino in principais:
+            return json.dumps({"erro": f"'{destino}' é um banco principal (fonte) e não pode ser o destino de uma remessa"})
+        # Origem padrão: primeiro banco principal cadastrado
+        filhos_row = db.table("bancos").select("nome").eq("tipo", "filho").execute().data or []
+        filhos_nomes = {r["nome"] for r in filhos_row}
+        if filhos_nomes and destino not in filhos_nomes:
+            return json.dumps({"erro": f"'{destino}' não está cadastrado como banco filho. Bancos disponíveis: {sorted(filhos_nomes)}"})
+        origem_row = db.table("bancos").select("nome").eq("tipo", "principal").limit(1).execute().data or []
+        origem = origem_row[0]["nome"] if origem_row else "Maurício"
         data_r = (args.get("data") or _date.today().isoformat()).strip()
-        dados  = {"banco_destino": destino, "valor": valor, "data": data_r}
+        dados  = {"banco_origem": origem, "banco_destino": destino, "valor": valor, "data": data_r}
         if args.get("descricao"): dados["descricao"] = args["descricao"]
         if args.get("obra"):      dados["obra"]      = args["obra"]
         return json.dumps({"tabela": "remessas_caixa", "operacao": "inserir", "dados": dados, "antes": None}, ensure_ascii=False)
@@ -1531,8 +1552,8 @@ async def chat_assistente(request: Request, _user=Depends(get_current_user)):
         "## FLUXO DE CONSULTA\n\n"
         "Para perguntas como 'quais despesas da Obra Norte em março?' use os tools de leitura e responda em linguagem natural. Não exiba cards de confirmação para consultas.\n\n"
         "## REMESSAS E SALDO DAS CONTAS\n\n"
-        "O sistema controla remessas de caixa enviadas pela conta principal (Maurício) para as contas controladas (ex: Kathleen, Diego). "
-        "A conta Maurício é apenas a origem — não aparece nos saldos. "
+        "O sistema controla remessas de caixa enviadas por bancos principais (ex: Maurício, Marcos Cabelinho) para contas controladas/filhas (ex: Kathleen Thais, Diego estagiário). "
+        "Bancos principais são fontes de recursos e não aparecem nos saldos controlados. "
         "Use `buscar_saldo_bancos` para saldo disponível de cada conta controlada. "
         "Use `buscar_remessas` para histórico de remessas enviadas (filtre por `conta` se necessário). "
         "Para registrar nova remessa, use `planejar_criar_remessa` com `banco_destino` e `valor` (requer confirmação). "
