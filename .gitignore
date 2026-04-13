@@ -15,6 +15,9 @@ logs/
 *.sqlite3
 .claude
 
+# Streamlit secrets (contém chaves e PINs)
+.streamlit/secrets.toml
+
 # Arquivos do OS
 .DS_Store
 Thumbs.db

@@ -6,16 +6,8 @@
 const API_BASE = window.API_BASE || `http://${location.hostname}:8000`;
 const PAGE_SIZE = 50;
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let dbClient;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-    }
-}
 
 // --- ESTADO ---
 let obras        = [];
@@ -51,9 +43,116 @@ function iniciarRealtime() {
         .subscribe();
 }
 
+// --- MULTI-SELECT HELPERS ---
+function popularMultiSelect(wrapId, opcoes, placeholder, onChangeCb) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    wrap._msPlaceholder = placeholder || 'Todos';
+    wrap._msOnChange    = onChangeCb || null;
+    const dd = wrap.querySelector('.ms-dropdown');
+    const searchHtml = `<div style="padding:4px var(--sp-2) 4px;position:sticky;top:0;background:var(--surface-card,#1a1f24);z-index:1;">
+        <input class="ms-search" type="text" placeholder="Buscar…"
+            oninput="_msFilter('${wrapId}',this.value)"
+            onclick="event.stopPropagation()"
+            style="width:100%;box-sizing:border-box;background:var(--surface-2,#1e2227);border:none;border-radius:var(--r-sm);padding:5px 8px;font-size:0.8rem;color:var(--on-surface);outline:none;">
+    </div>`;
+    const optionsHtml = opcoes.map(o => {
+        const safe = o.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<label class="ms-option"><input type="checkbox" data-val="${safe}" onchange="_msChanged('${wrapId}')"> ${safe}</label>`;
+    }).join('');
+    dd.innerHTML = searchHtml + optionsHtml;
+    _atualizarLabelMs(wrapId);
+}
+
+function _msFilter(wrapId, query) {
+    const q = query.toLowerCase();
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    wrap.querySelectorAll('.ms-option').forEach(opt => {
+        const val = (opt.querySelector('input').dataset.val || '').toLowerCase();
+        opt.style.display = val.includes(q) ? '' : 'none';
+    });
+}
+
+function _msChanged(wrapId) {
+    _atualizarLabelMs(wrapId);
+    const wrap = document.getElementById(wrapId);
+    if (wrap && wrap._msOnChange) wrap._msOnChange(getMultiSelectValues(wrapId));
+}
+
+function getMultiSelectValues(wrapId) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return [];
+    return [...wrap.querySelectorAll('.ms-dropdown input:checked')].map(cb => cb.dataset.val);
+}
+
+function clearMultiSelect(wrapId) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    wrap.querySelectorAll('.ms-dropdown input').forEach(cb => cb.checked = false);
+    _atualizarLabelMs(wrapId);
+}
+
+function _atualizarLabelMs(wrapId) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    const sel   = getMultiSelectValues(wrapId);
+    const label = wrap.querySelector('.ms-label');
+    if (!label) return;
+    if (sel.length === 0) {
+        label.textContent = wrap._msPlaceholder || 'Todos';
+        label.classList.remove('has-sel');
+    } else if (sel.length === 1) {
+        label.textContent = sel[0];
+        label.classList.add('has-sel');
+    } else {
+        label.textContent = `${sel.length} selecionados`;
+        label.classList.add('has-sel');
+    }
+}
+
+function toggleMultiSelect(wrapId) {
+    const wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    const isOpen = wrap.classList.contains('open');
+    // fecha todos
+    document.querySelectorAll('.ms-wrap.open').forEach(w => w.classList.remove('open'));
+    if (!isOpen) {
+        wrap.classList.add('open');
+        // posiciona dropdown usando fixed relativo ao trigger
+        const trigger = wrap.querySelector('.ms-trigger');
+        const dd      = wrap.querySelector('.ms-dropdown');
+        const rect    = trigger.getBoundingClientRect();
+        dd.style.top   = (rect.bottom + 3) + 'px';
+        dd.style.left  = rect.left + 'px';
+        dd.style.width = rect.width + 'px';
+        // limpa busca e mostra todas as opções
+        const search = dd.querySelector('.ms-search');
+        if (search) { search.value = ''; _msFilter(wrapId, ''); }
+        // foca no campo de busca
+        setTimeout(() => { if (search) search.focus(); }, 30);
+    }
+}
+
+// Fecha ao clicar fora
+document.addEventListener('click', e => {
+    if (!e.target.closest('.ms-wrap')) {
+        document.querySelectorAll('.ms-wrap.open').forEach(w => w.classList.remove('open'));
+    }
+}, true);
+
+// Fecha ao rolar fora do dropdown (fixed precisa ser reposicionado ou fechado)
+window.addEventListener('scroll', e => {
+    if (e.target.closest && e.target.closest('.ms-dropdown')) return;
+    document.querySelectorAll('.ms-wrap.open').forEach(w => w.classList.remove('open'));
+}, true);
+window.addEventListener('resize', () => {
+    document.querySelectorAll('.ms-wrap.open').forEach(w => w.classList.remove('open'));
+});
+
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    dbClient = window.db;
     await carregarReferencias();
 
     // Datas padrão: início de 2025 até hoje
@@ -64,7 +163,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('btnFiltrar').addEventListener('click', () => { paginaAtual = 1; carregarHistorico(); });
     document.getElementById('btnLimparFiltro').addEventListener('click', limparFiltros);
-    document.getElementById('filtroObra').addEventListener('change', e => filtrarEtapasPorObra(e.target.value));
     document.getElementById('btnAtualizar').addEventListener('click', () => { paginaAtual = 1; carregarHistorico(); });
     document.getElementById('btnExportarCSV').addEventListener('click', exportarCSV);
 
@@ -115,11 +213,12 @@ async function carregarReferencias() {
         fornecedores = (rForn.data   || []).map(r => r.nome);
         const bancos = (rBancos.data || []).map(r => r.nome);
 
-        popularSelect('filtroObra',       obras,      'Todas as obras');
-        popularSelect('filtroEtapa',      etapas,     'Todas as etapas');
-        popularSelect('filtroTipo',       tipos,      'Todos os tipos');
-        popularSelect('filtroCategoria',  categorias, 'Todas as categorias');
-        popularSelect('filtroBanco',      bancos,     'Todos');
+        popularMultiSelect('wrapObra',       obras,       'Todas as obras',      filtrarEtapasPorObras);
+        popularMultiSelect('wrapEtapa',      etapas,      'Todas as etapas');
+        popularMultiSelect('wrapTipo',        tipos,       'Todos os tipos');
+        popularMultiSelect('wrapCategoria',   categorias,  'Todas as categorias');
+        popularMultiSelect('wrapFornecedor',  fornecedores, 'Todos');
+        popularMultiSelect('wrapBanco',       bancos,      'Todos');
 
         popularSelectModal('editObra',    obras,      'Selecione...');
         popularSelectModal('editEtapa',   etapas,     'Selecione...');
@@ -149,13 +248,21 @@ function popularSelectModal(id, opcoes, placeholder) {
         opcoes.map(o => `<option value="${o}">${o}</option>`).join('');
 }
 
-async function filtrarEtapasPorObra(obra) {
-    const el = document.getElementById('filtroEtapa');
-    if (!obra) { popularSelect('filtroEtapa', etapas, 'Todas as etapas'); el.value = ''; return; }
-    const { data } = await dbClient.from('obra_etapas').select('etapa').eq('obra', obra);
-    const nomes = (data || []).map(r => r.etapa);
-    popularSelect('filtroEtapa', nomes, 'Todas as etapas');
-    if (!nomes.includes(el.value)) el.value = '';
+async function filtrarEtapasPorObras(obrasSel) {
+    if (!obrasSel || !obrasSel.length) {
+        popularMultiSelect('wrapEtapa', etapas, 'Todas as etapas');
+        return;
+    }
+    const { data } = await dbClient.from('obra_etapas').select('etapa').in('obra', obrasSel);
+    const nomes = [...new Set((data || []).map(r => r.etapa))];
+    // preserva etapas já selecionadas que ainda são válidas
+    const prevSel = getMultiSelectValues('wrapEtapa');
+    popularMultiSelect('wrapEtapa', nomes, 'Todas as etapas');
+    prevSel.filter(e => nomes.includes(e)).forEach(e => {
+        const cb = [...document.querySelectorAll('#wrapEtapa .ms-dropdown input')].find(i => i.dataset.val === e);
+        if (cb) cb.checked = true;
+    });
+    _atualizarLabelMs('wrapEtapa');
 }
 
 function popularFornecedorModal() {
@@ -171,13 +278,13 @@ async function carregarHistorico() {
 
     const dataIni    = document.getElementById('filtroDataIni').value;
     const dataFim    = document.getElementById('filtroDataFim').value;
-    const obra       = document.getElementById('filtroObra').value;
-    const etapa      = document.getElementById('filtroEtapa').value;
-    const tipo       = document.getElementById('filtroTipo').value;
-    const categoria  = document.getElementById('filtroCategoria').value;
-    const fornecedor = document.getElementById('filtroFornecedor').value.trim();
+    const obrasSel   = getMultiSelectValues('wrapObra');
+    const etapasSel  = getMultiSelectValues('wrapEtapa');
+    const tiposSel   = getMultiSelectValues('wrapTipo');
+    const catsSel    = getMultiSelectValues('wrapCategoria');
+    const fornsSel   = getMultiSelectValues('wrapFornecedor');
+    const bancosSel  = getMultiSelectValues('wrapBanco');
     const descricao  = document.getElementById('filtroDescricao').value.trim();
-    const banco      = document.getElementById('filtroBanco').value;
 
     document.getElementById('tabelaLoading').style.display = 'flex';
 
@@ -189,15 +296,15 @@ async function carregarHistorico() {
             .order('data', { ascending: false })
             .order('id',   { ascending: false });
 
-        if (dataIni)   q = q.gte('data', dataIni);
-        if (dataFim)   q = q.lte('data', dataFim);
-        if (obra)      q = q.eq('obra', obra);
-        if (etapa)     q = q.eq('etapa', etapa);
-        if (tipo)       q = q.eq('tipo', tipo);
-        if (categoria)  q = q.eq('despesa', categoria);
-        if (fornecedor) q = q.ilike('fornecedor', `%${fornecedor}%`);
-        if (descricao)  q = q.ilike('descricao',  `%${descricao}%`);
-        if (banco)      q = q.eq('banco', banco);
+        if (dataIni)           q = q.gte('data', dataIni);
+        if (dataFim)           q = q.lte('data', dataFim);
+        if (obrasSel.length)   q = q.in('obra', obrasSel);
+        if (etapasSel.length)  q = q.in('etapa', etapasSel);
+        if (tiposSel.length)   q = q.in('tipo', tiposSel);
+        if (catsSel.length)    q = q.in('despesa', catsSel);
+        if (fornsSel.length)   q = q.in('fornecedor', fornsSel);
+        if (descricao)         q = q.ilike('descricao', `%${descricao}%`);
+        if (bancosSel.length)  q = q.in('banco', bancosSel);
 
         const { data, error } = await q;
         if (error) throw error;
@@ -261,10 +368,10 @@ function renderizarTabela() {
             <td>${esc(r.obra)}</td>
             <td>${esc(r.etapa)}</td>
             <td>${esc(r.tipo)}</td>
-            <td>${esc(r.fornecedor)}</td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.descricao)}">${esc(r.descricao)}</td>
-            <td>${esc(r.despesa)}</td>
-            <td>${esc(r.forma)}</td>
+            <td>${esc(r.fornecedor) || '\u2014'}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.descricao) || '\u2014'}">${esc(r.descricao) || '\u2014'}</td>
+            <td>${esc(r.despesa) || '\u2014'}</td>
+            <td>${esc(r.forma) || '\u2014'}</td>
             <td>${esc(r.banco || '—')}</td>
             <td class="text-right" style="font-variant-numeric:tabular-nums;">${valor}</td>
             <td style="text-align:center;">${nfIcon}</td>
@@ -314,13 +421,15 @@ function limparFiltros() {
     ini.setDate(ini.getDate() - 90);
     document.getElementById('filtroDataIni').value = ini.toISOString().split('T')[0];
     document.getElementById('filtroDataFim').value = hoje.toISOString().split('T')[0];
-    document.getElementById('filtroObra').value       = '';
-    document.getElementById('filtroEtapa').value      = '';
-    document.getElementById('filtroTipo').value       = '';
-    document.getElementById('filtroCategoria').value  = '';
-    document.getElementById('filtroFornecedor').value = '';
-    document.getElementById('filtroDescricao').value  = '';
-    document.getElementById('filtroBanco').value      = '';
+    clearMultiSelect('wrapObra');
+    clearMultiSelect('wrapEtapa');
+    clearMultiSelect('wrapTipo');
+    clearMultiSelect('wrapCategoria');
+    clearMultiSelect('wrapFornecedor');
+    clearMultiSelect('wrapBanco');
+    document.getElementById('filtroDescricao').value = '';
+    // restaura etapas completas após limpar obras
+    popularMultiSelect('wrapEtapa', etapas, 'Todas as etapas');
     paginaAtual = 1;
     carregarHistorico();
 }
@@ -472,27 +581,7 @@ function exportarCSV() {
     URL.revokeObjectURL(url);
 }
 
-// --- HELPERS ---
-function formatarData(iso) {
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-}
-
-function formatarValor(v) {
-    return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function esc(v) {
-    if (v == null) return '—';
-    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function setStatus(type, text) {
-    const el = document.getElementById('connectionStatus');
-    if (!el) return;
-    el.textContent = text;
-    el.className   = `status-dot ${type}`;
-}
+// helpers: esc, setStatus, formatarData, formatarValor — via lib/helpers.js
 
 // ── EXCLUSÃO EM LOTE ────────────────────────────────────────────────────────
 

@@ -111,6 +111,11 @@ def _estilos():
             fontSize=7.5, textColor=C_BRANCO,
             fontName='Helvetica-Bold', alignment=TA_CENTER,
         ),
+        'tab_total': ParagraphStyle(
+            'TabTotal', parent=base['Normal'],
+            fontSize=8.5, textColor=C_ON_SURFACE,
+            fontName='Helvetica-Bold', alignment=TA_RIGHT,
+        ),
         'tab_label': ParagraphStyle(
             'TabLabel', parent=base['Normal'],
             fontSize=9, textColor=C_ON_SURFACE,
@@ -396,8 +401,8 @@ def _tabela_despesas(df_desp: pd.DataFrame, estilos, largura, mostrar_etapa: boo
     # Linha de total
     empty = [Paragraph('', estilos['tab_valor'])] * (len(header) - 2)
     rows.append(empty + [
-        Paragraph('Total', estilos['tab_header']),
-        Paragraph(_fmt(total), estilos['tab_header']),
+        Paragraph('Total', estilos['tab_total']),
+        Paragraph(_fmt(total), estilos['tab_total']),
     ])
 
     style_cmds = [
@@ -446,8 +451,8 @@ def _tabela_recebimentos(df_receb: pd.DataFrame, estilos, largura) -> Table:
     # Linha de total
     rows.append([
         Paragraph('', estilos['tab_valor'])] * 4 + [
-        Paragraph('Total', estilos['tab_header']),
-        Paragraph(_fmt(total), estilos['tab_header']),
+        Paragraph('Total', estilos['tab_total']),
+        Paragraph(_fmt(total), estilos['tab_total']),
     ])
 
     style_cmds = [
@@ -539,8 +544,8 @@ def _tabela_resumo_etapas(df_despesas: pd.DataFrame, estilos, largura) -> Table:
     # Linha de total
     total = float(agrup['VALOR_TOTAL'].sum())
     rows.append([
-        Paragraph('Total', estilos['tab_header']),
-        Paragraph(_fmt(total), estilos['tab_header']),
+        Paragraph('Total', estilos['tab_total']),
+        Paragraph(_fmt(total), estilos['tab_total']),
     ])
 
     style_cmds = [
@@ -637,6 +642,80 @@ def gerar_relatorio_detalhado(
         else:
             etapas_ativas = etapas_com_dados.tolist()
 
+        # ── Página de visão geral ────────────────────────────────────────────
+        total_orc   = float(df_obra['ORÇAMENTO_ESTIMADO'].sum())
+        total_gasto = float(df_obra['GASTO_REALIZADO'].sum())
+        total_saldo = total_orc - total_gasto
+        total_pct   = (total_gasto / total_orc * 100) if total_orc > 0 else 0.0
+
+        story.append(_timbrado_simples(obra_nome, LARGURA_UTIL, obra_info))
+        story.append(_linha_separadora(LARGURA_UTIL))
+        story.append(Spacer(1, 0.25 * cm))
+
+        st_visao = ParagraphStyle('VisaoGeral', fontSize=11, textColor=C_SECONDARY,
+                                   fontName='Helvetica-Bold', alignment=TA_CENTER)
+        story.append(Paragraph("Visão Geral", st_visao))
+        story.append(Spacer(1, 0.25 * cm))
+
+        story.append(_tabela_kpis_principais(total_orc, total_gasto, total_saldo, estilos, LARGURA_UTIL))
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(_tabela_percentuais(total_pct, 0.0, estilos, LARGURA_UTIL))
+        story.append(Spacer(1, 0.3 * cm))
+
+        # Tabela resumo por etapa
+        col_etapa  = LARGURA_UTIL * 0.22
+        col_dados  = (LARGURA_UTIL - col_etapa) / 5
+        col_widths_resumo = [col_etapa] + [col_dados] * 5
+
+        HEADERS_RESUMO = ["ETAPA", "ORÇAMENTO\nESTIMADO", "CUSTO\nREALIZADO", "SALDO\nFINANCEIRO", "% DE\nCONSUMO", "% DE\nREALIZAÇÃO"]
+        header_row_resumo = [Paragraph(h, estilos['simples_header']) for h in HEADERS_RESUMO]
+        rows_resumo = [header_row_resumo]
+
+        style_cmds_resumo = [
+            ('BACKGROUND',     (0, 0), (-1, 0),  C_PRIMARY),
+            ('LINEBELOW',      (0, 0), (-1, 0),  0.3, C_OUTLINE),
+            ('TOPPADDING',     (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING',  (0, 0), (-1, -1), 10),
+            ('LEFTPADDING',    (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING',   (0, 0), (-1, -1), 10),
+            ('VALIGN',         (0, 0), (-1, -1), 'MIDDLE'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [C_BRANCO, C_SURFACE]),
+        ]
+
+        for etapa_nome_r in etapas_ativas:
+            df_etapa_r = df_obra[df_obra['ETAPA'] == etapa_nome_r]
+            is_adm_r   = etapa_nome_r.strip().upper() == 'ADM LOCAL'
+
+            orc_r   = float(df_etapa_r['ORÇAMENTO_ESTIMADO'].sum())
+            gasto_r = float(df_etapa_r['GASTO_REALIZADO'].sum())
+            saldo_r = orc_r - gasto_r
+            pct_r   = (gasto_r / orc_r * 100) if orc_r > 0 else 0.0
+            pct_real_r = 0.0
+            if not is_adm_r and 'TAXA_CONCLUSAO' in df_etapa_r.columns and not df_etapa_r.empty:
+                pct_real_r = float(df_etapa_r['TAXA_CONCLUSAO'].iloc[0])
+
+            est_saldo_r   = estilos['simples_verde']   if saldo_r >= 0  else estilos['simples_vermelho']
+            est_consumo_r = estilos['simples_vermelho'] if pct_r > 100   else estilos['simples_valor']
+
+            rows_resumo.append([
+                Paragraph(etapa_nome_r,            estilos['simples_etapa']),
+                Paragraph(_fmt(orc_r),             estilos['simples_valor']),
+                Paragraph(_fmt(gasto_r),           estilos['simples_valor']),
+                Paragraph(_fmt(saldo_r),           est_saldo_r),
+                Paragraph(f"{pct_r:.1f}%",         est_consumo_r),
+                Paragraph("—" if is_adm_r else f"{pct_real_r:.1f}%", estilos['simples_valor']),
+            ])
+
+        tabela_resumo = Table(rows_resumo, colWidths=col_widths_resumo)
+        tabela_resumo.setStyle(TableStyle(style_cmds_resumo))
+        story.append(tabela_resumo)
+
+        if df_recebimentos is not None and not df_recebimentos.empty:
+            _kpis_fluxo_caixa(df_recebimentos, total_gasto, estilos, LARGURA_UTIL, story)
+
+        story.append(PageBreak())
+
+        # ── Páginas detalhadas por etapa ─────────────────────────────────────
         for idx, etapa_nome in enumerate(etapas_ativas):
             df_etapa = df_obra[df_obra['ETAPA'] == etapa_nome]
             is_adm_local = etapa_nome.strip().upper() == 'ADM LOCAL'
@@ -913,6 +992,86 @@ def gerar_relatorio_administrativo(
             _tabela_recebimentos_secao(df_receb_periodo, estilos, LARGURA_UTIL, story)
     elif df.empty:
         story.append(Paragraph("Nenhuma despesa encontrada para o período selecionado.", estilos['secao_titulo']))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+def gerar_relatorio_administrativo_banco(
+    df_despesas: pd.DataFrame,
+    obra_nome: str,
+    data_inicio,
+    data_fim,
+    obra_info: dict = None,
+    banco_nome: str = "",
+) -> bytes:
+    """Relatório administrativo filtrado por banco/responsável.
+    Exibe apenas: saldo total de gastos + tabela completa de despesas no período.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4),
+        rightMargin=MARGEM, leftMargin=MARGEM,
+        topMargin=MARGEM, bottomMargin=MARGEM,
+    )
+
+    estilos = _estilos()
+    story   = []
+
+    # Filtrar pelo período
+    df = df_despesas.copy()
+    if not df.empty:
+        df['DATA'] = pd.to_datetime(df['DATA'], errors='coerce')
+        ini = pd.Timestamp(data_inicio)
+        fim = pd.Timestamp(data_fim)
+        df  = df[(df['DATA'] >= ini) & (df['DATA'] <= fim)]
+
+    # ── Timbrado ─────────────────────────────────────────────────────────────
+    story.append(_timbrado_simples(obra_nome, LARGURA_UTIL, obra_info))
+    story.append(_linha_separadora(LARGURA_UTIL))
+    story.append(Spacer(1, 0.3 * cm))
+
+    # Subtítulo: banco + período
+    st_sub = ParagraphStyle(
+        'SubBanco', fontSize=9, textColor=C_ON_VAR,
+        fontName='Helvetica', alignment=TA_CENTER,
+    )
+    story.append(Paragraph(
+        f"Responsável: <b>{banco_nome}</b> &nbsp;|&nbsp; "
+        f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}",
+        st_sub,
+    ))
+    story.append(Spacer(1, 0.4 * cm))
+
+    # ── KPI: saldo total ──────────────────────────────────────────────────────
+    total = float(df['VALOR_TOTAL'].sum()) if not df.empty else 0.0
+    col_w = LARGURA_UTIL / 3
+    kpi_data = [
+        [Paragraph("TOTAL GASTO NO PERÍODO", estilos['kpi_label_c'])],
+        [Paragraph(_fmt(total), estilos['kpi_valor_c'])],
+    ]
+    kpi_table = Table(kpi_data, colWidths=[col_w])
+    kpi_table.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), C_SURFACE),
+        ('TOPPADDING',    (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 8),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # ── Tabela de despesas ────────────────────────────────────────────────────
+    if not df.empty:
+        story.append(Paragraph("Despesas do período", estilos['secao_titulo']))
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(_tabela_despesas(df, estilos, LARGURA_UTIL, mostrar_etapa=True))
+    else:
+        story.append(Paragraph(
+            "Nenhuma despesa encontrada para este responsável no período selecionado.",
+            estilos['secao_titulo'],
+        ))
 
     doc.build(story)
     buffer.seek(0)

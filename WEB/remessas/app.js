@@ -8,16 +8,8 @@
 
 const API_BASE = window.API_BASE || `http://${location.hostname}:8000`;
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let dbClient;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-    }
-}
 
 // --- ESTADO ---
 let obras        = [];
@@ -26,22 +18,11 @@ let bancosFilhos = []; // { id, nome } — contas controladas (tipo='filho')
 let bancosObras  = {}; // banco_id → string[] (obras associadas; vazio = todas)
 let arquivoComprovante = null;
 
-// --- FORMATAÇÃO ---
-function fmtMoeda(v) {
-    return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-function fmtData(d) {
-    if (!d) return '—';
-    const [y, m, dd] = d.split('-');
-    return `${dd}/${m}/${y}`;
-}
-function hoje() {
-    return new Date().toISOString().slice(0, 10);
-}
+// formatarMoeda, formatarData, hoje — via lib/helpers.js
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    dbClient = window.db;
     if (!dbClient) {
         document.getElementById('tabelaBody').innerHTML =
             '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:var(--sp-6);">Erro: credenciais Supabase não carregadas.</td></tr>';
@@ -52,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await Promise.all([carregarObras(), carregarBancos(), carregarRemessas()]);
     await renderSaldos();
+    atualizarBadgePendentes();
 
     document.getElementById('btnNovaRemessa').addEventListener('click', abrirModalNovaRemessa);
     document.getElementById('btnSalvarRemessa').addEventListener('click', salvarRemessa);
@@ -150,22 +132,22 @@ async function renderSaldos() {
 
     grid.innerHTML = saldos.map(s => {
         const isAtivo = _cardAtivo === s.banco_id;
-        const ultimaStr = s.ultima_remessa ? `Última: ${fmtData(s.ultima_remessa)}` : '';
+        const ultimaStr = s.ultima_remessa ? `Última: ${formatarData(s.ultima_remessa)}` : '';
         return `
         <div class="metric-card" onclick="filtrarPorCard(${s.banco_id})" style="cursor:pointer;transition:border .15s;${s.saldo < 0 ? 'border-left:3px solid var(--danger);' : ''}${isAtivo ? 'border-left:3px solid var(--primary);' : ''}">
             <div class="metric-label">${s.banco}</div>
-            <div class="metric-value" style="color:${s.saldo < 0 ? 'var(--danger)' : 'var(--success)'};">${fmtMoeda(s.saldo)}</div>
+            <div class="metric-value" style="color:${s.saldo < 0 ? 'var(--danger)' : 'var(--success)'};">${formatarMoeda(s.saldo)}</div>
             <div style="font-size:0.72rem;color:var(--on-surface-muted);margin-top:4px;">
-                Recebido: ${fmtMoeda(s.total_recebido)} &nbsp;|&nbsp; Despesas: ${fmtMoeda(s.total_gasto)}
+                Recebido: ${formatarMoeda(s.total_recebido)} &nbsp;|&nbsp; Despesas: ${formatarMoeda(s.total_gasto)}
                 ${ultimaStr ? `<br>${ultimaStr}` : ''}
             </div>
         </div>`;
     }).join('') + `
         <div class="metric-card">
             <div class="metric-label" style="font-weight:600;">Total Geral</div>
-            <div class="metric-value" style="color:${totalSaldo < 0 ? 'var(--danger)' : 'var(--success)'};">${fmtMoeda(totalSaldo)}</div>
+            <div class="metric-value" style="color:${totalSaldo < 0 ? 'var(--danger)' : 'var(--success)'};">${formatarMoeda(totalSaldo)}</div>
             <div style="font-size:0.72rem;color:var(--on-surface-muted);margin-top:4px;">
-                Enviado: ${fmtMoeda(totalRecebido)} &nbsp;|&nbsp; Gasto: ${fmtMoeda(totalGasto)}
+                Enviado: ${formatarMoeda(totalRecebido)} &nbsp;|&nbsp; Gasto: ${formatarMoeda(totalGasto)}
             </div>
         </div>`;
 }
@@ -191,7 +173,7 @@ function renderTabela() {
         ? ' &nbsp;<span style="font-size:0.72rem;background:color-mix(in srgb,var(--warning,#f59e0b) 20%,transparent);color:var(--warning,#b45309);padding:2px 8px;border-radius:12px;">⚠ limite 500 — use filtros</span>'
         : '';
     document.getElementById('totalRemessas').innerHTML =
-        `${remessas.length} remessa(s) — Total: ${fmtMoeda(total)}${limiteBadge}`;
+        `${remessas.length} remessa(s) — Total: ${formatarMoeda(total)}${limiteBadge}`;
 
     if (!remessas.length) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Nenhuma remessa encontrada.</td></tr>';
@@ -200,11 +182,11 @@ function renderTabela() {
 
     tbody.innerHTML = remessas.map(r => `
         <tr>
-            <td>${fmtData(r.data)}</td>
+            <td>${formatarData(r.data)}</td>
             <td><strong>${r.banco_destino?.nome || '—'}</strong></td>
             <td style="color:var(--on-surface-muted);">${r.obra || '—'}</td>
             <td style="color:var(--on-surface-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.descricao || '—'}</td>
-            <td class="text-right"><strong>${fmtMoeda(r.valor)}</strong></td>
+            <td class="text-right"><strong>${formatarMoeda(r.valor)}</strong></td>
             <td style="text-align:center;">
                 ${r.comprovante_url
                     ? `<a href="${r.comprovante_url}" target="_blank" title="Ver comprovante"
@@ -407,6 +389,228 @@ async function uploadComprovante(file) {
     } catch (e) {
         toast.error('Erro no upload do comprovante: ' + e.message);
         return null;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _tabAtiva = 'remessas';
+
+function switchTab(tab) {
+    _tabAtiva = tab;
+
+    const isRemessas = tab === 'remessas';
+    document.getElementById('secaoRemessas').style.display   = isRemessas ? '' : 'none';
+    document.getElementById('secaoAprovacoes').style.display = isRemessas ? 'none' : '';
+
+    // Botões hero (exportar / nova remessa) só na tab de remessas
+    document.getElementById('heroActions').style.display = isRemessas ? 'flex' : 'none';
+
+    // Estilo dos botões de tab
+    const btnRem = document.getElementById('tabBtnRemessas');
+    const btnApr = document.getElementById('tabBtnAprovacoes');
+    btnRem.style.color        = isRemessas ? 'var(--primary)' : 'var(--on-surface-muted)';
+    btnRem.style.borderBottom = isRemessas ? '2px solid var(--primary)' : '2px solid transparent';
+    btnApr.style.color        = isRemessas ? 'var(--on-surface-muted)' : 'var(--primary)';
+    btnApr.style.borderBottom = isRemessas ? '2px solid transparent' : '2px solid var(--primary)';
+
+    if (!isRemessas) {
+        carregarAprovacoes('pendente');
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// APROVAÇÕES
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _statusFiltroApr = 'pendente';
+let _aprovacoes      = [];
+
+const _statusLabel = {
+    pendente:  { txt: 'Pendente',  cor: '#f59e0b' },
+    aprovado:  { txt: 'Aprovado',  cor: 'var(--success,#22c55e)' },
+    rejeitado: { txt: 'Rejeitado', cor: 'var(--danger,#ef4444)' },
+};
+
+async function _getAuthHeader() {
+    try {
+        const sb = window.supabase?.createClient
+            ? null  // fallback: tenta via window.db se já instanciado
+            : null;
+        // window.db é o cliente Supabase criado por nav.js
+        const client = window.db || dbClient;
+        if (!client) return {};
+        const { data: { session } } = await client.auth.getSession();
+        if (session?.access_token) {
+            return { 'Authorization': `Bearer ${session.access_token}` };
+        }
+    } catch (_) {}
+    return {};
+}
+
+async function carregarAprovacoes(status) {
+    _statusFiltroApr = status || _statusFiltroApr;
+
+    // Destaca botão de filtro ativo
+    ['Pendente','Aprovado','Rejeitado','Todos'].forEach(s => {
+        const btn = document.getElementById(`filtroApr${s}`);
+        if (btn) {
+            const ativo = _statusFiltroApr === s.toLowerCase();
+            btn.className = ativo ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+            btn.style.fontSize = '0.8rem';
+        }
+    });
+
+    const tbody = document.getElementById('tabelaAprovacoes');
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Carregando…</td></tr>';
+
+    try {
+        const headers = await _getAuthHeader();
+        const res = await fetch(
+            `${API_BASE}/api/aprovacoes?status=${encodeURIComponent(_statusFiltroApr)}`,
+            { headers }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        _aprovacoes = await res.json();
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;color:var(--danger);padding:var(--sp-6);">Erro ao carregar aprovações: ${e.message}</td></tr>`;
+        return;
+    }
+
+    renderTabelaAprovacoes();
+    atualizarBadgePendentes();
+}
+
+function filtrarAprovacoes(status) {
+    carregarAprovacoes(status);
+}
+
+function renderTabelaAprovacoes() {
+    const tbody = document.getElementById('tabelaAprovacoes');
+    const total = document.getElementById('totalAprovacoes');
+
+    total.textContent = `${_aprovacoes.length} registro(s)`;
+
+    if (!_aprovacoes.length) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Nenhum registro encontrado.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = _aprovacoes.map(a => {
+        const st = _statusLabel[a.status] || { txt: a.status, cor: 'var(--on-surface-muted)' };
+        const isPendente = a.status === 'pendente';
+        const acoes = isPendente ? `
+            <div style="display:flex;gap:var(--sp-1);justify-content:flex-end;min-width:160px;">
+                <button class="btn btn-outline btn-sm" onclick="aprovarDespesa('${a.id}')"
+                    style="font-size:0.75rem;padding:3px 10px;color:var(--success,#16a34a);border-color:var(--success,#16a34a);">
+                    Aprovar
+                </button>
+                <button class="btn btn-outline btn-sm" onclick="abrirModalRejeitar('${a.id}')"
+                    style="font-size:0.75rem;padding:3px 10px;color:var(--danger,#ef4444);border-color:var(--danger,#ef4444);">
+                    Rejeitar
+                </button>
+            </div>` : `<span style="font-size:0.75rem;color:var(--on-surface-muted);">${a.observacao_admin || '—'}</span>`;
+
+        return `
+        <tr>
+            <td>${formatarData(a.data)}</td>
+            <td><strong>${a.funcionario}</strong></td>
+            <td style="color:var(--on-surface-muted);">${a.obra}</td>
+            <td>${a.fornecedor}</td>
+            <td style="color:var(--on-surface-muted);">${a.tipo}</td>
+            <td style="color:var(--on-surface-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${a.descricao}">${a.descricao}</td>
+            <td class="text-right"><strong>${formatarMoeda(a.valor_total)}</strong></td>
+            <td style="text-align:center;">
+                <a href="${a.comprovante_url}" target="_blank" title="Ver comprovante"
+                   style="color:var(--primary);font-size:0.8rem;text-decoration:none;">📎 Ver</a>
+            </td>
+            <td style="text-align:center;">
+                <span style="font-size:0.75rem;font-weight:600;color:${st.cor};">${st.txt}</span>
+            </td>
+            <td>${acoes}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function aprovarDespesa(id) {
+    if (!confirm('Aprovar esta despesa? Ela será registrada oficialmente em c_despesas.')) return;
+
+    try {
+        const headers = { 'Content-Type': 'application/json', ...(await _getAuthHeader()) };
+        const res = await fetch(`${API_BASE}/api/aprovacoes/${id}/aprovar`, {
+            method: 'POST',
+            headers,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        toast.success('Despesa aprovada e registrada com sucesso.');
+        await carregarAprovacoes(_statusFiltroApr);
+        atualizarBadgePendentes();
+    } catch (e) {
+        toast.error('Erro ao aprovar: ' + e.message);
+    }
+}
+
+function abrirModalRejeitar(id) {
+    document.getElementById('rejeitarId').value  = id;
+    document.getElementById('motivoRejeicao').value = '';
+    document.getElementById('modalRejeitar').style.display = 'flex';
+    document.getElementById('motivoRejeicao').focus();
+}
+
+function fecharModalRejeitar(e) {
+    if (e && e.target !== document.getElementById('modalRejeitar')) return;
+    document.getElementById('modalRejeitar').style.display = 'none';
+}
+
+async function confirmarRejeicao() {
+    const id        = document.getElementById('rejeitarId').value;
+    const observacao = document.getElementById('motivoRejeicao').value.trim() || null;
+    const btn       = document.getElementById('btnConfirmarRejeicao');
+
+    btn.disabled    = true;
+    btn.textContent = 'Rejeitando…';
+
+    try {
+        const headers = { 'Content-Type': 'application/json', ...(await _getAuthHeader()) };
+        const res = await fetch(`${API_BASE}/api/aprovacoes/${id}/rejeitar`, {
+            method:  'POST',
+            headers,
+            body:    JSON.stringify({ observacao }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        toast.success('Despesa rejeitada.');
+        document.getElementById('modalRejeitar').style.display = 'none';
+        await carregarAprovacoes(_statusFiltroApr);
+        atualizarBadgePendentes();
+    } catch (e) {
+        toast.error('Erro ao rejeitar: ' + e.message);
+    } finally {
+        btn.disabled    = false;
+        btn.textContent = 'Confirmar Rejeição';
+    }
+}
+
+async function atualizarBadgePendentes() {
+    const badge = document.getElementById('badgePendentes');
+    if (!badge) return;
+    try {
+        const headers = await _getAuthHeader();
+        const res = await fetch(`${API_BASE}/api/aprovacoes?status=pendente`, { headers });
+        if (!res.ok) { badge.style.display = 'none'; return; }
+        const dados = await res.json();
+        const n = dados.length;
+        if (n > 0) {
+            badge.textContent    = n;
+            badge.style.display  = 'inline';
+        } else {
+            badge.style.display  = 'none';
+        }
+    } catch (_) {
+        badge.style.display = 'none';
     }
 }
 

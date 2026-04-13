@@ -4,16 +4,8 @@
  * Fonte de dados: c_despesas WHERE vencimento IS NOT NULL
  */
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let dbClient;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-    }
-}
 
 // --- ESTADO ---
 let obras        = [];
@@ -28,25 +20,6 @@ const PAGE_SIZE    = 50;
 
 let editandoId = null;
 let pagandoId  = null;
-
-// --- HELPERS ---
-function esc(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function formatarData(d) {
-    if (!d) return '—';
-    const [y, m, dia] = d.split('-');
-    return `${dia}/${m}/${y}`;
-}
-
-function formatarValor(v) {
-    return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function hoje() {
-    return new Date().toISOString().split('T')[0];
-}
 
 function addDias(d, n) {
     const dt = new Date(d + 'T00:00:00');
@@ -74,16 +47,9 @@ function badgeStatus(sv) {
             color:${c.cor};background:${c.bg};">${c.label}</span>`;
 }
 
-function setStatus(estado, texto) {
-    const el = document.getElementById('connectionStatus');
-    if (!el) return;
-    el.textContent = texto;
-    el.className   = `status-dot ${estado}`;
-}
-
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    dbClient = window.db;
     await carregarReferencias();
 
     document.getElementById('btnFiltrar').addEventListener('click', () => { paginaAtual = 1; carregarContas(); });

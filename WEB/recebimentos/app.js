@@ -4,16 +4,8 @@
  * Lógica: entrada direta vinculada à obra. Sem controle de vencimento.
  */
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let dbClient;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-    }
-}
 
 // --- ESTADO ---
 let obras  = [];
@@ -33,34 +25,16 @@ function statusBadge(r) {
     return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.7rem;font-weight:700;color:var(--warning);background:rgba(180,83,9,0.1);">Pendente</span>`;
 }
 
-// --- HELPERS ---
-function esc(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function formatarData(d) {
-    if (!d) return '—';
-    const [y, m, dia] = d.split('-');
-    return `${dia}/${m}/${y}`;
-}
-function formatarValor(v) {
-    return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function hoje() { return new Date().toISOString().split('T')[0]; }
+// helpers: esc, setStatus, formatarData, formatarValor, hoje — via lib/helpers.js
 function addMeses(d, n) {
     const dt = new Date(d + 'T00:00:00');
     dt.setMonth(dt.getMonth() + n);
     return dt.toISOString().split('T')[0];
 }
-function setStatus(estado, texto) {
-    const el = document.getElementById('connectionStatus');
-    if (!el) return;
-    el.textContent = texto;
-    el.className   = `status-dot ${estado}`;
-}
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    dbClient = window.db;
     await carregarReferencias();
 
     document.getElementById('btnFiltrar').addEventListener('click', () => { paginaAtual = 1; carregarRecebimentos(); });

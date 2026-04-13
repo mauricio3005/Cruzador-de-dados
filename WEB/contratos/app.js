@@ -5,16 +5,8 @@
  * Cada pagamento registrado gera uma despesa em c_despesas automaticamente.
  */
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let dbClient;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-    }
-}
 
 // --- ESTADO ---
 let obras  = [];
@@ -28,26 +20,6 @@ let editandoContratoId = null;
 let contratoAtivoPag   = null;
 let pagamentosAtivos   = [];
 let arquivoPagamento   = null;
-
-// --- HELPERS ---
-function esc(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function formatarData(d) {
-    if (!d) return '—';
-    const [y, m, dia] = d.split('-');
-    return `${dia}/${m}/${y}`;
-}
-function formatarValor(v) {
-    return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function hoje() { return new Date().toISOString().split('T')[0]; }
-function setStatus(estado, texto) {
-    const el = document.getElementById('connectionStatus');
-    if (!el) return;
-    el.textContent = texto;
-    el.className   = `status-dot ${estado}`;
-}
 function popularSelect(id, opcoes, placeholder) {
     const sel = document.getElementById(id);
     if (!sel) return;
@@ -76,7 +48,7 @@ function setSelectValue(id, value) {
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    dbClient = window.db;
     await carregarReferencias();
 
     document.getElementById('btnFiltrar').addEventListener('click', () => { paginaAtual = 1; carregarContratos(); });

@@ -60,7 +60,7 @@
                     <h1>Remessas de Caixa</h1>
                     <p class="page-hero-sub">Controle de valores enviados e saldo por conta.</p>
                 </div>
-                <div style="display:flex;gap:var(--sp-3);">
+                <div style="display:flex;gap:var(--sp-3);" id="heroActions">
                     <button class="btn btn-outline" id="btnExportarCSV">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -79,67 +79,132 @@
                 </div>
             </div>
 
-            <!-- KPI Saldos por conta -->
-            <div class="metrics-grid" id="saldosGrid" style="margin-bottom:var(--sp-6);">
-                <div class="metric-card">
-                    <div class="metric-label">Carregando saldos…</div>
-                    <div class="metric-value">—</div>
-                </div>
+            <!-- Tab Navigation -->
+            <div style="display:flex;gap:0;border-bottom:2px solid var(--surface-3);margin-bottom:var(--sp-6);">
+                <button id="tabBtnRemessas" onclick="switchTab('remessas')"
+                    style="background:none;border:none;padding:var(--sp-3) var(--sp-5);font-size:0.9rem;font-weight:600;cursor:pointer;color:var(--primary);border-bottom:2px solid var(--primary);margin-bottom:-2px;transition:color .15s;">
+                    Remessas
+                </button>
+                <button id="tabBtnAprovacoes" onclick="switchTab('aprovacoes')"
+                    style="background:none;border:none;padding:var(--sp-3) var(--sp-5);font-size:0.9rem;font-weight:600;cursor:pointer;color:var(--on-surface-muted);border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s;display:flex;align-items:center;gap:var(--sp-2);">
+                    Despesas a Aprovar
+                    <span id="badgePendentes" style="display:none;background:var(--danger,#ef4444);color:#fff;font-size:0.7rem;font-weight:700;border-radius:99px;padding:1px 7px;line-height:1.6;"></span>
+                </button>
             </div>
 
-            <!-- Filtros -->
-            <div class="matrix-section" style="margin-bottom:var(--sp-4);padding:var(--sp-4) var(--sp-6);">
-                <div style="display:flex;gap:var(--sp-3);align-items:flex-end;flex-wrap:wrap;">
-                    <div>
-                        <label class="form-label">Destino</label>
-                        <select class="form-select" id="filtroBanco" style="min-width:160px;">
-                            <option value="">Todas as contas</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="form-label">Obra</label>
-                        <select class="form-select" id="filtroObra" style="min-width:160px;">
-                            <option value="">Todas as obras</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="form-label">Data início</label>
-                        <input type="date" class="form-input" id="filtroDataInicio">
-                    </div>
-                    <div>
-                        <label class="form-label">Data fim</label>
-                        <input type="date" class="form-input" id="filtroDataFim">
-                    </div>
-                    <button class="btn btn-outline" id="btnFiltrar">Filtrar</button>
-                    <button class="btn btn-outline" id="btnLimparFiltros">Limpar</button>
-                </div>
-            </div>
+            <!-- ═══ SEÇÃO REMESSAS ═══ -->
+            <div id="secaoRemessas">
 
-            <!-- Tabela de remessas -->
-            <div class="matrix-section">
-                <div class="matrix-header">
-                    <span class="matrix-title">Histórico de Remessas</span>
-                    <span id="totalRemessas" style="font-size:0.8rem;color:var(--on-surface-muted);"></span>
+                <!-- KPI Saldos por conta -->
+                <div class="metrics-grid" id="saldosGrid" style="margin-bottom:var(--sp-6);">
+                    <div class="metric-card">
+                        <div class="metric-label">Carregando saldos…</div>
+                        <div class="metric-value">—</div>
+                    </div>
                 </div>
-                <div class="table-wrapper">
-                    <table class="styled-table">
-                        <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Destino</th>
-                                <th>Obra</th>
-                                <th>Descrição</th>
-                                <th class="text-right">Valor (R$)</th>
-                                <th style="text-align:center;">Comprovante</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="tabelaBody">
-                            <tr><td colspan="7" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Carregando…</td></tr>
-                        </tbody>
-                    </table>
+
+                <!-- Filtros -->
+                <div class="matrix-section" style="margin-bottom:var(--sp-4);padding:var(--sp-4) var(--sp-6);">
+                    <div style="display:flex;gap:var(--sp-3);align-items:flex-end;flex-wrap:wrap;">
+                        <div>
+                            <label class="form-label">Destino</label>
+                            <select class="form-select" id="filtroBanco" style="min-width:160px;">
+                                <option value="">Todas as contas</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label">Obra</label>
+                            <select class="form-select" id="filtroObra" style="min-width:160px;">
+                                <option value="">Todas as obras</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label">Data início</label>
+                            <input type="date" class="form-input" id="filtroDataInicio">
+                        </div>
+                        <div>
+                            <label class="form-label">Data fim</label>
+                            <input type="date" class="form-input" id="filtroDataFim">
+                        </div>
+                        <button class="btn btn-outline" id="btnFiltrar">Filtrar</button>
+                        <button class="btn btn-outline" id="btnLimparFiltros">Limpar</button>
+                    </div>
                 </div>
-            </div>
+
+                <!-- Tabela de remessas -->
+                <div class="matrix-section">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Histórico de Remessas</span>
+                        <span id="totalRemessas" style="font-size:0.8rem;color:var(--on-surface-muted);"></span>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="styled-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Destino</th>
+                                    <th>Obra</th>
+                                    <th>Descrição</th>
+                                    <th class="text-right">Valor (R$)</th>
+                                    <th style="text-align:center;">Comprovante</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaBody">
+                                <tr><td colspan="7" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Carregando…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div><!-- /secaoRemessas -->
+
+            <!-- ═══ SEÇÃO APROVAÇÕES ═══ -->
+            <div id="secaoAprovacoes" style="display:none;">
+
+                <!-- Filtro de status -->
+                <div class="matrix-section" style="margin-bottom:var(--sp-4);padding:var(--sp-4) var(--sp-6);">
+                    <div style="display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;">
+                        <label class="form-label" style="margin:0;">Status:</label>
+                        <div style="display:flex;gap:var(--sp-2);">
+                            <button class="btn btn-primary btn-sm" id="filtroAprPendente"   onclick="filtrarAprovacoes('pendente')"   style="font-size:0.8rem;">Pendentes</button>
+                            <button class="btn btn-outline btn-sm" id="filtroAprAprovado"   onclick="filtrarAprovacoes('aprovado')"   style="font-size:0.8rem;">Aprovadas</button>
+                            <button class="btn btn-outline btn-sm" id="filtroAprRejeitado"  onclick="filtrarAprovacoes('rejeitado')"  style="font-size:0.8rem;">Rejeitadas</button>
+                            <button class="btn btn-outline btn-sm" id="filtroAprTodos"      onclick="filtrarAprovacoes('todos')"      style="font-size:0.8rem;">Todas</button>
+                        </div>
+                        <span id="totalAprovacoes" style="font-size:0.8rem;color:var(--on-surface-muted);margin-left:auto;"></span>
+                    </div>
+                </div>
+
+                <!-- Tabela de aprovações -->
+                <div class="matrix-section">
+                    <div class="matrix-header">
+                        <span class="matrix-title">Despesas de Funcionários</span>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="styled-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Funcionário</th>
+                                    <th>Obra</th>
+                                    <th>Fornecedor</th>
+                                    <th>Tipo</th>
+                                    <th>Descrição</th>
+                                    <th class="text-right">Valor (R$)</th>
+                                    <th style="text-align:center;">Comprovante</th>
+                                    <th style="text-align:center;">Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="tabelaAprovacoes">
+                                <tr><td colspan="10" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Carregando…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div><!-- /secaoAprovacoes -->
 
         </main>
     </div>
@@ -208,7 +273,36 @@
     </div>
 </div>
 
+<!-- ── MODAL REJEITAR DESPESA ──────────────────────────────────────────────── -->
+<div id="modalRejeitar" style="display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.55);align-items:center;justify-content:center;" onclick="fecharModalRejeitar(event)">
+    <div class="matrix-section" style="width:440px;max-width:95vw;margin:0;" onclick="event.stopPropagation()">
+        <div class="matrix-header" style="padding:var(--sp-5) var(--sp-6) var(--sp-4);">
+            <span class="matrix-title">Rejeitar Despesa</span>
+            <button class="btn btn-outline btn-sm" onclick="fecharModalRejeitar()" style="font-size:0.8rem;padding:4px 12px;">✕ Fechar</button>
+        </div>
+        <div style="padding:0 var(--sp-6) var(--sp-6);">
+            <p style="font-size:0.85rem;color:var(--on-surface-muted);margin-bottom:var(--sp-4);">
+                Informe o motivo da rejeição (opcional). O registro ficará disponível para consulta.
+            </p>
+            <div style="margin-bottom:var(--sp-5);">
+                <label class="form-label">Motivo / Observação</label>
+                <textarea class="form-input" id="motivoRejeicao" rows="3" placeholder="Ex: Comprovante ilegível, falta informação de obra…" style="resize:vertical;"></textarea>
+            </div>
+            <input type="hidden" id="rejeitarId">
+            <div style="display:flex;justify-content:flex-end;gap:var(--sp-3);">
+                <button class="btn btn-outline" onclick="fecharModalRejeitar()">Cancelar</button>
+                <button class="btn btn-primary" id="btnConfirmarRejeicao" onclick="confirmarRejeicao()"
+                    style="background:var(--danger,#ef4444);border-color:var(--danger,#ef4444);min-width:140px;">
+                    Confirmar Rejeição
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="../lib/helpers.js"></script>
 <script src="../components/toast.js"></script>
+<script src="../components/api-client.js"></script>
 <script src="../components/nav.js"></script>
 <script src="app.js"></script>
 </body>

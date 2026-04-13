@@ -196,6 +196,8 @@
                         <label for="modoUnico">Obra única</label>
                         <input type="radio" name="modo" id="modoComparativo" value="comparativo">
                         <label for="modoComparativo">Comparativo</label>
+                        <input type="radio" name="modo" id="modoBanco" value="banco">
+                        <label for="modoBanco">Por banco</label>
                     </div>
                 </div>
 
@@ -220,6 +222,12 @@
                     <select class="form-select" id="selectBancos" multiple style="min-width:180px;height:72px;">
                         <option value="" selected>Todos</option>
                     </select>
+                </div>
+
+                <!-- Seletor de bancos — modo por banco -->
+                <div class="form-group" id="grupoBancoRel" style="display:none;">
+                    <label class="form-label">Bancos (vazio = todos)</label>
+                    <select class="form-select" id="selectBancosRel" multiple style="min-width:200px;height:72px;"></select>
                 </div>
 
                 <!-- Período -->
@@ -264,7 +272,7 @@
                 </div>
 
                 <!-- 1) Tabela detalhada (Detalhamento por Etapa) -->
-                <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                <div class="matrix-section" id="secaoEtapas" style="margin-bottom:var(--sp-5);">
                     <div class="matrix-header">
                         <span class="matrix-title">Detalhamento por Etapa</span>
                     </div>
@@ -287,13 +295,38 @@
                     </div>
                 </div>
 
+                <!-- 2) Relatório por banco -->
+                <div id="secaoBancos" style="display:none;">
+                    <div class="matrix-section" style="margin-bottom:var(--sp-5);">
+                        <div class="matrix-header">
+                            <span class="matrix-title">Resumo por Conta</span>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="styled-table">
+                                <thead>
+                                    <tr>
+                                        <th></th>
+                                        <th>Banco / Conta</th>
+                                        <th class="text-right">Remessas Recebidas</th>
+                                        <th class="text-right">Despesas Pagas</th>
+                                        <th class="text-right">Saldo</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tabelaBancos"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
             </div><!-- /relatorioArea -->
 
         </main>
     </div>
 </div>
 
+<script src="../lib/helpers.js"></script>
 <script src="../components/toast.js"></script>
+<script src="../components/api-client.js"></script>
 <script src="../components/nav.js"></script>
 <script src="app.js"></script>
 </body>

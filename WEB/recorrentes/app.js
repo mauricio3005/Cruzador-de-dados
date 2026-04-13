@@ -10,7 +10,7 @@ let editandoId  = null;     // id do template em edição (null = novo)
 
 document.addEventListener('DOMContentLoaded', async () => {
     if (!window.ENV) { toast.error('ENV não carregado'); return; }
-    dbClient = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY);
+    dbClient = window.db;
 
     // Registrar listeners antes do carregamento para não perder cliques em caso de erro
     document.getElementById('btnNova').addEventListener('click', () => abrirModal(null));

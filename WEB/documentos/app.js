@@ -5,16 +5,8 @@
 
 const PAGE_SIZE = 50;
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let dbClient;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-    }
-}
 
 // --- ESTADO ---
 let obras           = [];
@@ -27,7 +19,7 @@ let arquivosAnexar  = [];   // Files selecionados no modal
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    dbClient = window.db;
     await carregarReferencias();
 
     const hoje = new Date();
@@ -225,9 +217,9 @@ function renderizarTabela() {
             <td>${esc(r.obra)}</td>
             <td>${esc(r.etapa)}</td>
             <td>${esc(r.tipo)}</td>
-            <td>${esc(r.fornecedor)}</td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.descricao)}">${esc(r.descricao)}</td>
-            <td>${esc(r.despesa)}</td>
+            <td>${esc(r.fornecedor) || '\u2014'}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.descricao) || '\u2014'}">${esc(r.descricao) || '\u2014'}</td>
+            <td>${esc(r.despesa) || '\u2014'}</td>
             <td class="text-right" style="font-variant-numeric:tabular-nums;">${valor}</td>
             <td style="text-align:center;">${nfBadge}</td>
             <td style="text-align:center;">${acoes}</td>
@@ -480,24 +472,4 @@ function exportarCSV() {
     URL.revokeObjectURL(url);
 }
 
-// --- HELPERS ---
-function formatarData(iso) {
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-}
-
-function formatarValor(v) {
-    return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function esc(v) {
-    if (v == null) return '—';
-    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function setStatus(type, text) {
-    const el = document.getElementById('connectionStatus');
-    if (!el) return;
-    el.textContent = text;
-    el.className   = `status-dot ${type}`;
-}
+// helpers: esc, setStatus, formatarData, formatarValor — via lib/helpers.js

@@ -393,10 +393,19 @@
                         </div>
                     </div>
                     <div class="form-group" id="relPorEtapaWrap" style="display:none;">
-                        <label style="display:flex;align-items:center;gap:var(--sp-3);cursor:pointer;font-size:0.875rem;color:var(--on-surface);margin-top:22px;">
-                            <input type="checkbox" id="relPorEtapa" style="width:16px;height:16px;cursor:pointer;accent-color:var(--primary);">
-                            Detalhar por etapa
-                        </label>
+                        <label class="form-label">Detalhamento</label>
+                        <div class="rel-modo-toggle">
+                            <input type="radio" name="relDetalhe" id="relDetalheEtapa" value="etapa" checked>
+                            <label for="relDetalheEtapa">Por etapa</label>
+                            <input type="radio" name="relDetalhe" id="relDetalheBanco" value="banco">
+                            <label for="relDetalheBanco">Por banco</label>
+                        </div>
+                    </div>
+                    <div class="form-group" id="relBancoWrap" style="display:none;">
+                        <label class="form-label">Conta / Responsável</label>
+                        <select class="form-select" id="relSelectBanco" style="min-width:180px;">
+                            <option value="">— Selecione —</option>
+                        </select>
                     </div>
                     <div class="form-group" id="relAdmDatas" style="display:none;">
                         <label class="form-label">Data início</label>
@@ -424,7 +433,9 @@
 
 </div>
 
+<script src="lib/helpers.js"></script>
 <script src="components/toast.js"></script>
+<script src="components/api-client.js"></script>
 <script src="components/nav.js"></script>
 <script src="app.js"></script>
 </body>

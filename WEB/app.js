@@ -3,24 +3,8 @@
  * Dashboard principal (app.js)
  */
 
-// --- SUPABASE ---
-let SUPABASE_URL = '';
-let SUPABASE_ANON_KEY = '';
+// --- SUPABASE (via nav.js → window.db) ---
 let dbClient;
-
-function carregarEnv() {
-    if (window.ENV) {
-        SUPABASE_URL = window.ENV.SUPABASE_URL;
-        SUPABASE_ANON_KEY = window.ENV.SUPABASE_ANON_KEY;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        } else {
-            console.error("Chaves não encontradas em env.js");
-        }
-    } else {
-        console.error("window.ENV não encontrado. Verifique env.js.");
-    }
-}
 
 // --- ESTADO (dashboard) ---
 let rawData = [];
@@ -66,7 +50,8 @@ function switchTab(tab) {
 
 // --- INICIALIZAÇÃO ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    dbClient = window.db;
+    if (!dbClient) { console.error("Supabase client não disponível."); return; }
     await carregarDados();
 
     // Move dropdown lists to body so position:fixed works correctly
@@ -322,8 +307,8 @@ async function atualizarDashboard() {
     const gastoTotal = filteredData.reduce((s, i) => s + Number(i.GASTO_REALIZADO    || 0), 0);
     const pctConsumo = orcTotal > 0 ? (gastoTotal / orcTotal) * 100 : 0;
 
-    document.getElementById('kpiOrcamento').textContent  = formatCurrency(orcTotal);
-    document.getElementById('kpiRealizado').textContent  = formatCurrency(gastoTotal);
+    document.getElementById('kpiOrcamento').textContent  = formatarMoeda(orcTotal);
+    document.getElementById('kpiRealizado').textContent  = formatarMoeda(gastoTotal);
     document.getElementById('kpiConsumo').textContent    = `${pctConsumo.toFixed(1)}%`;
     document.getElementById('kpiConsumoMin').textContent = `${pctConsumo.toFixed(1)}%`;
 
@@ -421,32 +406,32 @@ async function atualizarFluxoCaixa(gastoTotal) {
             ctrPago = (pagData || []).reduce((s, p) => s + Number(p.valor || 0), 0);
         }
 
-        document.getElementById('fluxoContratosTotal').textContent     = formatCurrency(ctrTotal);
-        document.getElementById('fluxoContratosPago').textContent      = formatCurrency(ctrPago);
-        document.getElementById('fluxoContratosRestante').textContent  = formatCurrency(ctrTotal - ctrPago);
+        document.getElementById('fluxoContratosTotal').textContent     = formatarMoeda(ctrTotal);
+        document.getElementById('fluxoContratosPago').textContent      = formatarMoeda(ctrPago);
+        document.getElementById('fluxoContratosRestante').textContent  = formatarMoeda(ctrTotal - ctrPago);
         const saldoAtual  = recebido - gastoTotal;
         const saldoProj   = recebido - gastoTotal - aPagar;
 
         const kpiSaldo    = document.getElementById('kpiSaldoCaixa');
         const kpiSaldoSub = document.getElementById('kpiSaldoCaixaSub');
         if (kpiSaldo) {
-            kpiSaldo.textContent = formatCurrency(recebido);
+            kpiSaldo.textContent = formatarMoeda(recebido);
             kpiSaldo.style.color = 'var(--success)';
         }
         if (kpiSaldoSub) {
             const saldo = recebido - gastoTotal;
-            kpiSaldoSub.textContent = `Saldo: ${formatCurrency(saldo)}`;
+            kpiSaldoSub.textContent = `Saldo: ${formatarMoeda(saldo)}`;
             kpiSaldoSub.style.color = saldo >= 0 ? 'var(--success)' : 'var(--error)';
         }
 
         const colorSaldoAtual = saldoAtual >= 0 ? 'var(--success)' : 'var(--error)';
         const colorSaldoProj  = saldoProj  >= 0 ? 'var(--success)' : 'var(--error)';
 
-        document.getElementById('fluxoRecebido').textContent      = formatCurrency(recebido);
-        document.getElementById('fluxoGasto').textContent         = formatCurrency(gastoTotal);
-        document.getElementById('fluxoAPagar').textContent        = formatCurrency(aPagar);
-        document.getElementById('fluxoSaldoAtual').textContent    = formatCurrency(saldoAtual);
-        document.getElementById('fluxoSaldoProjetado').textContent = formatCurrency(saldoProj);
+        document.getElementById('fluxoRecebido').textContent      = formatarMoeda(recebido);
+        document.getElementById('fluxoGasto').textContent         = formatarMoeda(gastoTotal);
+        document.getElementById('fluxoAPagar').textContent        = formatarMoeda(aPagar);
+        document.getElementById('fluxoSaldoAtual').textContent    = formatarMoeda(saldoAtual);
+        document.getElementById('fluxoSaldoProjetado').textContent = formatarMoeda(saldoProj);
 
         document.getElementById('fluxoSaldoAtual').style.color    = colorSaldoAtual;
         document.getElementById('fluxoSaldoProjetado').style.color = colorSaldoProj;
@@ -486,15 +471,7 @@ function resetarKPIs() {
     if (kpiSaldoSub) { kpiSaldoSub.textContent = 'Total recebido nas obras'; kpiSaldoSub.style.color = ''; }
 }
 
-function setStatus(type, text) {
-    const el = document.getElementById('connectionStatus');
-    if (!el) return;
-    el.textContent = text;
-    el.className   = `status-dot ${type}`;
-}
-
-const formatCurrency = (value) =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+// helpers: esc, setStatus, formatarData, formatarValor, formatarMoeda — via lib/helpers.js
 
 // --- DOWNLOAD PDF ---
 async function baixarPdf(url, nomeArquivo) {
@@ -519,13 +496,13 @@ async function baixarPdf(url, nomeArquivo) {
 }
 
 // --- MODAL RELATÓRIO PDF ---
-function abrirModalRelatorio(obraNome) {
+async function abrirModalRelatorio(obraNome) {
     // Remove modal anterior se existir
     const prev = document.getElementById('modalRelatorio');
     if (prev) prev.remove();
 
     const hoje  = new Date().toISOString().split('T')[0];
-    const umMesAtras = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().split('T')[0];
+    const umMesAtras = '2025-01-01';
 
     const modal = document.createElement('div');
     modal.id = 'modalRelatorio';
@@ -557,11 +534,26 @@ function abrirModalRelatorio(obraNome) {
                     </label>
                 </div>
 
+                <!-- Seção detalhamento — só para detalhado/administrativo -->
                 <div id="porEtapaWrap" style="display:none;margin-bottom:var(--sp-5);">
-                    <label style="display:flex;align-items:center;gap:var(--sp-3);cursor:pointer;font-size:0.875rem;color:var(--on-surface);">
-                        <input type="checkbox" id="relPorEtapa" style="width:16px;height:16px;cursor:pointer;accent-color:var(--primary);">
-                        Detalhar por etapa
-                    </label>
+                    <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-3);">Detalhamento</div>
+                    <div style="display:flex;gap:var(--sp-3);flex-wrap:wrap;margin-bottom:var(--sp-3);">
+                        <label class="radio-pill active" id="detalheEtapaLabel">
+                            <input type="radio" name="detalheAdm" value="etapa" checked style="display:none;">
+                            Por etapa
+                        </label>
+                        <label class="radio-pill" id="detalheBancoLabel">
+                            <input type="radio" name="detalheAdm" value="banco" style="display:none;">
+                            Por banco
+                        </label>
+                    </div>
+                    <!-- Select de banco — só aparece quando "Por banco" marcado -->
+                    <div id="bancoSelectWrap" style="display:none;">
+                        <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-variant);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:var(--sp-2);">Conta / Responsável</div>
+                        <select id="relBancoSel" style="width:100%;padding:8px 10px;border:none;border-bottom:2px solid var(--surface-container);border-radius:var(--r-md);background:var(--surface-low);font-family:var(--font-body);font-size:0.875rem;color:var(--on-surface);outline:none;">
+                            <option value="">Carregando contas…</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div id="admDateRange" style="display:none;">
@@ -593,6 +585,19 @@ function abrirModalRelatorio(obraNome) {
     document.body.appendChild(modal);
     requestAnimationFrame(() => modal.classList.add('active'));
 
+    // Carregar bancos filhos no select
+    try {
+        const sb = window.db;
+        const { data: bancos } = await sb.from('bancos').select('nome').eq('tipo', 'filho').order('nome');
+        const sel = document.getElementById('relBancoSel');
+        if (bancos && bancos.length > 0) {
+            sel.innerHTML = '<option value="">— Selecione —</option>' +
+                bancos.map(b => `<option value="${b.nome}">${b.nome}</option>`).join('');
+        } else {
+            sel.innerHTML = '<option value="">Nenhuma conta cadastrada</option>';
+        }
+    } catch (_) {}
+
     // Fechar modal
     const fechar = () => {
         modal.classList.remove('active');
@@ -602,35 +607,55 @@ function abrirModalRelatorio(obraNome) {
     document.getElementById('modalRelatorioCancelar').addEventListener('click', fechar);
     modal.addEventListener('click', (e) => { if (e.target === modal) fechar(); });
 
-    // Toggle pills
+    // Toggle tipo de relatório (pills)
     modal.querySelectorAll('input[name="tipoRel"]').forEach(radio => {
         radio.addEventListener('change', () => {
             modal.querySelectorAll('.radio-pill').forEach(p => p.classList.remove('active'));
             radio.parentElement.classList.add('active');
-            const isAdm = radio.value === 'administrativo';
+            const isAdm      = radio.value === 'administrativo';
             const isDetalhado = radio.value === 'detalhado';
-            document.getElementById('admDateRange').style.display = isAdm ? 'block' : 'none';
-            document.getElementById('porEtapaWrap').style.display = (isAdm || isDetalhado) ? 'block' : 'none';
-            // detalhado: por etapa marcado por padrão; administrativo: desmarcado
-            document.getElementById('relPorEtapa').checked = isDetalhado;
+            document.getElementById('admDateRange').style.display  = isAdm ? 'block' : 'none';
+            document.getElementById('porEtapaWrap').style.display  = (isAdm || isDetalhado) ? 'block' : 'none';
+            // Resetar detalhe para "Por etapa" ao trocar tipo
+            if (isAdm || isDetalhado) {
+                modal.querySelector('input[name="detalheAdm"][value="etapa"]').checked = true;
+                document.getElementById('detalheEtapaLabel').classList.add('active');
+                document.getElementById('detalheBancoLabel').classList.remove('active');
+                document.getElementById('bancoSelectWrap').style.display = 'none';
+            }
         });
     });
 
-    // Gerar
+    // Toggle detalhamento (por etapa / por banco)
+    modal.querySelectorAll('input[name="detalheAdm"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            modal.querySelectorAll('#porEtapaWrap .radio-pill').forEach(p => p.classList.remove('active'));
+            radio.parentElement.classList.add('active');
+            document.getElementById('bancoSelectWrap').style.display = radio.value === 'banco' ? 'block' : 'none';
+        });
+    });
+
+    // Gerar PDF
     document.getElementById('modalRelatorioGerar').addEventListener('click', () => {
-        const tipo = modal.querySelector('input[name="tipoRel"]:checked').value;
-        const porEtapa = document.getElementById('relPorEtapa').checked;
+        const tipo    = modal.querySelector('input[name="tipoRel"]:checked').value;
+        const detalhe = modal.querySelector('input[name="detalheAdm"]:checked')?.value || 'etapa';
         let url = `http://${location.hostname}:8000/api/relatorio/pdf?obra=${encodeURIComponent(obraNome)}&tipo=${tipo}`;
 
-        if (tipo === 'administrativo') {
-            const ini = document.getElementById('relDataIni').value;
-            const fim = document.getElementById('relDataFim').value;
-            if (!ini || !fim) { toast.warning('Informe o período para o relatório administrativo.'); return; }
-            url += `&data_ini=${ini}&data_fim=${fim}`;
-        }
+        if (tipo === 'administrativo' || tipo === 'detalhado') {
+            if (tipo === 'administrativo') {
+                const ini = document.getElementById('relDataIni').value;
+                const fim = document.getElementById('relDataFim').value;
+                if (!ini || !fim) { toast.warning('Informe o período para o relatório administrativo.'); return; }
+                url += `&data_ini=${ini}&data_fim=${fim}`;
+            }
 
-        if (tipo === 'detalhado' || tipo === 'administrativo') {
-            url += `&por_etapa=${porEtapa}`;
+            if (detalhe === 'banco') {
+                const banco = document.getElementById('relBancoSel').value;
+                if (!banco) { toast.warning('Selecione uma conta/responsável.'); return; }
+                url += `&banco=${encodeURIComponent(banco)}`;
+            } else {
+                url += `&por_etapa=true`;
+            }
         }
 
         fechar();
@@ -698,9 +723,9 @@ function renderizarTabela() {
         trObra.dataset.obraId = obraIdx;
         trObra.innerHTML = `
             <td><span class="expand-icon">▶</span>${obraName}</td>
-            <td class="text-right fin-num"><strong>${formatCurrency(obra.previsto_total)}</strong></td>
-            <td class="text-right fin-num"><strong>${formatCurrency(obra.realizado_total)}</strong></td>
-            <td class="text-right fin-num ${saldoClass}"><strong>${formatCurrency(saldo)}</strong></td>
+            <td class="text-right fin-num"><strong>${formatarMoeda(obra.previsto_total)}</strong></td>
+            <td class="text-right fin-num"><strong>${formatarMoeda(obra.realizado_total)}</strong></td>
+            <td class="text-right fin-num ${saldoClass}"><strong>${formatarMoeda(saldo)}</strong></td>
             <td class="text-center">
                 <div class="mini-bar-wrap">
                     <span class="${pctClass} fin-num">${pct.toFixed(1)}%</span>
@@ -759,9 +784,9 @@ function renderizarTabela() {
                         : `<span style="display:inline-block;width:18px;"></span>`}
                     ${etapaNome}
                 </td>
-                <td class="text-right fin-num">${formatCurrency(etapaData.previsto)}</td>
-                <td class="text-right fin-num">${formatCurrency(etapaData.realizado)}</td>
-                <td class="text-right fin-num ${saldoEtCls}">${formatCurrency(saldoEt)}</td>
+                <td class="text-right fin-num">${formatarMoeda(etapaData.previsto)}</td>
+                <td class="text-right fin-num">${formatarMoeda(etapaData.realizado)}</td>
+                <td class="text-right fin-num ${saldoEtCls}">${formatarMoeda(saldoEt)}</td>
                 <td class="text-center fin-num ${pctEtCls}">${pctEt.toFixed(1)}%</td>`;
 
             if (tiposFiltrados.length > 0) {
@@ -791,9 +816,9 @@ function renderizarTabela() {
                 trTipo.style.display = 'none';
                 trTipo.innerHTML = `
                     <td style="padding-left:3rem;color:var(--on-surface-muted);font-size:0.8125rem;">↳ ${t.TIPO_CUSTO || 'Geral'}</td>
-                    <td class="text-right fin-num" style="font-size:0.8125rem;opacity:0.85;">${formatCurrency(t.ORÇAMENTO_ESTIMADO)}</td>
-                    <td class="text-right fin-num" style="font-size:0.8125rem;opacity:0.85;">${formatCurrency(t.GASTO_REALIZADO)}</td>
-                    <td class="text-right fin-num ${saldoTCls}" style="font-size:0.8125rem;opacity:0.85;">${formatCurrency(saldoT)}</td>
+                    <td class="text-right fin-num" style="font-size:0.8125rem;opacity:0.85;">${formatarMoeda(t.ORÇAMENTO_ESTIMADO)}</td>
+                    <td class="text-right fin-num" style="font-size:0.8125rem;opacity:0.85;">${formatarMoeda(t.GASTO_REALIZADO)}</td>
+                    <td class="text-right fin-num ${saldoTCls}" style="font-size:0.8125rem;opacity:0.85;">${formatarMoeda(saldoT)}</td>
                     <td class="text-center fin-num ${pctTCls}" style="font-size:0.8125rem;opacity:0.85;">${pctT.toFixed(1)}%</td>`;
                 tbody.appendChild(trTipo);
             });
@@ -806,38 +831,52 @@ function renderizarTabela() {
 // RELATÓRIO INTELIGENTE
 // ═══════════════════════════════════════════════════
 
-// Helper para escapar HTML
-function esc(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 // --- INIT RELATÓRIO (lazy, primeira vez que a aba abre) ---
 async function initRelatorio() {
     relatorioInitialized = true;
 
     document.querySelectorAll('input[name="relTipo"]').forEach(radio => {
         radio.addEventListener('change', () => {
-            const isAdm      = radio.value === 'administrativo';
+            const isAdm       = radio.value === 'administrativo';
             const isDetalhado = radio.value === 'detalhado';
-            document.getElementById('relAdmDatas').style.display    = isAdm ? '' : 'none';
-            document.getElementById('relAdmDatasFim').style.display = isAdm ? '' : 'none';
+            document.getElementById('relAdmDatas').style.display     = isAdm ? '' : 'none';
+            document.getElementById('relAdmDatasFim').style.display  = isAdm ? '' : 'none';
             document.getElementById('relPorEtapaWrap').style.display = (isAdm || isDetalhado) ? '' : 'none';
-            document.getElementById('relPorEtapa').checked = isDetalhado;
+            // Resetar detalhe para "etapa" ao trocar tipo
+            if (isAdm || isDetalhado) {
+                document.getElementById('relDetalheEtapa').checked = true;
+                document.getElementById('relBancoWrap').style.display = 'none';
+            }
+        });
+    });
+
+    document.querySelectorAll('input[name="relDetalhe"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            document.getElementById('relBancoWrap').style.display = radio.value === 'banco' ? '' : 'none';
         });
     });
 
     document.getElementById('btnGerarRelatorio').addEventListener('click', gerarRelatorio);
 
+    // Datas padrão: início de 2025 → hoje
+    document.getElementById('relDataIni').value = '2025-01-01';
+    document.getElementById('relDataFim').value = new Date().toISOString().split('T')[0];
+
     if (!dbClient) { setStatus('offline', 'Erro de conexão'); return; }
 
     try {
-        const { data, error } = await dbClient.from('obras').select('nome').order('nome');
-        if (error) throw error;
-        const sel = document.getElementById('relSelectObra');
-        sel.innerHTML = '<option value="">— Selecione —</option>' +
-            (data || []).map(o => '<option value="' + esc(o.nome) + '">' + esc(o.nome) + '</option>').join('');
+        const [{ data: obras }, { data: bancos }] = await Promise.all([
+            dbClient.from('obras').select('nome').order('nome'),
+            dbClient.from('bancos').select('nome').eq('tipo', 'filho').order('nome'),
+        ]);
+        const selObra = document.getElementById('relSelectObra');
+        selObra.innerHTML = '<option value="">— Selecione —</option>' +
+            (obras || []).map(o => `<option value="${esc(o.nome)}">${esc(o.nome)}</option>`).join('');
+        const selBanco = document.getElementById('relSelectBanco');
+        selBanco.innerHTML = '<option value="">— Selecione —</option>' +
+            (bancos || []).map(b => `<option value="${esc(b.nome)}">${esc(b.nome)}</option>`).join('');
     } catch (e) {
-        console.error('Erro ao carregar obras para relatório:', e);
+        console.error('Erro ao carregar dados para relatório:', e);
     }
 }
 
@@ -846,8 +885,8 @@ function gerarRelatorio() {
     const obraNome = document.getElementById('relSelectObra').value;
     if (!obraNome) { toast.warning('Selecione uma obra.'); return; }
 
-    const tipo      = document.querySelector('input[name="relTipo"]:checked').value;
-    const porEtapa  = document.getElementById('relPorEtapa').checked;
+    const tipo    = document.querySelector('input[name="relTipo"]:checked').value;
+    const detalhe = document.querySelector('input[name="relDetalhe"]:checked')?.value || 'etapa';
 
     let url = `http://${location.hostname}:8000/api/relatorio/pdf?obra=${encodeURIComponent(obraNome)}&tipo=${tipo}`;
 
@@ -859,7 +898,13 @@ function gerarRelatorio() {
     }
 
     if (tipo === 'detalhado' || tipo === 'administrativo') {
-        url += `&por_etapa=${porEtapa}`;
+        if (detalhe === 'banco') {
+            const banco = document.getElementById('relSelectBanco').value;
+            if (!banco) { toast.warning('Selecione uma conta/responsável.'); return; }
+            url += `&banco=${encodeURIComponent(banco)}`;
+        } else {
+            url += `&por_etapa=true`;
+        }
     }
 
     toast.info('Gerando PDF…');

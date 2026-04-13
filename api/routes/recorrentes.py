@@ -59,7 +59,7 @@ def _avancar_data(d: date, frequencia: str) -> date:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("")
-def listar():
+def listar(_user=Depends(get_current_user)):
     db = get_supabase()
     res = db.table("despesas_recorrentes").select("*").order("proxima_data").execute()
     return res.data or []
@@ -67,7 +67,6 @@ def listar():
 
 @router.post("", status_code=201)
 def criar(body: RecorrenteIn, _user=Depends(get_current_user)):
-    import traceback
     db = get_supabase()
     try:
         payload = body.model_dump()
@@ -81,9 +80,8 @@ def criar(body: RecorrenteIn, _user=Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        tb = traceback.format_exc()
-        logger.error("Erro em POST /api/recorrentes:\n%s", tb)
-        raise HTTPException(500, f"{type(e).__name__}: {e}")
+        logger.error("Erro em POST /api/recorrentes: %s", e, exc_info=True)
+        raise HTTPException(500, "Erro interno ao criar recorrente. Consulte os logs.")
 
 
 @router.put("/{rec_id}")

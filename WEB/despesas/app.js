@@ -5,16 +5,8 @@
 
 const API_BASE = window.API_BASE || `http://${location.hostname}:8000`;
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let dbClient;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        }
-    }
-}
 
 // --- ESTADO ---
 let obras          = [];
@@ -30,7 +22,7 @@ let bancosObraMap  = {};   // banco_id → string[] (obras associadas)
 
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    dbClient = window.db;
     await carregarReferencias();
     initUploadZoneTexto();
 
@@ -1048,14 +1040,6 @@ async function salvarLote() {
     if (ok > 0) limparLote();
 }
 
-// --- HELPERS ---
-function setStatus(type, text) {
-    const el = document.getElementById('connectionStatus');
-    if (!el) return;
-    el.textContent = text;
-    el.className   = `status-dot ${type}`;
-}
-
 // ── CHAT DE REVISÃO IA — LOTE ───────────────────────────────────────────────
 
 function iniciarChatLote() {
@@ -1091,9 +1075,10 @@ async function enviarMensagemChatLote() {
     }));
 
     try {
+        const chatLotePayload = { messages: chatLoteHistorico, despesas: despesasLote, contexto: `Lote de arquivos: ${chatLoteContexto}`, etapas, obras, fornecedores };
         const res = await (window.apiFetch
-            ? window.apiFetch('/api/ai/chat-despesas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatLoteHistorico, despesas: despesasLote, contexto: `Lote de arquivos: ${chatLoteContexto}` }) })
-            : fetch(`${API_BASE}/api/ai/chat-despesas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatLoteHistorico, despesas: despesasLote, contexto: `Lote de arquivos: ${chatLoteContexto}` }) }));
+            ? window.apiFetch('/api/ai/chat-despesas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(chatLotePayload) })
+            : fetch(`${API_BASE}/api/ai/chat-despesas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(chatLotePayload) }));
         if (!res.ok) throw new Error(await res.text());
         const { mensagem, despesas } = await res.json();
 
@@ -1172,9 +1157,10 @@ async function enviarMensagemChat() {
     }));
 
     try {
+        const chatPayload = { messages: chatHistorico, despesas: despesasTexto, contexto: chatContexto, etapas, obras, fornecedores };
         const res = await (window.apiFetch
-            ? window.apiFetch('/api/ai/chat-despesas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatHistorico, despesas: despesasTexto, contexto: chatContexto }) })
-            : fetch(`${API_BASE}/api/ai/chat-despesas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatHistorico, despesas: despesasTexto, contexto: chatContexto }) }));
+            ? window.apiFetch('/api/ai/chat-despesas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(chatPayload) })
+            : fetch(`${API_BASE}/api/ai/chat-despesas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(chatPayload) }));
         if (!res.ok) throw new Error(await res.text());
         const { mensagem, despesas } = await res.json();
 
@@ -1193,5 +1179,3 @@ async function enviarMensagemChat() {
         document.getElementById('chatInput').focus();
     }
 }
-
-function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }

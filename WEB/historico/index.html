@@ -11,6 +11,64 @@
     <link rel="stylesheet" href="../style.css">
     <style>
         #tabelaHistorico thead th { position: sticky; top: 0; z-index: 2; }
+        .table-wrapper { padding-bottom: 80px; }
+        .ms-wrap { position: relative; }
+        .ms-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: var(--sp-2);
+            background: var(--surface-2, #1e2227);
+            border-radius: var(--r-md);
+            padding: 6px var(--sp-3);
+            font-size: 0.8125rem;
+            cursor: pointer;
+            user-select: none;
+            min-height: 36px;
+            transition: background 0.15s;
+        }
+        .ms-trigger:hover { background: var(--surface-3, #252a30); }
+        .ms-trigger .ms-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            color: var(--on-surface-muted);
+        }
+        .ms-trigger .ms-label.has-sel { color: #f0f2f5; }
+        .ms-chevron { flex-shrink: 0; color: var(--on-surface-muted); transition: transform 0.15s; }
+        .ms-wrap.open .ms-chevron { transform: rotate(180deg); }
+        .ms-dropdown {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            background: var(--surface-card, #1a1f24);
+            border-radius: var(--r-md);
+            box-shadow: var(--shadow-float, 0 8px 32px rgba(0,0,0,0.4));
+            max-height: 210px;
+            overflow-y: auto;
+            padding: var(--sp-1) 0;
+        }
+        .ms-wrap.open .ms-dropdown { display: block; }
+        .ms-option {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-2);
+            padding: 6px var(--sp-3);
+            cursor: pointer;
+            font-size: 0.8125rem;
+            color: var(--on-surface);
+            transition: background 0.1s;
+            white-space: nowrap;
+        }
+        .ms-option:hover { background: var(--surface-2, #1e2227); }
+        .ms-option input[type="checkbox"] {
+            cursor: pointer;
+            width: 13px;
+            height: 13px;
+            accent-color: var(--primary);
+            flex-shrink: 0;
+        }
     </style>
     <script src="../env.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -89,19 +147,43 @@
                         </div>
                         <div>
                             <label class="form-label">Obra</label>
-                            <select class="form-select" id="filtroObra"></select>
+                            <div class="ms-wrap" id="wrapObra">
+                                <div class="ms-trigger" onclick="toggleMultiSelect('wrapObra')">
+                                    <span class="ms-label">Todas as obras</span>
+                                    <svg class="ms-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="ms-dropdown"></div>
+                            </div>
                         </div>
                         <div>
                             <label class="form-label">Etapa</label>
-                            <select class="form-select" id="filtroEtapa"></select>
+                            <div class="ms-wrap" id="wrapEtapa">
+                                <div class="ms-trigger" onclick="toggleMultiSelect('wrapEtapa')">
+                                    <span class="ms-label">Todas as etapas</span>
+                                    <svg class="ms-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="ms-dropdown"></div>
+                            </div>
                         </div>
                         <div>
                             <label class="form-label">Tipo</label>
-                            <select class="form-select" id="filtroTipo"></select>
+                            <div class="ms-wrap" id="wrapTipo">
+                                <div class="ms-trigger" onclick="toggleMultiSelect('wrapTipo')">
+                                    <span class="ms-label">Todos os tipos</span>
+                                    <svg class="ms-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="ms-dropdown"></div>
+                            </div>
                         </div>
                         <div>
                             <label class="form-label">Categoria</label>
-                            <select class="form-select" id="filtroCategoria"></select>
+                            <div class="ms-wrap" id="wrapCategoria">
+                                <div class="ms-trigger" onclick="toggleMultiSelect('wrapCategoria')">
+                                    <span class="ms-label">Todas as categorias</span>
+                                    <svg class="ms-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="ms-dropdown"></div>
+                            </div>
                         </div>
                         <div style="display:flex;gap:var(--sp-3);align-items:flex-end;">
                             <button class="btn btn-primary" id="btnFiltrar" style="flex:1;">
@@ -122,7 +204,13 @@
                     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--sp-4);">
                         <div>
                             <label class="form-label">Fornecedor</label>
-                            <input type="text" class="form-input" id="filtroFornecedor" placeholder="Todos">
+                            <div class="ms-wrap" id="wrapFornecedor">
+                                <div class="ms-trigger" onclick="toggleMultiSelect('wrapFornecedor')">
+                                    <span class="ms-label">Todos</span>
+                                    <svg class="ms-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="ms-dropdown"></div>
+                            </div>
                         </div>
                         <div>
                             <label class="form-label">Descrição</label>
@@ -130,9 +218,13 @@
                         </div>
                         <div>
                             <label class="form-label">Banco</label>
-                            <select class="form-select" id="filtroBanco">
-                                <option value="">Todos</option>
-                            </select>
+                            <div class="ms-wrap" id="wrapBanco">
+                                <div class="ms-trigger" onclick="toggleMultiSelect('wrapBanco')">
+                                    <span class="ms-label">Todos</span>
+                                    <svg class="ms-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="ms-dropdown"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -380,7 +472,9 @@
     </div>
 </div>
 
+<script src="../lib/helpers.js"></script>
 <script src="../components/toast.js"></script>
+<script src="../components/api-client.js"></script>
 <script src="../components/nav.js"></script>
 <script src="app.js"></script>
 </body>

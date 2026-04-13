@@ -35,8 +35,9 @@ async function initAuth() {
     // Não verificar na própria página de auth
     if (window.location.pathname.endsWith('/auth/') || window.location.pathname.endsWith('/auth/index.html')) return;
 
-    const sb = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY);
+    const sb = window._supabaseClient || window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY);
     window._supabaseClient = sb;
+    window.db = sb;
 
     window.getAuthToken = async function() {
         const { data: { session } } = await sb.auth.getSession();
@@ -181,9 +182,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const base = getAiChatBase();
     if (base) {
         // Injeta api-client.js primeiro (disponibiliza apiFetch antes do ai-chat.js)
-        const apiClient = document.createElement('script');
-        apiClient.src = base + 'api-client.js';
-        document.head.appendChild(apiClient);
+        // Evita dupla injeção se já foi incluído estaticamente no HTML
+        if (!window.apiFetch) {
+            const apiClient = document.createElement('script');
+            apiClient.src = base + 'api-client.js';
+            document.head.appendChild(apiClient);
+        }
 
         const s = document.createElement('script');
         s.src = base + 'ai-chat.js';

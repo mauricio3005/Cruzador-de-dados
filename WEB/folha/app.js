@@ -3,14 +3,8 @@
  * app.js
  */
 
-// ── Supabase ──────────────────────────────────────────────────────────────────
+// ── Supabase (via nav.js → window.db) ────────────────────────────────────────
 let dbClient;
-
-function initSupabase() {
-    if (window.ENV?.SUPABASE_URL && window.ENV?.SUPABASE_ANON_KEY) {
-        dbClient = window.supabase.createClient(window.ENV.SUPABASE_URL, window.ENV.SUPABASE_ANON_KEY);
-    }
-}
 
 // ── Estado ────────────────────────────────────────────────────────────────────
 let obras        = [];
@@ -25,7 +19,7 @@ const STATUS_COLOR = { rascunho: 'var(--warning)', enviada: 'var(--secondary)', 
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
-    initSupabase();
+    dbClient = window.db;
     await carregarObras();
     setupEventListeners();
 });
@@ -272,7 +266,7 @@ function renderizarTabela() {
 function atualizarTotal() {
     const ativas = linhasLocais.filter(l => !l._deleted);
     const total  = ativas.reduce((s, l) => s + calcularValorFinal(l), 0);
-    document.getElementById('totalRodape').textContent = formatCurrency(total);
+    document.getElementById('totalRodape').textContent = formatarMoeda(total);
 
     // Aviso de etapa faltando
     const semEtapa = ativas.filter(l => !l.etapa && calcularValorFinal(l) > 0);
@@ -296,7 +290,7 @@ function atualizarKPIs() {
     const etapasSet = new Set(ativas.map(l => l.etapa).filter(Boolean));
     const status    = folhaAtual?.status || '—';
 
-    document.getElementById('kpiTotal').textContent        = formatCurrency(total);
+    document.getElementById('kpiTotal').textContent        = formatarMoeda(total);
     document.getElementById('kpiFuncionarios').textContent = ativas.length;
     document.getElementById('kpiEtapas').textContent       = etapasSet.size;
     document.getElementById('kpiStatus').textContent       = STATUS_LABEL[status] || status;
@@ -533,10 +527,10 @@ function gerarMensagem() {
         linhas.push(`   PIX: ${pix}`);
         if (d.banco) linhas.push(`   Banco: ${d.banco}`);
         linhas.push(`   Conta: ${d.conta}`);
-        linhas.push(`   Valor: ${formatCurrency(d.valor)}`);
+        linhas.push(`   Valor: ${formatarMoeda(d.valor)}`);
         linhas.push('');
     });
-    linhas.push(`TOTAL: ${formatCurrency(total)}`);
+    linhas.push(`TOTAL: ${formatarMoeda(total)}`);
 
     document.getElementById('mensagemTexto').textContent = linhas.join('\n');
     document.getElementById('mensagemSection').style.display = '';
@@ -665,14 +659,14 @@ function abrirModalFechar() {
     const total = Object.values(porEtapa).reduce((s, v) => s + v, 0);
 
     const linhasResumo = Object.entries(porEtapa).map(([e, v]) =>
-        `<div style="display:flex;justify-content:space-between;"><span>${e}</span><strong class="fin-num">${formatCurrency(v)}</strong></div>`
+        `<div style="display:flex;justify-content:space-between;"><span>${e}</span><strong class="fin-num">${formatarMoeda(v)}</strong></div>`
     ).join('');
 
     document.getElementById('resumoFechar').innerHTML = `
         ${linhasResumo}
         <div style="border-top:1px solid var(--outline-ghost);margin-top:var(--sp-3);padding-top:var(--sp-3);display:flex;justify-content:space-between;">
             <span><strong>Total</strong></span>
-            <strong class="fin-num" style="color:var(--success);">${formatCurrency(total)}</strong>
+            <strong class="fin-num" style="color:var(--success);">${formatarMoeda(total)}</strong>
         </div>`;
 
     const modal = document.getElementById('modalFecharFolha');
@@ -846,19 +840,7 @@ function atualizarOpcaoQuinzena(folhaId, novoStatus) {
     opt.dataset.status = novoStatus;
 }
 
-function formatarData(dateStr) {
-    if (!dateStr) return '';
-    const [y, m, d] = dateStr.split('-');
-    return `${d}/${m}/${y}`;
-}
-
-function formatCurrency(v) {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v || 0);
-}
-
-function esc(str) {
-    return String(str || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+// helpers: esc, formatarData, formatarValor, formatarMoeda — via lib/helpers.js
 
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {

@@ -34,6 +34,7 @@ def gerar_pdf(
     data_ini: str = Query(None, description="Data inicial YYYY-MM-DD (só administrativo)"),
     data_fim: str = Query(None, description="Data final YYYY-MM-DD (só administrativo)"),
     por_etapa: bool = Query(True, description="Detalhamento por etapa (detalhado/administrativo)"),
+    banco: str = Query(None, description="Nome do banco/conta para relatório por banco"),
     _user=Depends(get_current_user),
 ):
     """Gera relatório PDF da obra e retorna como download."""
@@ -58,7 +59,7 @@ def gerar_pdf(
         df_orc  = pd.DataFrame(res_orc.data or [])
 
         # ── Despesas (todas) ─────────────────────────────────────────────────
-        res_desp = sb.table("c_despesas").select("obra, etapa, tipo, valor_total, data, fornecedor, descricao").eq("obra", obra).execute()
+        res_desp = sb.table("c_despesas").select("obra, etapa, tipo, valor_total, data, fornecedor, descricao, banco").eq("obra", obra).execute()
         df_desp  = pd.DataFrame(res_desp.data or [])
 
         # ── Recebimentos ────────────────────────────────────────────────────
@@ -87,10 +88,11 @@ def gerar_pdf(
                 "obra": "OBRA", "etapa": "ETAPA", "tipo": "TIPO_CUSTO",
                 "valor_total": "VALOR_TOTAL", "data": "DATA",
                 "fornecedor": "FORNECEDOR", "descricao": "DESCRICAO",
+                "banco": "BANCO",
             })
             df_desp["VALOR_TOTAL"] = pd.to_numeric(df_desp["VALOR_TOTAL"], errors="coerce").fillna(0)
         else:
-            df_desp = pd.DataFrame(columns=["OBRA", "ETAPA", "TIPO_CUSTO", "VALOR_TOTAL", "DATA", "FORNECEDOR", "DESCRICAO"])
+            df_desp = pd.DataFrame(columns=["OBRA", "ETAPA", "TIPO_CUSTO", "VALOR_TOTAL", "DATA", "FORNECEDOR", "DESCRICAO", "BANCO"])
 
         # Gastos agregados por obra/etapa/tipo
         gastos = (
@@ -144,7 +146,12 @@ def gerar_pdf(
                 raise HTTPException(status_code=422, detail="data_ini e data_fim obrigatórios para relatório administrativo")
             dt_ini = datetime.strptime(data_ini, "%Y-%m-%d")
             dt_fim = datetime.strptime(data_fim, "%Y-%m-%d")
-            pdf_bytes = rel.gerar_relatorio_administrativo(df_desp, obra, dt_ini, dt_fim, obra_info, por_etapa=por_etapa, df_recebimentos=df_receb_param)
+            if banco:
+                # Relatório por banco: filtra despesas pelo campo banco
+                df_banco = df_desp[df_desp["BANCO"].str.strip().str.lower() == banco.strip().lower()] if not df_desp.empty and "BANCO" in df_desp.columns else pd.DataFrame()
+                pdf_bytes = rel.gerar_relatorio_administrativo_banco(df_banco, obra, dt_ini, dt_fim, obra_info, banco_nome=banco)
+            else:
+                pdf_bytes = rel.gerar_relatorio_administrativo(df_desp, obra, dt_ini, dt_fim, obra_info, por_etapa=por_etapa, df_recebimentos=df_receb_param)
         else:
             pdf_bytes = rel.gerar_relatorio_simples(df_raw, obra, df_semana if not df_semana.empty else None, obra_info, df_recebimentos=df_receb_param)
 
@@ -230,9 +237,9 @@ def analisar_relatorio(payload: AnalisarPayload, _user=Depends(get_current_user)
             res_rec = sb.table("recebimentos").select("valor").eq("obra", obra_nome).execute()
             total_recebido = sum(float(r.get("valor") or 0) for r in (res_rec.data or []))
 
-            # Contas a pagar
-            res_cap = sb.table("contas_a_pagar").select("valor").eq("obra", obra_nome).execute()
-            total_a_pagar = sum(float(r.get("valor") or 0) for r in (res_cap.data or []))
+            # Contas a pagar = c_despesas com vencimento preenchido e não pagas
+            res_cap = sb.table("c_despesas").select("valor_total, paga").eq("obra", obra_nome).not_.is_("vencimento", "null").eq("paga", False).execute()
+            total_a_pagar = sum(float(r.get("valor_total") or 0) for r in (res_cap.data or []))
 
             # Taxa de conclusão
             res_taxa = sb.table("taxa_conclusao").select("etapa, taxa").eq("obra", obra_nome).execute()

@@ -5,33 +5,20 @@
 
 const API_BASE = window.API_BASE || `http://${location.hostname}:8000`;
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let db;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY)
-            db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    }
-}
 
 // --- ESTADO ---
 let obrasDisponiveis = [];   // [{nome, empresa_id, empresas: {nome, logo_url}}]
 let etapasOrdem      = {};   // { nomeDaEtapa: numero_de_ordem }
+let bancosFilhosRel  = [];   // [{id, nome}]
 
-// --- HELPERS ---
-function esc(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+// helpers: esc, setStatus, formatarData, formatarValor — via lib/helpers.js
 function fmtValor(v) {
     return 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function fmtPct(v) {
     return Number(v || 0).toFixed(1) + '%';
-}
-function setStatus(estado, texto) {
-    const el = document.getElementById('connectionStatus');
-    if (el) { el.textContent = texto; el.className = `status-dot ${estado}`; }
 }
 function mostrarLoading(msg = 'Carregando dados…') {
     document.getElementById('loadingArea').style.display = 'block';
@@ -44,16 +31,17 @@ function esconderLoading() {
 }
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    db = window.db;
     if (!db) { setStatus('offline', 'Erro de conexão'); return; }
 
     // Toggle modo
     document.querySelectorAll('input[name="modo"]').forEach(radio => {
         radio.addEventListener('change', () => {
-            const comparativo = radio.value === 'comparativo';
-            document.getElementById('grupoObraUnica').style.display       = comparativo ? 'none' : '';
-            document.getElementById('grupoObraComparativo').style.display  = comparativo ? ''    : 'none';
-            document.getElementById('grupoBanco').style.display            = comparativo ? 'none' : '';
+            const v = radio.value;
+            document.getElementById('grupoObraUnica').style.display      = v === 'unico'      ? '' : 'none';
+            document.getElementById('grupoObraComparativo').style.display = v === 'comparativo'? '' : 'none';
+            document.getElementById('grupoBanco').style.display           = v === 'unico'      ? '' : 'none';
+            document.getElementById('grupoBancoRel').style.display        = v === 'banco'      ? '' : 'none';
         });
     });
 
@@ -63,7 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('btnGerarRelatorio').addEventListener('click', gerarRelatorio);
 
-    await Promise.all([carregarObras(), carregarOrdemEtapas()]);
+    await Promise.all([carregarObras(), carregarOrdemEtapas(), carregarBancosFilhos()]);
     setStatus('online', 'Sistema Sincronizado');
 });
 
@@ -85,6 +73,18 @@ async function carregarBancos(obra) {
         opt.textContent = b;
         sel.appendChild(opt);
     });
+}
+
+// --- CARREGAR BANCOS FILHOS (para modo por banco) ---
+async function carregarBancosFilhos() {
+    try {
+        const { data } = await db.from('bancos').select('id, nome').eq('tipo', 'filho').order('nome');
+        bancosFilhosRel = data || [];
+        const sel = document.getElementById('selectBancosRel');
+        sel.innerHTML = bancosFilhosRel.map(b =>
+            `<option value="${esc(b.id)}">${esc(b.nome)}</option>`
+        ).join('');
+    } catch (_) {}
 }
 
 // --- CARREGAR ORDEM DE ETAPAS ---
@@ -128,6 +128,25 @@ async function gerarRelatorio() {
     const modo = document.querySelector('input[name="modo"]:checked').value;
     const dataIni = document.getElementById('filtroDataIni').value || null;
     const dataFim = document.getElementById('filtroDataFim').value || null;
+
+    if (modo === 'banco') {
+        const bancosSelIds = Array.from(document.getElementById('selectBancosRel').selectedOptions)
+            .map(o => o.value).filter(Boolean);
+        mostrarLoading('Buscando dados por banco…');
+        try {
+            const dados = await buscarDadosBancos(bancosSelIds, dataIni, dataFim);
+            document.getElementById('loadingMsg').textContent = 'Renderizando…';
+            renderizarRelatorioBancos(dados);
+            esconderLoading();
+            document.getElementById('relatorioArea').style.display = 'block';
+            document.getElementById('btnExportar').style.display   = '';
+        } catch (e) {
+            esconderLoading();
+            toast.error('Erro ao gerar relatório: ' + e.message);
+            console.error(e);
+        }
+        return;
+    }
 
     let obrasSelecionadas = [];
     let bancosSel = [];
@@ -305,6 +324,7 @@ async function buscarDadosObras(obrasList, dataIni, dataFim, bancosFilter = []) 
 
 // --- EMPRESA HEADERS ---
 function renderizarEmpresaHeaders(obrasList) {
+    _garantirSecaoObras();
     const container = document.getElementById('empresaHeaders');
     const headers = obrasList.map(nome => {
         const info = obrasDisponiveis.find(o => o.nome === nome);
@@ -429,5 +449,160 @@ function toggleEtapa(id) {
     const isOpen = rows.length > 0 && rows[0].style.display !== 'none';
     rows.forEach(r => r.style.display = isOpen ? 'none' : '');
     if (chev) chev.style.transform = isOpen ? '' : 'rotate(90deg)';
+}
+
+// --- RELATÓRIO POR BANCO ---
+
+async function buscarDadosBancos(bancosSelIds, dataIni, dataFim) {
+    // Determina quais bancos mostrar
+    const bancos = bancosSelIds.length > 0
+        ? bancosFilhosRel.filter(b => bancosSelIds.includes(b.id))
+        : bancosFilhosRel;
+
+    const resultado = [];
+
+    for (const banco of bancos) {
+        // Remessas recebidas por este banco
+        let qRem = db.from('remessas_caixa')
+            .select('valor, data, obra')
+            .eq('banco_destino_id', banco.id);
+        if (dataIni) qRem = qRem.gte('data', dataIni);
+        if (dataFim) qRem = qRem.lte('data', dataFim);
+        const { data: remData } = await qRem;
+
+        // Despesas pagas por este banco (campo texto "banco" = nome do banco)
+        let qDesp = db.from('c_despesas')
+            .select('valor_total, data, obra, etapa, fornecedor')
+            .eq('banco', banco.nome);
+        if (dataIni) qDesp = qDesp.gte('data', dataIni);
+        if (dataFim) qDesp = qDesp.lte('data', dataFim);
+        const { data: despData } = await qDesp;
+
+        const remessas  = remData  || [];
+        const despesas  = despData || [];
+
+        const totalRemessas  = remessas.reduce((s, r) => s + parseFloat(r.valor || 0), 0);
+        const totalDespesas  = despesas.reduce((s, r) => s + parseFloat(r.valor_total || 0), 0);
+        const saldo          = totalRemessas - totalDespesas;
+
+        // Agrupamento por obra
+        const obraSet = new Set([
+            ...remessas.map(r => r.obra).filter(Boolean),
+            ...despesas.map(d => d.obra).filter(Boolean),
+        ]);
+        const porObra = [...obraSet].sort().map(obraNome => {
+            const remObra  = remessas.filter(r => r.obra === obraNome).reduce((s, r) => s + parseFloat(r.valor || 0), 0);
+            const despObra = despesas.filter(d => d.obra === obraNome).reduce((s, d) => s + parseFloat(d.valor_total || 0), 0);
+            return { obra: obraNome, remessas: remObra, despesas: despObra, saldo: remObra - despObra };
+        }).filter(o => o.remessas > 0 || o.despesas > 0);
+
+        // Top 5 fornecedores
+        const fornMap = {};
+        for (const d of despesas) {
+            if (d.fornecedor) fornMap[d.fornecedor] = (fornMap[d.fornecedor] || 0) + parseFloat(d.valor_total || 0);
+        }
+        const topFornecedores = Object.entries(fornMap)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([nome, total]) => ({ nome, total }));
+
+        resultado.push({ banco, totalRemessas, totalDespesas, saldo, porObra, topFornecedores });
+    }
+
+    return resultado;
+}
+
+function renderizarRelatorioBancos(dados) {
+    // Esconder seções de obra, mostrar seção de bancos
+    document.getElementById('empresaHeaders').innerHTML = '';
+    document.getElementById('secaoEtapas').style.display  = 'none';
+    document.getElementById('secaoBancos').style.display  = '';
+
+    // KPIs globais
+    const totalRem  = dados.reduce((s, b) => s + b.totalRemessas, 0);
+    const totalDesp = dados.reduce((s, b) => s + b.totalDespesas, 0);
+    const saldoGlob = totalRem - totalDesp;
+
+    const grid = document.getElementById('kpisGrid');
+    const kpis = [
+        { label: 'Total Remessas',  value: fmtValor(totalRem),  sub: null },
+        { label: 'Total Despesas',  value: fmtValor(totalDesp), sub: null },
+        { label: 'Saldo Líquido',   value: fmtValor(saldoGlob), sub: saldoGlob < 0 ? 'Déficit' : 'Disponível', color: saldoGlob < 0 ? 'var(--error)' : 'inherit' },
+        { label: 'Contas analisadas', value: String(dados.length), sub: null },
+    ];
+    grid.innerHTML = kpis.map(k => `
+        <div class="kpi-card">
+            <div class="kpi-label">${esc(k.label)}</div>
+            <div class="kpi-value fin-num" style="${k.color ? `color:${k.color}` : ''}">${esc(k.value)}</div>
+            ${k.sub ? `<div style="font-size:0.75rem;color:var(--on-surface-muted);margin-top:2px;">${esc(k.sub)}</div>` : ''}
+        </div>`).join('');
+
+    // Fluxo de caixa
+    const corSaldo = saldoGlob >= 0 ? 'var(--success)' : 'var(--error)';
+    const item = (label, valor, cor) => `
+        <div>
+            <div style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);margin-bottom:6px;">${label}</div>
+            <div class="fin-num" style="font-family:var(--font-display);font-size:1.25rem;font-weight:800;color:${cor};">${fmtValor(valor)}</div>
+        </div>`;
+    document.getElementById('fluxoGrid').innerHTML =
+        item('Remessas Recebidas', totalRem,  'var(--success)') +
+        item('Despesas Pagas',     totalDesp, 'var(--error)')   +
+        item('Saldo Líquido',      saldoGlob, corSaldo);
+
+    // Tabela de bancos com detalhamento por obra
+    const tbody = document.getElementById('tabelaBancos');
+    let uid = 0;
+    const linhas = [];
+
+    for (const b of dados) {
+        const id     = `banco-${uid++}`;
+        const temObras = b.porObra.length > 0;
+        const cor    = b.saldo < 0 ? 'var(--error)' : b.saldo === 0 ? 'var(--on-surface-muted)' : 'inherit';
+
+        linhas.push(`
+            <tr class="${temObras ? 'etapa-expandivel' : ''}" ${temObras ? `onclick="toggleEtapa('${id}')" id="row-${id}"` : ''}>
+                <td>
+                    ${temObras
+                        ? `<span class="etapa-chevron" id="chev-${id}">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                           </span>`
+                        : `<span class="status-bar" style="background:${cor};"></span>`}
+                </td>
+                <td style="font-weight:600;">${esc(b.banco.nome)}</td>
+                <td class="text-right fin-num" style="color:var(--success);">${fmtValor(b.totalRemessas)}</td>
+                <td class="text-right fin-num" style="color:var(--error);">${fmtValor(b.totalDespesas)}</td>
+                <td class="text-right fin-num" style="color:${cor};font-weight:700;">${fmtValor(b.saldo)}</td>
+            </tr>`);
+
+        for (const o of b.porObra) {
+            const corO = o.saldo < 0 ? 'var(--error)' : 'inherit';
+            linhas.push(`
+                <tr class="tipo-row tipo-${id}" style="display:none;">
+                    <td></td>
+                    <td class="tipo-nome" style="padding-left:2rem;">↳ ${esc(o.obra)}</td>
+                    <td class="text-right fin-num tipo-num" style="color:var(--success);">${fmtValor(o.remessas)}</td>
+                    <td class="text-right fin-num tipo-num" style="color:var(--error);">${fmtValor(o.despesas)}</td>
+                    <td class="text-right fin-num tipo-num" style="color:${corO};">${fmtValor(o.saldo)}</td>
+                </tr>`);
+        }
+
+        if (b.topFornecedores.length > 0) {
+            linhas.push(`
+                <tr class="tipo-row tipo-${id}" style="display:none;">
+                    <td></td>
+                    <td colspan="4" style="padding-left:2rem;padding-top:6px;padding-bottom:2px;">
+                        <span style="font-size:0.75rem;font-weight:600;color:var(--on-surface-muted);">Top fornecedores: </span>
+                        ${b.topFornecedores.map(f => `<span style="font-size:0.75rem;margin-right:12px;">${esc(f.nome)} <strong>${fmtValor(f.total)}</strong></span>`).join('')}
+                    </td>
+                </tr>`);
+        }
+    }
+
+    tbody.innerHTML = linhas.join('') || `<tr><td colspan="5" style="text-align:center;color:var(--on-surface-muted);padding:var(--sp-6);">Nenhum banco encontrado.</td></tr>`;
+}
+
+function _garantirSecaoObras() {
+    document.getElementById('secaoEtapas').style.display = '';
+    document.getElementById('secaoBancos').style.display = 'none';
 }
 

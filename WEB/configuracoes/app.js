@@ -3,15 +3,8 @@
  * Configurações (app.js)
  */
 
-// --- SUPABASE ---
+// --- SUPABASE (via nav.js → window.db) ---
 let db;
-function carregarEnv() {
-    if (window.ENV) {
-        const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.ENV;
-        if (SUPABASE_URL && SUPABASE_ANON_KEY)
-            db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    }
-}
 
 // --- ESTADO ---
 let obras      = [];
@@ -24,23 +17,9 @@ let fornecedores = [];
 let bancos     = []; // { id, nome, tipo, descricao }
 let bancosObras = {}; // banco_id → string[] (nomes das obras)
 
-// --- HELPERS ---
-function esc(s) {
-    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function setStatus(estado, texto) {
-    const el = document.getElementById('connectionStatus');
-    if (!el) return;
-    el.textContent = texto;
-    el.className   = `status-dot ${estado}`;
-}
-function formatarValor(v) {
-    return Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 // --- INIT ---
 document.addEventListener('DOMContentLoaded', async () => {
-    carregarEnv();
+    db = window.db;
     if (!db) { setStatus('offline', 'Erro de conexão'); return; }
 
     // Tabs
